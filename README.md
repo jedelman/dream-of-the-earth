@@ -27,7 +27,7 @@ npm run check   # bundle and validate the Worker without deploying
 ```
 No build step: `web/` is plain ES modules with three.js vendored in `web/vendor/`. CI (`.github/workflows/ci.yml`)
 runs the check and the tests on every PR and push. Deploys are Cloudflare Workers Builds, connected to this
-repo: every push to `main` runs the deploy command. Set that command to `npm run deploy` and `/healthz`
-reports the deployed commit (`WORKERS_CI_COMMIT_SHA`).
+repo: every push to `main` runs `npm run deploy` (set 2026-11-07), and `/healthz` reports the deployed commit
+(`WORKERS_CI_COMMIT_SHA`).
 
 MIT licensed. Third-party data and code credits are listed in the design doc.

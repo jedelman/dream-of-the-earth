@@ -75,8 +75,8 @@ as it stands. The game was already going to be a web bundle (three.js) that the 
   (`wrangler.jsonc`).
   - It serves `web/` as static assets plus `/healthz`, which reports the deployed commit, with Workers Logs off.
   - **CI and deploys:** `ci.yml` bundles and validates the Worker and runs the unit tests on every PR and
-    push. **Cloudflare Workers Builds** (Jason connected it on 11-07) deploys every push to `main`; with the
-    deploy command set to `npm run deploy`, `/healthz` reports the commit (`WORKERS_CI_COMMIT_SHA`). Elevation
+    push. **Cloudflare Workers Builds** (Jason connected it on 11-07) deploys every push to `main` with
+    `npm run deploy` (Jason set it 11-07), so `/healthz` reports the commit (`WORKERS_CI_COMMIT_SHA`). Elevation
     tiles allow cross-origin reads (checked 11-07), so the browser fetches them straight from AWS.
 - **Hosting:** a Worker plus R2 for the world tiles. On Workers Free, a version can hold 20,000 static assets
   (Cloudflare's limits page), and global tiles will exceed that, so they go in R2. Keep Workers Logs off. Tile
