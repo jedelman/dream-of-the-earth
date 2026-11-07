@@ -37,4 +37,8 @@ the latest file in `conversations/`.
 
 ## Git
 Claude Code Remote's global git config carries Claude's signed identity. Don't set a repo-local
-`user.email`/`user.name`. Work on a branch and open a PR; Jason merges.
+`user.email`/`user.name`.
+
+**Merge authority (Jason, 2026-11-07):** "For this repo go ahead and merge away. We'll add discipline when we
+have users." Claude may merge its own PRs to `main` without waiting. Keep work on a branch with a PR, so the
+history explains itself. Revisit this once there are users.

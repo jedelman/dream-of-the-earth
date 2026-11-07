@@ -30,7 +30,7 @@ Leave-no-trace means there's no world state to keep in sync. Everything a player
 |---|---|---|
 | **The world:** terrain, seafloor, biomes, plants, sky whales, sun, moon, ley highways | real data + grammars, served by a Worker, grown on the phone from a seed | everyone computes the same thing; nothing is sent between players |
 | **You:** avatar (body + voice), keys, mute list | your phone | your avatar travels peer to peer to whoever you meet |
-| **Movement:** where creatures are, by air, land or water | each phone | iroh datagrams between flock-mates, never stored |
+| **Movement:** where creatures are, by air, land or water (position only) | each phone | iroh: datagrams to the 7 nearest, gossip for the rest of a flock of up to 200; never stored |
 
 Two kinds of server are involved, and neither holds game state:
 - **The Worker** serves the same bytes to everyone: the game's code, grammars, ley network and world tiles.
@@ -40,8 +40,8 @@ Two kinds of server are involved, and neither holds game state:
 
 ## Kernel + Worker
 - **The APK is a kernel:** Rust (iroh endpoint, Bluesky sign-in, identity key, cache, signature check) plus a
-  webview. It changes rarely. Without iroh-docs, blobs and gossip (atproto-iroh carried all three) it should
-  come in well under atproto-iroh's 21.4 MB arm64 APK **(unverified until built)**.
+  webview. It changes rarely. Without iroh-docs and blobs (atproto-iroh carried both, plus gossip, which we
+  keep) it should come in under atproto-iroh's 21.4 MB arm64 APK **(unverified until built)**.
 - **The game is a bundle from the Worker:** the renderer (three.js), the L-system interpreter, biome rules,
   the avatar editor and the grammars. The game updates without a reinstall.
 - **Every bundle is signed.** The kernel checks an ed25519 signature against a public key baked into the APK
@@ -193,16 +193,49 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
   accepts presence from a mutual, or from anyone introduced by a creature it's flying with. Nothing persists
   when the flock disperses.
 
-## Presence over iroh (iroh 1.2, checked in the crate source on 11-07)
-- **One `Endpoint` and one protocol of our own.** No iroh-docs, gossip or blobs.
+## Presence over iroh: flocks of up to 200 (iroh 1.2, checked in the crate source on 11-07)
+Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animation, only position."
+
+- **Only position goes on the wire.** Heading comes from successive positions, and animation from the body and
+  the motion, both worked out on each phone. **12 bytes per update:** latitude and longitude as int32 at
+  1e-7° (about 1 cm) · height above the surface int16 at 0.5 m (±16 km) · seq u8 · mode and flags u8 (air,
+  ground, water, ley; call; emote). No shared origin is needed.
+- **The cost of 200 isn't the payload; it's per-packet overhead times fan-out.** A relayed datagram carries
+  roughly 100 bytes of headers around those 12 **(estimate; measure it)**. A full mesh at 15 Hz would be
+  199 × 15 × ~100 B ≈ 300 KB/s each way per phone (about 1 GB an hour), over 199 relayed connections.
+- **So, two rings:**
+  - **Ring 1, your 7 nearest:** direct datagrams (`Connection::send_datagram`) at 15 Hz. This is how starlings
+    do it: they track 6–7 topological neighbours (Ballerini et al., PNAS 2008). Accept at most ~12 inbound
+    ring-1 senders, so a creature at the centre of a crowd doesn't get flooded.
+  - **Ring 2, everyone else in the flock:** one iroh-gossip topic per flock. Each creature broadcasts its
+    12 bytes plus its endpoint ID at 1 Hz, and receivers extrapolate between updates. Gossip coalesces many
+    small messages onto each neighbour's QUIC stream, and each phone keeps only ~5 gossip neighbours
+    (HyParView's active view, checked in the source).
+- **Per phone at a full 200 (estimates):**
+
+  | | up | down |
+  |---|---|---|
+  | Ring 1: 7 × 15 Hz × ~100 B | ~10 KB/s | ~10–18 KB/s |
+  | Ring 2: 199 × 1 Hz × ~60 B | ~12 KB/s (forwarding, on average) | ~12 KB/s |
+  | **Total** | **~22 KB/s** | **~22–30 KB/s** |
+
+  That's about 80–110 MB an hour each way, and ≤ ~17 connections instead of 199. It's fine on Wi-Fi and
+  noticeable on a metered plan. The knobs: ring-2 rate (0.5 Hz halves it) and ring-1 size.
+- **Hearsay and testimony.** Ring-2 positions are forwarded by other flock members and aren't signed: a
+  member could fake where distant creatures appear, which is cosmetic. When a creature comes into ring 1 its
+  position arrives over a direct, authenticated connection. Signing ring 2 would add 64 bytes to every
+  message, roughly doubling ring-2 traffic. Not worth it for dots on the horizon.
+- **Avatars load as creatures come near.** A creature's avatar (≤ 4 KB) is fetched over the direct connection
+  when it enters ring 1. Until then it's drawn as a plain low-LOD silhouette, so the most you ever draw is
+  200 × 256 = 51,200 triangles.
+- **Flock membership:** the creature whose call is first accepted makes a flock secret. The gossip topic ID is
+  its hash, and `INTRO` hands the secret to each arrival along with a bootstrap peer, so gossip's "needs a
+  known peer" problem is solved by the introduction itself. **The 200 cap is soft:** members refuse new
+  introductions once they count 200, and simultaneous joins can overshoot by a few.
 - **Relay-only by default** (`Endpoint::builder().clear_ip_transports()`): peers don't see each other's IPs.
-  The relay operator sees who connects to whom, but not content.
-- **Datagrams** (`Connection::send_datagram`) at ~15 Hz, ~48 bytes each: seq u16 · time ms u32 · lat and lon
-  2×f64 · height above surface f32 · velocity (east/north/up) 3×f32 · packed orientation · flags (mode, call,
-  ley-travel, emote). Animation is derived on each phone, not sent.
-- **Neighbours:** a full mesh up to ~12; past that, the 7 nearest, which is how starlings do it (6–7
-  topological neighbours, Ballerini et al., PNAS 2008). Bandwidth stays at about 5 KB/s up, however big the
-  flock.
+  At 200, every byte crosses a relay. n0's public relays may not be meant for that load **(unverified)**, so
+  plan to run our own `iroh-relay` (open source; needs a small always-on machine, since a Cloudflare Worker
+  can't host it). Or allow direct connections between mutuals only (Question 6).
 - **Control stream:** `HELLO`, `CALL`, `ACCEPT`, `INTRO`, `AVATAR`, `BYE`.
 - **Rendering:** a floating origin around the local flock, since float32 jitters at Earth scale.
 
@@ -259,3 +292,5 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
 4. **Calling a mutual whose app is closed:** nothing, or a Bluesky DM nudge (needs a chat scope)?
 5. **The Worker's home:** its own Worker on a subdomain (say dream.jason-edelman.org, with its own R2 and
    limits) or a path on jason-edelman.org's Worker? I'd give it its own.
+6. **Relays at 200:** run our own `iroh-relay` on a small always-on machine, allow direct connections between
+   mutuals (each sees the other's IP), or both?
