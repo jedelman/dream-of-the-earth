@@ -32,7 +32,8 @@ the latest file in `conversations/`.
 
 ## Deploys and tests
 - Cloudflare Workers Builds deploys every push to `main` (Jason connected it on 2026-11-07). There's no
-  GitHub Actions deploy. After a merge, check `https://dream-of-the-earth.jason-edelman.org/healthz`.
+  GitHub Actions deploy. The deploy command is `npm run deploy`, so after a merge
+  `https://dream-of-the-earth.jason-edelman.org/healthz` should report the merged commit.
 - `npm test` runs the unit tests; CI runs them plus `npm run check` on every PR and push.
 - Check visual changes in headless Chromium (screenshots) before merging. Tiles come from AWS, so a
   sandbox needs the session proxy.
