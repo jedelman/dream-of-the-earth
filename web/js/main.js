@@ -236,7 +236,7 @@ function frame() {
 
   sea.mesh.position.set(Math.round(p.x / 4000) * 4000, 0, Math.round(p.z / 4000) * 4000);
   sea.update(t);
-  world.highways.update(t, day);
+  world.highways.update(t);
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
   renderer.render(scene, camera);
   window.__dream.frames++;

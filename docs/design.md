@@ -312,7 +312,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 ## Build order
 **Browser, single-player:**
 0. **The world (built 11-07):** faceted terrain and seafloor near a random ley node, swimmable water, the real
-   sun and sky, the golden highways (normal blending by day, additive glow at night), and one random creature
+   sun and sky, the golden highways (additive glow; over a bright sky it can burn to white, and Jason: "Blowout is okay, it's retro"), and one random creature
    with stats, flying, running and swimming. Live at the subdomain. What building it found:
    - **Open-ocean tiles at zoom 11 are flat zero** (11/587/1214 off Chile is a 757-byte all-zero tile, while
      zooms 7–10 there carry the seafloor). The terrain fills exact zeros from the zoom-10 parent, so seas
@@ -322,6 +322,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
    - **The interim temperature model is latitude-only.** It's too cold for maritime climates (the Scottish
      Highlands read as tundra) and has no rainfall (the Sahara reads as subtropical green). CHELSA fixes both
      in step 1.
+   - Daytime blowout was briefly "fixed" with normal blending by day, then reverted at Jason's word: it's retro.
    - **Underwater, the sky and highways are hidden.** They ignore fog by design and showed through the sea.
 1. **Biomes and travel:** the CHELSA/SoilGrids/canopy pipeline to world tiles (R2); lapse-rate downscaling;
    L-system plants; riding the highways with terrain streaming; interchanges; one sky whale.

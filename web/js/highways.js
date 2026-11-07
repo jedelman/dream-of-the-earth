@@ -112,19 +112,10 @@ export function buildHighways(frame, heightAt) {
     group.add(ring);
   }
 
-  // By day, additive gold over a bright sky burns to white, so the highways
-  // blend normally; at night they glow.
-  let lastBlend = null;
+  // Always additive: light adds to light. Over a bright sky the gold can burn to
+  // white, and that's fine (Jason, 11-07: "Blowout is okay, it's retro").
   return {
     group,
-    update(t, day) {
-      const blend = day > 0.5 ? THREE.NormalBlending : THREE.AdditiveBlending;
-      for (const m of materials) {
-        m.uniforms.time.value = t;
-        if (blend !== lastBlend) m.blending = blend;
-      }
-      if (blend !== lastBlend) ringMat.blending = blend;
-      lastBlend = blend;
-    },
+    update(t) { for (const m of materials) m.uniforms.time.value = t; },
   };
 }
