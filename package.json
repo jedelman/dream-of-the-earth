@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "check": "wrangler deploy --dry-run --outdir .wrangler/dry-run",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy --var VERSION:${WORKERS_CI_COMMIT_SHA:-dev}",
+    "test": "node --test test/*.test.js"
   },
   "devDependencies": {
     "wrangler": "4.152.0"

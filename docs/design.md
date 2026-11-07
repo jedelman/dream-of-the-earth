@@ -74,12 +74,10 @@ as it stands. The game was already going to be a web bundle (three.js) that the 
 - **The Worker** is `dream-of-the-earth` on its own custom domain, `dream-of-the-earth.jason-edelman.org`
   (`wrangler.jsonc`).
   - It serves `web/` as static assets plus `/healthz`, which reports the deployed commit, with Workers Logs off.
-  - **CI** (`.github/workflows/`): on every PR and push, `ci.yml` bundles and validates the Worker without
-    deploying, then runs any tests. On every push to `main`, `deploy.yml` runs `wrangler deploy`, then waits
-    for `/healthz` to report that commit.
-  - It needs one repo secret, `CLOUDFLARE_API_TOKEN` (Cloudflare's "Edit Cloudflare Workers" template). The
-    account ID is in `wrangler.jsonc`. Elevation tiles allow cross-origin reads (checked 11-07), so the
-    browser fetches them straight from AWS.
+  - **CI and deploys:** `ci.yml` bundles and validates the Worker and runs the unit tests on every PR and
+    push. **Cloudflare Workers Builds** (Jason connected it on 11-07) deploys every push to `main`; with the
+    deploy command set to `npm run deploy`, `/healthz` reports the commit (`WORKERS_CI_COMMIT_SHA`). Elevation
+    tiles allow cross-origin reads (checked 11-07), so the browser fetches them straight from AWS.
 - **Hosting:** a Worker plus R2 for the world tiles. On Workers Free, a version can hold 20,000 static assets
   (Cloudflare's limits page), and global tiles will exceed that, so they go in R2. Keep Workers Logs off. Tile
   requests show which region a creature is exploring, never where its player is. This Worker would share the
@@ -313,9 +311,18 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 
 ## Build order
 **Browser, single-player:**
-0. **The world:** low-poly terrain and seafloor near a random ley node, swimmable water, the real sun, the golden
-   highways, and one random 256-triangle creature with stats, flying, running and swimming. Deployed at the
-   subdomain; checked with headless screenshots.
+0. **The world (built 11-07):** faceted terrain and seafloor near a random ley node, swimmable water, the real
+   sun and sky, the golden highways (normal blending by day, additive glow at night), and one random creature
+   with stats, flying, running and swimming. Live at the subdomain. What building it found:
+   - **Open-ocean tiles at zoom 11 are flat zero** (11/587/1214 off Chile is a 757-byte all-zero tile, while
+     zooms 7–10 there carry the seafloor). The terrain fills exact zeros from the zoom-10 parent, so seas
+     have their real depth (seed 7: 4,089 m).
+   - **Map tiles stop near ±85°.** Two gravity-wells nodes sit on the poles, so nodes beyond ±80° aren't spawn
+     points until there's polar ground data.
+   - **The interim temperature model is latitude-only.** It's too cold for maritime climates (the Scottish
+     Highlands read as tundra) and has no rainfall (the Sahara reads as subtropical green). CHELSA fixes both
+     in step 1.
+   - **Underwater, the sky and highways are hidden.** They ignore fog by design and showed through the sea.
 1. **Biomes and travel:** the CHELSA/SoilGrids/canopy pipeline to world tiles (R2); lapse-rate downscaling;
    L-system plants; riding the highways with terrain streaming; interchanges; one sky whale.
 2. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.

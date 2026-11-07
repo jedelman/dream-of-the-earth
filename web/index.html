@@ -2,22 +2,30 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Dream of the Earth</title>
-<meta name="description" content="A flock of creatures wandering a real Earth together. In development.">
+<meta name="description" content="A flock of creatures wandering a real Earth together. Single-player, step 0.">
 <style>
-  :root { color-scheme: dark; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b0a14; color: #f3e6b0; font: 16px/1.6 ui-monospace, monospace; }
-  main { max-width: 34rem; padding: 1.5rem; }
-  h1 { color: #ffd34d; font-size: 1.4rem; letter-spacing: .04em; }
-  a { color: #ffd34d; }
+  :root { color-scheme: dark; --gold: #ffd34d; --ink: #f3e6b0; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0a14; }
+  #view { position: fixed; inset: 0; width: 100vw; height: 100vh; image-rendering: pixelated; touch-action: none; display: block; }
+  #hud, #status, #help { position: fixed; color: var(--ink); font: 11px/1.45 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; text-shadow: 1px 1px 0 #000, -1px 0 0 #000; pointer-events: none; white-space: pre; letter-spacing: .03em; }
+  #hud { left: max(10px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); }
+  #help { left: max(10px, env(safe-area-inset-left)); bottom: max(8px, env(safe-area-inset-bottom)); opacity: .8; }
+  #status { left: 50%; top: 42%; transform: translateX(-50%); color: var(--gold); font-size: 14px; text-align: center; white-space: normal; max-width: 80vw; }
+  .btn { position: fixed; right: max(14px, env(safe-area-inset-right)); width: 52px; height: 52px; border: 2px solid var(--gold); background: rgba(20, 12, 40, .55); color: var(--gold); font: 20px/1 ui-monospace, monospace; touch-action: none; user-select: none; }
+  #up { bottom: 96px; } #down { bottom: 34px; }
+  @media (hover: hover) and (pointer: fine) { .btn { display: none; } }
 </style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
 <body>
-<main>
-  <h1>Dream of the Earth</h1>
-  <p>A flock of creatures wandering a real Earth together, by air, over land and under water.</p>
-  <p>Being built. The design is in <a href="https://github.com/jedelman/dream-of-the-earth/blob/main/docs/design.md">docs/design.md</a>.</p>
-</main>
+<canvas id="view" aria-label="Dream of the Earth: a low-poly view of a real place on Earth, with your creature"></canvas>
+<div id="hud" aria-live="off"></div>
+<div id="status" role="status" hidden></div>
+<div id="help">WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · DRAG ON TOUCH</div>
+<button class="btn" id="up" aria-label="Up">▲</button>
+<button class="btn" id="down" aria-label="Down">▼</button>
+<script type="module" src="./js/main.js"></script>
 </body>
 </html>

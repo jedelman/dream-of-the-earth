@@ -17,6 +17,4 @@ jobs:
       - run: npm ci
       # Bundles the Worker and validates wrangler.jsonc without deploying.
       - run: npm run check
-      - name: Tests
-        run: |
-          if ls test/*.test.js >/dev/null 2>&1; then node --test test/; else echo "no tests yet"; fi
+      - run: npm test
