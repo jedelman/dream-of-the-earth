@@ -1,5 +1,5 @@
-// Dream of the Earth, single-player, step 0: a low-poly piece of the real
-// Earth near a ley node, its real sun, the golden highways, and one creature.
+// Dream of the Earth, single-player: a low-poly piece of the real Earth near a
+// ley node, its real sun, the golden highways you can ride, and one creature.
 import * as THREE from "three";
 import { makeFrame, offset } from "./geo.js";
 import { network, nearestNode, CLASSES } from "./ley.js";
@@ -9,6 +9,8 @@ import { generateCreature } from "./creature-graph.js";
 import { buildCreature } from "./creature.js";
 import { buildTerrain, buildSea } from "./terrain.js";
 import { buildHighways } from "./highways.js";
+import { buildRideFx, LEY_ALT } from "./ridefx.js";
+import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount } from "./ride.js";
 import { buildSky } from "./sky.js";
 import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
 import { interimTemperature, biomeFor } from "./geo.js";
@@ -58,15 +60,20 @@ const sky = buildSky();
 scene.add(sky.group);
 const sea = buildSea(160000);
 scene.add(sea.mesh);
+const rideFx = buildRideFx();
+rideFx.group.visible = false;
+scene.add(rideFx.group);
 
 // ---- The creature ----
 const graph = generateCreature(seed);
 const creature = buildCreature(graph, stats);
 scene.add(creature.group);
-const state = { pos: new THREE.Vector3(), heading: spawnRand() * Math.PI * 2, speed: 0, vy: 0, mode: "air" };
+const state = { pos: new THREE.Vector3(), heading: spawnRand() * Math.PI * 2, speed: 0, vy: 0, mode: "air", ride: null, captureCooldown: 0, hopCooldown: 0 };
 
 // ---- The world around us (rebuilt as we travel) ----
-let world = null, rebuilding = false;
+// Only the newest request may swap in, so a slow regrow can't land after a
+// newer one (say, after a ride).
+let world = null, rebuilding = false, worldToken = 0;
 async function buildWorld(lat, lon) {
   const frame = makeFrame(lat, lon);
   const terrain = await buildTerrain(frame, lat, lon);
@@ -75,16 +82,29 @@ async function buildWorld(lat, lon) {
   group.add(terrain.mesh, highways.group);
   return { frame, terrain, highways, group };
 }
-function swapWorld(next) {
-  if (world) {
+function swapWorld(next, place) {
+  if (place) {
+    const p = next.frame.toLocal(place.lat, place.lon);
+    state.pos.set(p.x, place.y, p.z);
+  } else if (world) {
     const ll = world.frame.toLatLon(state.pos.x, state.pos.z);
     const p = next.frame.toLocal(ll.lat, ll.lon);
     state.pos.x = p.x; state.pos.z = p.z;
+  }
+  if (world) {
     scene.remove(world.group);
     world.group.traverse((o) => { o.geometry?.dispose(); });
   }
   world = next;
   scene.add(world.group);
+}
+function regrow(lat, lon, onReady) {
+  const token = ++worldToken;
+  rebuilding = true;
+  return buildWorld(lat, lon)
+    .then((w) => { if (token === worldToken) onReady(w); })
+    .catch((e) => { setStatus(`the dream couldn't regrow here: ${e.message}`); console.error(e); })
+    .finally(() => { if (token === worldToken) rebuilding = false; });
 }
 
 // ---- Input: keyboard, plus a touch stick and up/down buttons ----
@@ -159,13 +179,77 @@ function step(dt) {
   if (g2 >= 0 && p.y < g2) { p.y = g2; state.vy = Math.max(0, state.vy); }
   if (g2 < 0 && p.y < g2 + 2) p.y = g2 + 2;
 
+  // Pillars of light at the nodes lift any creature up to the ring, wings or not.
+  for (const pl of world.highways.pillars) {
+    if (Math.hypot(p.x - pl.x, p.z - pl.z) > 300) continue;
+    if (p.y < pl.top) p.y = Math.min(pl.top, p.y + 160 * dt);
+    else if (up <= 0) p.y = pl.top;
+    state.vy = 0;
+    state.mode = "air";
+    break;
+  }
+
+  // Fly along a highway, inside its ribbon, and it takes you.
+  state.captureCooldown -= dt;
+  if (state.captureCooldown <= 0 && state.speed > 5) {
+    const ll = world.frame.toLatLon(p.x, p.z);
+    const c = chooseCapture(ll.lat, ll.lon, { e: fx, n: -fz });
+    if (c && Math.abs(p.y - highwayAltitude(world.terrain.heightAt(p.x, p.z))) < captureRadius(c.line.cls.rank)) boardRide(c);
+  }
+
   // Travel far enough and the world is regrown around us.
-  if (!rebuilding && Math.hypot(p.x, p.z) > 15000) {
-    rebuilding = true;
+  if (!rebuilding && !state.ride && Math.hypot(p.x, p.z) > 15000) {
     const ll = world.frame.toLatLon(p.x, p.z);
     setStatus("the dream shifts…");
-    buildWorld(ll.lat, ll.lon).then((w) => { swapWorld(w); setStatus(""); }).finally(() => { rebuilding = false; });
+    regrow(ll.lat, ll.lon, (w) => { swapWorld(w); setStatus(""); });
   }
+}
+
+// ---- Riding the highways (ley-space) ----
+function boardRide(c) {
+  state.ride = startRide(c);
+  state.hopCooldown = 0.8;
+  world.group.visible = false;
+  rideFx.group.visible = true;
+  setStatus("");
+}
+function rideStep(dt) {
+  const r = state.ride;
+  if (r.leaving) return;
+  const { turn, thrust, up } = input();
+  state.hopCooldown -= dt;
+  if ((up < 0 || thrust < 0) && r.age > 0.6) return leaveRide(false);
+  if (turn !== 0 && state.hopCooldown <= 0) {
+    const h = hop(r, turn);
+    if (h) { state.ride = h; state.hopCooldown = 1.2; return; }
+  }
+  advance(r, dt);
+  if (r.done) leaveRide(true);
+}
+function leaveRide(arrived) {
+  const r = state.ride;
+  r.leaving = true;
+  r.speed = 0;
+  const ll = rideLatLon(r);
+  const tg = tangentEN(r.line, r.t, r.dir);
+  setStatus(arrived ? "a node · the dream regrows…" : "the dream regrows…");
+  regrow(ll.lat, ll.lon, (w) => {
+    swapWorld(w, { lat: ll.lat, lon: ll.lon, y: highwayAltitude(w.terrain.heightAt(0, 0)) });
+    state.ride = null;
+    state.heading = Math.atan2(-tg.e, tg.n);
+    state.speed = 0;
+    state.vy = 0;
+    state.captureCooldown = 3; // don't get snatched straight back onto the line
+    world.group.visible = true;
+    rideFx.group.visible = false;
+    camera.position.set(state.pos.x - -Math.sin(state.heading) * 85, state.pos.y + 28, state.pos.z - -Math.cos(state.heading) * 85);
+    setStatus(arrived ? `you're at a node: ${nodeName(ll)}` : "");
+    if (arrived) setTimeout(() => setStatus(""), 4000);
+  });
+}
+function nodeName(ll) {
+  const { node } = nearestNode(ll.lat, ll.lon);
+  return CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
 }
 
 // ---- HUD ----
@@ -174,6 +258,17 @@ const statusEl = document.getElementById("status");
 const setStatus = (s) => { statusEl.textContent = s; statusEl.hidden = !s; };
 const bar = (n) => "■".repeat(n) + "□".repeat(MAX - n);
 function updateHud() {
+  if (state.ride) {
+    const r = state.ride, ll = rideLatLon(r);
+    const near = r.leaving ? [] : crossings(r);
+    hud.textContent = [
+      `RIDING  ${r.line.cls.name.toUpperCase()}  ${Math.round(r.speed / 1000)} KM/S`,
+      `${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}  ·  NEXT NODE ${Math.round(remainingMeters(r) / 1000).toLocaleString("en")} KM`,
+      near.length ? `CROSSING ${near[0].line.cls.name.toUpperCase()} · A/D TO HOP` : "SHIFT OR S: STEP OFF",
+      STATS.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  "),
+    ].join("\n");
+    return;
+  }
   const ll = world.frame.toLatLon(state.pos.x, state.pos.z);
   const ground = world.terrain.heightAt(state.pos.x, state.pos.z);
   const { node, meters } = nearestNode(ll.lat, ll.lon);
@@ -195,7 +290,44 @@ function frame() {
   const nowMs = performance.now();
   const dt = Math.min(0.05, (nowMs - last) / 1000), t = (nowMs - t0) / 1000;
   last = nowMs;
+  const view = state.ride ? rideView(dt, t) : worldView(dt, t);
+
+  // The real sun for this place and moment (refreshed every 10 s).
+  if (t - lastSun > 10 || !sunState) {
+    sunState = sunPosition(now(), view.ll.lat, view.ll.lon);
+    lastSun = t;
+  }
+  const dir = sunDirection(sunState);
+  const horizon = sky.update(sunState.altitude, dir, camera);
+  const day = Math.max(0, Math.min(1, (sunState.altitude + 6) / 16));
+  const p = view.pos;
+  sunLight.position.set(p.x + dir.x * 10000, p.y + dir.y * 10000, p.z + dir.z * 10000);
+  sunLight.target.position.copy(p);
+  sunLight.intensity = 0.15 + 2.2 * day;
+  hemi.intensity = 0.45 + 0.9 * day;
+
+  // Under the sea: a murky blue world. The sky and the highways ignore fog by
+  // design, so they're hidden down here, and the surface reads as a ceiling.
+  const underwater = view.underwater;
+  if (underwater) { scene.fog.color.setHex(0x0b3b6e); scene.fog.near = 5; scene.fog.far = 700; }
+  else { scene.fog.color.copy(horizon); scene.fog.near = 2500; scene.fog.far = 22000; }
+  sky.group.visible = !underwater;
+  if (world) world.highways.group.visible = !underwater;
+  sea.mesh.material.opacity = underwater ? 0.92 : 0.55;
+  scene.background = scene.fog.color;
+
+  sea.mesh.position.set(Math.round(p.x / 4000) * 4000, 0, Math.round(p.z / 4000) * 4000);
+  sea.update(t);
+  if (world) world.highways.update(t);
+  if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
+  renderer.render(scene, camera);
+  window.__dream.frames++;
+  requestAnimationFrame(frame);
+}
+
+function worldView(dt, t) {
   step(dt);
+  if (state.ride) return rideView(0, t); // boarded this frame
   const p = state.pos;
   creature.group.position.set(p.x, p.y + (state.mode === "water" ? Math.sin(t * 2) * 0.4 : 0), p.z);
   creature.group.rotation.y = state.heading;
@@ -209,49 +341,43 @@ function frame() {
   if (camGround >= 0) want.y = Math.max(want.y, camGround + 6);
   camera.position.lerp(want, Math.min(1, dt * 4));
   camera.lookAt(p.x + fx * 20, p.y + 6, p.z + fz * 20);
-
-  // The real sun for this place and moment (refreshed every 10 s).
-  if (t - lastSun > 10 || !sunState) {
-    const ll = world.frame.toLatLon(p.x, p.z);
-    sunState = sunPosition(now(), ll.lat, ll.lon);
-    lastSun = t;
-  }
-  const dir = sunDirection(sunState);
-  const horizon = sky.update(sunState.altitude, dir, camera);
-  const day = Math.max(0, Math.min(1, (sunState.altitude + 6) / 16));
-  sunLight.position.set(p.x + dir.x * 10000, p.y + dir.y * 10000, p.z + dir.z * 10000);
-  sunLight.target.position.copy(p);
-  sunLight.intensity = 0.15 + 2.2 * day;
-  hemi.intensity = 0.45 + 0.9 * day;
-
-  // Under the sea: a murky blue world. The sky and the highways ignore fog by
-  // design, so they're hidden down here, and the surface reads as a ceiling.
   const underwater = camera.position.y < 0 && world.terrain.heightAt(camera.position.x, camera.position.z) < camera.position.y;
-  if (underwater) { scene.fog.color.setHex(0x0b3b6e); scene.fog.near = 5; scene.fog.far = 700; }
-  else { scene.fog.color.copy(horizon); scene.fog.near = 2500; scene.fog.far = 22000; }
-  sky.group.visible = !underwater;
-  world.highways.group.visible = !underwater;
-  sea.mesh.material.opacity = underwater ? 0.92 : 0.55;
-  scene.background = scene.fog.color;
+  return { ll: world.frame.toLatLon(p.x, p.z), pos: p, underwater };
+}
 
-  sea.mesh.position.set(Math.round(p.x / 4000) * 4000, 0, Math.round(p.z / 4000) * 4000);
-  sea.update(t);
-  world.highways.update(t);
-  if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
-  renderer.render(scene, camera);
-  window.__dream.frames++;
-  requestAnimationFrame(frame);
+// In ley-space the frame is centred on the rider every frame.
+const rideOrigin = new THREE.Vector3(0, LEY_ALT, 0);
+function rideView(dt, t) {
+  rideStep(dt);
+  const r = state.ride;
+  if (!r) return worldView(0, t);
+  const ll = rideLatLon(r);
+  const tg = tangentEN(r.line, r.t, r.dir);
+  state.heading = Math.atan2(-tg.e, tg.n);
+  creature.group.position.copy(rideOrigin);
+  creature.group.rotation.y = state.heading;
+  creature.update(t, { mode: "air", speed01: r.leaving ? 0.2 : 1 });
+  const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
+  camera.position.set(-fx * 140, LEY_ALT + 45, -fz * 140);
+  camera.lookAt(fx * 40, LEY_ALT + 8, fz * 40);
+  rideFx.update(r, makeFrame(ll.lat, ll.lon), t, state.heading, dt);
+  return { ll, pos: rideOrigin, underwater: false };
 }
 
 // ---- Boot ----
 window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state };
 setStatus("dreaming…");
-buildWorld(spawn.lat, spawn.lon).then((w) => {
+regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);
   const ground = w.terrain.heightAt(0, 0);
   state.pos.set(0, Math.max(0, ground) + 350, 0);
   camera.position.set(0, state.pos.y + 40, 120);
   setStatus(w.terrain.failed ? `${w.terrain.failed} elevation tiles didn't load; that ground is drawn at sea level` : "");
+  // ?ride=N starts on highway N, halfway along (a shortcut for trying the ride).
+  if (params.get("ride") !== null) {
+    const line = lineAt(Math.abs(Number(params.get("ride")) | 0) % lineCount());
+    boardRide({ line, t: 0.5, dir: 1 });
+  }
   window.__dream.ready = true;
   requestAnimationFrame(frame);
-}).catch((e) => { setStatus(`the dream failed to start: ${e.message}`); console.error(e); });
+});
