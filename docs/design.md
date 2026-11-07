@@ -312,8 +312,8 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 ## Build order
 **Browser, single-player:**
 0. **The world (built 11-07):** faceted terrain and seafloor near a random ley node, swimmable water, the real
-   sun and sky, the golden highways (additive glow; over a bright sky it can burn to white, and Jason: "Blowout is okay, it's retro"), and one random creature
-   with stats, flying, running and swimming. Live at the subdomain. What building it found:
+   sun and sky, the golden highways (additive glow; over a bright sky it can burn to white, and Jason: "Blowout
+   is okay, it's retro"), and one random creature with stats, flying, running and swimming. Live at the subdomain. What building it found:
    - **Open-ocean tiles at zoom 11 are flat zero** (11/587/1214 off Chile is a 757-byte all-zero tile, while
      zooms 7–10 there carry the seafloor). The terrain fills exact zeros from the zoom-10 parent, so seas
      have their real depth (seed 7: 4,089 m).
@@ -324,15 +324,26 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
      in step 1.
    - Daytime blowout was briefly "fixed" with normal blending by day, then reverted at Jason's word: it's retro.
    - **Underwater, the sky and highways are hidden.** They ignore fog by design and showed through the sea.
-1. **Biomes and travel:** the CHELSA/SoilGrids/canopy pipeline to world tiles (R2); lapse-rate downscaling;
-   L-system plants; riding the highways with terrain streaming; interchanges; one sky whale.
-2. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.
+1. **Travel (built 11-07):** riding the highways.
+   - Board by flying inside a highway's glow within 60° of its direction, so you can cross one without being
+     snatched.
+   - A ride is ley-space: the ground falls away and there's only the line, streaks, sky and sea. Speed is 200 km/s
+     × 2 per rank, with ease in and out, to the node at the end of the line. The world regrows where you get off.
+   - Shift/S steps off anywhere, and A/D hops lines at a crossing.
+   - Every node has a pillar of light that lifts any creature to the ring.
+   - Lines are long (median 3,527 km for Becker-Hagens, 8,262 km for gravity-wells major and basic, 10,008 km
+     for minor), which is why the speeds are absurd: a typical full ride takes 5–50 s.
+   - Highways fade within ~700 m of the camera, so one you're inside, or a node where many meet, reads as light
+     ahead. In ley-space there's no fade.
+2. **Biomes and life:** the CHELSA/SoilGrids/canopy pipeline to world tiles (R2); lapse-rate downscaling;
+   L-system plants; braided interchange rings where networks cross; sky whales.
+3. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.
 
 **Multiplayer:**
-3. **iroh in the browser, tested first:** relay-only datagrams and gossip between two tabs. If they work, the
+4. **iroh in the browser, tested first:** relay-only datagrams and gossip between two tabs. If they work, the
    MMO may stay in the browser.
-4. **Mutuals:** Bluesky sign-in, the node record, calls, teleport, introductions, the two rings.
-5. **Native, if still needed:** the kernel (Tauri + iroh, signed bundles), then real phones. **Not testable in
+5. **Mutuals:** Bluesky sign-in, the node record, calls, teleport, introductions, the two rings.
+6. **Native, if still needed:** the kernel (Tauri + iroh, signed bundles), then real phones. **Not testable in
    a Claude sandbox:** it can't reach iroh's relays, and Tauri + iroh has never run on a real phone.
 
 ## Data and code credits (to confirm before shipping)
