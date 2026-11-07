@@ -26,8 +26,16 @@ the latest file in `conversations/`.
 ## Data and credit discipline
 - Every dataset and every vendored piece of code goes in the credits table in `docs/design.md`, with its
   license confirmed on the source's own site. Not WorldClim (non-commercial, no redistribution).
-- Don't run third-party code fetched from the internet without Jason's approval. Read it instead.
+- Dependencies come from npm, pinned and vendored or locked (three.js, wrangler). Don't run other code
+  fetched from the internet (a repo's scripts, say) without Jason's approval; read it instead.
 - Mark anything not verified in the current session as **(unverified)**.
+
+## Deploys and tests
+- Cloudflare Workers Builds deploys every push to `main` (Jason connected it on 2026-11-07). There's no
+  GitHub Actions deploy. After a merge, check `https://dream-of-the-earth.jason-edelman.org/healthz`.
+- `npm test` runs the unit tests; CI runs them plus `npm run check` on every PR and push.
+- Check visual changes in headless Chromium (screenshots) before merging. Tiles come from AWS, so a
+  sandbox needs the session proxy.
 
 ## Builds
 - Release builds by default; debug only for a real debugger session (the atproto-iroh experience: debug
