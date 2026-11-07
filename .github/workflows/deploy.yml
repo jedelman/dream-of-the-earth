@@ -1,0 +1,42 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Token check
+        if: env.CF_TOKEN == ''
+        run: echo "::warning::CLOUDFLARE_API_TOKEN isn't set, so nothing was deployed. Add it under Settings > Secrets and variables > Actions."
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Needs the repo secret CLOUDFLARE_API_TOKEN (Cloudflare's "Edit Cloudflare
+      # Workers" template). The account ID is in wrangler.jsonc.
+      - name: Deploy Worker
+        if: env.CF_TOKEN != ''
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: deploy --var VERSION:${{ github.sha }}
+      - name: Smoke test
+        if: env.CF_TOKEN != ''
+        run: |
+          for i in 1 2 3 4 5 6; do
+            v=$(curl -fsS https://dream-of-the-earth.jason-edelman.org/healthz | jq -r .version) && [ "$v" = "${{ github.sha }}" ] && echo "live: $v" && exit 0
+            sleep 10
+          done
+          echo "healthz never reported ${{ github.sha }}"; exit 1

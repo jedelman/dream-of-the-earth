@@ -22,6 +22,13 @@ not checked is marked **(unverified)**.
   latitude = colder adjacent climate = higher elevation. Repo name is dream-of-the-earth. Ley lines here:
   https://github.com/leylines/leylinesMap"
 - Ley lines: "Let's make them **golden glowing sky highways of light**."
+- "Can we push this to **200 peers max**? We don't have to sync animation, only position." And: "For this
+  repo go ahead and merge away. We'll add discipline when we have users."
+- Answers to the open questions: "1. This opens up **creature stat customization. Fly/swim/run/gleam** (the last
+  one just makes you shinier) 2. **Both [ley networks]. Let them interact. Rarer equals faster and larger.** 3.
+  **Near nodes!** 4. **Calling only works if your moot is online.** 5. **Subdomain.** Let's setup basic workers CI.
+  If it makes sense we can build this **single player first in the browser, then move it to native** for the
+  MMO."
 
 ## The shape
 Leave-no-trace means there's no world state to keep in sync. Everything a player sees is one of three things:
@@ -38,6 +45,20 @@ Two kinds of server are involved, and neither holds game state:
 - **Bluesky** supplies identity and the mutual graph. One record in each player's own repo says "I have the
   app, here's how to reach me."
 
+## Browser first, then native
+Jason: "build this single player first in the browser, then move it to native for the MMO." It fits the design
+as it stands. The game was already going to be a web bundle (three.js) that the kernel loads into a webview, so
+**the browser game is that bundle**, served by the Worker at **dream-of-the-earth.jason-edelman.org**.
+- **Single-player in the browser:** the world, the look, movement, stats, avatars and ley travel, playable from a
+  URL. iPhones can play this version.
+- **Native for the MMO:** the kernel wraps the same bundle and adds iroh, Bluesky sign-in and signed-bundle
+  checks. The bundle talks to the network through one small platform interface (presence, identity, storage);
+  in the browser, presence is empty.
+- **Worth testing before committing to the APK:** iroh 1.2 compiles for the browser (its source has a
+  `wasm_browser` build configuration). There, connections go through relays only, which is the default we chose
+  anyway. If datagrams and gossip work in that build, the multiplayer might not need a native app at all
+  **(unverified)**.
+
 ## Kernel + Worker
 - **The APK is a kernel:** Rust (iroh endpoint, Bluesky sign-in, identity key, cache, signature check) plus a
   webview. It changes rarely. Without iroh-docs and blobs (atproto-iroh carried both, plus gossip, which we
@@ -50,6 +71,15 @@ Two kinds of server are involved, and neither holds game state:
   phone, so it's as sensitive as the APK signing key: a CI secret plus an offline copy.
 - **Offline:** cached bundles and tiles keep working where you've already been. If the Worker is down, new
   places don't load; nothing breaks.
+- **The Worker** is `dream-of-the-earth` on its own custom domain, `dream-of-the-earth.jason-edelman.org`
+  (`wrangler.jsonc`).
+  - It serves `web/` as static assets plus `/healthz`, which reports the deployed commit, with Workers Logs off.
+  - **CI** (`.github/workflows/`): on every PR and push, `ci.yml` bundles and validates the Worker without
+    deploying, then runs any tests. On every push to `main`, `deploy.yml` runs `wrangler deploy`, then waits
+    for `/healthz` to report that commit.
+  - It needs one repo secret, `CLOUDFLARE_API_TOKEN` (Cloudflare's "Edit Cloudflare Workers" template). The
+    account ID is in `wrangler.jsonc`. Elevation tiles allow cross-origin reads (checked 11-07), so the
+    browser fetches them straight from AWS.
 - **Hosting:** a Worker plus R2 for the world tiles. On Workers Free, a version can hold 20,000 static assets
   (Cloudflare's limits page), and global tiles will exceed that, so they go in R2. Keep Workers Logs off. Tile
   requests show which region a creature is exploring, never where its player is. This Worker would share the
@@ -63,9 +93,8 @@ Two kinds of server are involved, and neither holds game state:
   11-07: a Pacific tile (z3/0/3) reaches −7,258 m and an Alps tile (z6/33/22) peaks at 4,127 m. The Worker can
   proxy and cache these or the phone can fetch them directly.
 - **Swimmable water** (Jason's reference is SM64; the design is our own): the sea surface is a translucent,
-  wobbling plane; below it are tinted fog and a faceted seafloor from the bathymetry. Real oceans average
-  about 3.7 km deep, so diving needs either speed that grows with depth or vertical compression underwater
-  (Question 1).
+  wobbling plane; below it are tinted fog and a faceted seafloor from the bathymetry. Oceans keep their real
+  depth (about 3.7 km on average). How fast you can dive is your **swim** stat (see Creature stats).
 
 ### Biomes from real data
 **Inputs, all CC BY 4.0:**
@@ -119,9 +148,10 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
 - **What's there,** counted from the source files on 11-07 (read, not run):
   - **Becker-Hagens UVG grid:** 62 nodes, 180 lines. leylinesMap's catalogue orients it at 31.72, 31.2,
     bearing 0, form "diamond".
-  - **Leland's "gravity wells":** 34 nodes, with 160 basic, 144 major and 716 minor lines (the map's yellow,
-    blue and red). Oriented at 0, 0, 0, "diamond". The catalogue cites judsyn.weebly.com ("Lelanders Ley
-    Lines").
+  - **Leland's "gravity wells":** three line sets over one pool of 90 points (66 of them on a line): 160 basic,
+    144 major and 240 minor lines (the map's yellow, blue and red). Recounted 11-07 with a parser that skips
+    comments; a first count of 716 minor lines wrongly included a commented-out alternative list. Oriented
+    at 0, 0, 0, "diamond". The catalogue cites judsyn.weebly.com ("Lelanders Ley Lines").
   - Also Platonic, Archimedean, Catalan and geodesic solids. The README credits McCooey's Visual Polyhedra for
     the solids.
 - **In the game:** compute the network once at build time, then ship it as a few tens of KB of great circles
@@ -138,11 +168,21 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
     see the nearest one from wherever you spawn and steer by it.
 - **Travel:** fly into a highway and it carries you along the great circle to the next node, fast. Others see
   you as a streak of light running along the gold.
+- **Both networks, interacting** (Jason). Where a line of one network crosses a line of the other (great-circle
+  intersections, computed at build time), the two highways braid into an interchange ring and you can hop
+  across. Shared nodes work the same way.
+- **Rarer is faster and larger** (Jason). Rarity is how many lines a class has: gravity-wells major (144) is
+  rarest, then gravity-wells basic (160), Becker-Hagens (180), and gravity-wells minor (240), the commonest.
+  - Scaling speed and width by 1/count would make all four only 10–67% apart, which is hard to feel.
+  - **Proposal: double per rank** (minor 1×, Becker-Hagens 2×, basic 4×, major 8×). The order is the same and
+    the difference is felt.
 
 ### Sky and spawn
 - **Real sun, moon and stars** for the creature's coordinate and the real time.
-- **Random spawn, never GPS.** The app never asks for location permission. Uniform over the sphere puts about
-  71% of spawns over ocean (Question 3).
+- **Spawn near a node** (Jason): a random node from either network (62 Becker-Hagens + 66 gravity-wells = 128,
+  plus interchanges), a few kilometres off, in the air. Never GPS: the app never asks for location permission.
+  Nodes are pure geometry, so most land over open ocean and some on land; the **swim** stat matters from the
+  first minute.
 
 ## The look: SNES-era low poly
 - **The budget is the style:** polygon counts in the hundreds, flat-shaded. We take the budget and the flat
@@ -176,6 +216,20 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
 - **Someone will build something obscene.** The tools are local: mute, plus an option to draw non-mutuals as a
   plain default shape. With no server, there's nowhere to report it.
 
+## Creature stats: fly, swim, run, gleam
+Jason: "creature stat customization. Fly/swim/run/gleam (the last one just makes you shinier)."
+- **Four stats, one budget.** Proposal: 12 points, 0–6 per stat, set in the avatar editor.
+  - **fly** sets air speed and climb;
+  - **swim** sets water speed and how fast you can dive (oceans keep their real depth);
+  - **run** sets ground speed and jump;
+  - **gleam** only makes you shinier: specular, sparkle, and a palette that shimmers. Points in gleam are points
+    taken from speed. That trade is the joke and the point.
+- **Stats travel with the avatar** (part of its hashed blob, ~4 bytes). Peers check the total against the budget
+  and reject anything over. A peer could still lie about its own speed. With no races and no scores, that
+  only changes how it moves itself.
+- **With no stat, you're slow, not stuck:** zero fly still glides and hops, zero swim still paddles, zero run
+  still walks.
+
 ## Identity, mutuals, calls
 - **Sign in with Bluesky** (atproto OAuth for a native client; metadata on jason-edelman.org, as Library does).
   The scope is `repo:` on one collection.
@@ -187,8 +241,8 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
 - **Who's here:** on launch, dial mutuals' endpoints (relay-only, short timeout). Both sides check the other's
   endpoint against its DID's record and check that the DID is a mutual.
 - **Call → accept → teleport.** On accept, the caller sends its coordinate, and the callee teleports and is
-  introduced to the flock. A call reaches only open apps, since phones kill background sockets and the design
-  can't depend on background execution (Question 4).
+  introduced to the flock. **Calling only works if your moot is online** (Jason): no nudges, no DMs, no
+  push. That fits leave-no-trace, and phones kill background sockets anyway.
 - **Introductions:** signed `INTRO` ("I vouch for endpoint X, DID Y, in this flock, until T"). A creature
   accepts presence from a mutual, or from anyone introduced by a creature it's flying with. Nothing persists
   when the flock disperses.
@@ -235,7 +289,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 - **Relay-only by default** (`Endpoint::builder().clear_ip_transports()`): peers don't see each other's IPs.
   At 200, every byte crosses a relay. n0's public relays may not be meant for that load **(unverified)**, so
   plan to run our own `iroh-relay` (open source; needs a small always-on machine, since a Cloudflare Worker
-  can't host it). Or allow direct connections between mutuals only (Question 6).
+  can't host it). Or allow direct connections between mutuals only (Question 1).
 - **Control stream:** `HELLO`, `CALL`, `ACCEPT`, `INTRO`, `AVATAR`, `BYE`.
 - **Rendering:** a floating origin around the local flock, since float32 jitters at Earth scale.
 
@@ -258,19 +312,20 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 - **iPhones can't play.**
 
 ## Build order
-0. **The world, desktop, no network:** low-poly terrain and seafloor at a random coordinate, swimmable water,
-   the real sun and moon, the golden ley highways, and one random 256-triangle creature walking, flying and
-   swimming. Testable in a Claude sandbox (headless screenshots).
-1. **Biomes:** a pipeline from CHELSA, SoilGrids and canopy data to ~5 km world tiles; lapse-rate downscaling
-   on device; L-system plants per biome; one sky whale.
-2. **Two creatures, loopback:** iroh datagrams and interpolation between two desktop instances. Testable in the
-   sandbox.
-3. **The kernel/Worker split:** signed bundles, cache, local serving; tiles in R2.
-4. **Avatars and mutuals:** the editor and voice, avatar exchange by hash, Bluesky sign-in, the node record,
-   calls, teleport, introductions.
-5. **Real networks and phones:** relay-only between Jason's machines, then the APK on his phone and a mutual's.
-   **Not testable in a Claude sandbox:** it can't reach iroh's relays, and Tauri + iroh has never run on a real
-   phone (atproto-iroh's APKs were built, never installed).
+**Browser, single-player:**
+0. **The world:** low-poly terrain and seafloor near a random ley node, swimmable water, the real sun, the golden
+   highways, and one random 256-triangle creature with stats, flying, running and swimming. Deployed at the
+   subdomain; checked with headless screenshots.
+1. **Biomes and travel:** the CHELSA/SoilGrids/canopy pipeline to world tiles (R2); lapse-rate downscaling;
+   L-system plants; riding the highways with terrain streaming; interchanges; one sky whale.
+2. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.
+
+**Multiplayer:**
+3. **iroh in the browser, tested first:** relay-only datagrams and gossip between two tabs. If they work, the
+   MMO may stay in the browser.
+4. **Mutuals:** Bluesky sign-in, the node record, calls, teleport, introductions, the two rings.
+5. **Native, if still needed:** the kernel (Tauri + iroh, signed bundles), then real phones. **Not testable in
+   a Claude sandbox:** it can't reach iroh's relays, and Tauri + iroh has never run on a real phone.
 
 ## Data and code credits (to confirm before shipping)
 | Source | Use | License |
@@ -285,12 +340,9 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 | three.js | renderer | MIT |
 
 ## Questions for Jason
-1. **Ocean depth:** dive speed that grows with depth, or compress depth underwater (say 10×)?
-2. **Which ley grids:** Becker-Hagens only, gravity wells only, or both as different currents (say the
-   gravity-wells colours as speeds)?
-3. **Spawn:** uniform over the sphere (mostly ocean), land-weighted, or near a ley node?
-4. **Calling a mutual whose app is closed:** nothing, or a Bluesky DM nudge (needs a chat scope)?
-5. **The Worker's home:** its own Worker on a subdomain (say dream.jason-edelman.org, with its own R2 and
-   limits) or a path on jason-edelman.org's Worker? I'd give it its own.
-6. **Relays at 200:** run our own `iroh-relay` on a small always-on machine, allow direct connections between
+Answered 11-07: depth (keep it real; swim decides), ley networks (both, interacting, rarer = faster and larger),
+spawn (near nodes), calls (online moots only), the Worker (its own subdomain). Still open:
+1. **Relays at 200:** run our own `iroh-relay` on a small always-on machine, allow direct connections between
    mutuals (each sees the other's IP), or both?
+2. **The stat budget:** 12 points, 0–6 each?
+3. **Ley speed:** double per rank (proposed) or strictly 1/line-count?

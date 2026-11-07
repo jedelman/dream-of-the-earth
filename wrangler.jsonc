@@ -1,0 +1,19 @@
+{
+  // Dream of the Earth: serves the game bundle (web/) and, later, world tiles.
+  // It holds no game state.
+  "name": "dream-of-the-earth",
+  "account_id": "543fde7feabd0af945bfae926ceea7ad",
+  "compatibility_date": "2026-10-20",
+  "main": "worker/index.js",
+  "assets": {
+    "directory": "web",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "dream-of-the-earth.jason-edelman.org", "custom_domain": true }
+  ],
+  // Leave no trace: no persistent request logs.
+  "observability": { "enabled": false },
+  "vars": { "VERSION": "dev" }
+}
