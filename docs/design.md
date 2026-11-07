@@ -148,9 +148,10 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
 - **What's there,** counted from the source files on 11-07 (read, not run):
   - **Becker-Hagens UVG grid:** 62 nodes, 180 lines. leylinesMap's catalogue orients it at 31.72, 31.2,
     bearing 0, form "diamond".
-  - **Leland's "gravity wells":** 34 nodes, with 160 basic, 144 major and 716 minor lines (the map's yellow,
-    blue and red). Oriented at 0, 0, 0, "diamond". The catalogue cites judsyn.weebly.com ("Lelanders Ley
-    Lines").
+  - **Leland's "gravity wells":** three line sets over one pool of 90 points (66 of them on a line): 160 basic,
+    144 major and 240 minor lines (the map's yellow, blue and red). Recounted 11-07 with a parser that skips
+    comments; a first count of 716 minor lines wrongly included a commented-out alternative list. Oriented
+    at 0, 0, 0, "diamond". The catalogue cites judsyn.weebly.com ("Lelanders Ley Lines").
   - Also Platonic, Archimedean, Catalan and geodesic solids. The README credits McCooey's Visual Polyhedra for
     the solids.
 - **In the game:** compute the network once at build time, then ship it as a few tens of KB of great circles
@@ -171,16 +172,17 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
   intersections, computed at build time), the two highways braid into an interchange ring and you can hop
   across. Shared nodes work the same way.
 - **Rarer is faster and larger** (Jason). Rarity is how many lines a class has: gravity-wells major (144) is
-  rarest, then gravity-wells basic (160), Becker-Hagens (180), and gravity-wells minor (716), the commonest.
-  - Scaling speed and width by 1/count would make the top three only 10–25% apart, which is hard to feel.
+  rarest, then gravity-wells basic (160), Becker-Hagens (180), and gravity-wells minor (240), the commonest.
+  - Scaling speed and width by 1/count would make all four only 10–67% apart, which is hard to feel.
   - **Proposal: double per rank** (minor 1×, Becker-Hagens 2×, basic 4×, major 8×). The order is the same and
     the difference is felt.
 
 ### Sky and spawn
 - **Real sun, moon and stars** for the creature's coordinate and the real time.
-- **Spawn near a node** (Jason): a random node from either network (62 + 34 = 96, plus interchanges), a few
-  kilometres off, in the air. Never GPS: the app never asks for location permission. Nodes are pure geometry,
-  so most land over open ocean and some on land; the **swim** stat matters from the first minute.
+- **Spawn near a node** (Jason): a random node from either network (62 Becker-Hagens + 66 gravity-wells = 128,
+  plus interchanges), a few kilometres off, in the air. Never GPS: the app never asks for location permission.
+  Nodes are pure geometry, so most land over open ocean and some on land; the **swim** stat matters from the
+  first minute.
 
 ## The look: SNES-era low poly
 - **The budget is the style:** polygon counts in the hundreds, flat-shaded. We take the budget and the flat
