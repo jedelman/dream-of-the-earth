@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Bundles the Worker and validates wrangler.jsonc without deploying.
+      - run: npm run check
+      - name: Tests
+        run: |
+          if ls test/*.test.js >/dev/null 2>&1; then node --test test/; else echo "no tests yet"; fi
