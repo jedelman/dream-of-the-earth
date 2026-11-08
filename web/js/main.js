@@ -5,7 +5,7 @@ import { makeFrame, offset, vecToLatLon } from "./geo.js";
 import { network, nearestNode, CLASSES } from "./ley.js";
 import { sunPosition, sunDirection } from "./sun.js";
 import { mulberry32, hashString } from "./rng.js";
-import { generateCreature } from "./creature-graph.js";
+import { generateCreature, parseGenes } from "./creature-graph.js";
 import { buildCreature } from "./creature.js";
 import { buildTerrain } from "./terrain.js";
 import { buildSea } from "./water.js";
@@ -26,10 +26,11 @@ import { buildFlock } from "./flock.js";
 import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm, byDistance, metresBetween, distanceText, NSID as ARTIFACT_NSID } from "./artifacts.js";
 import { account, isReturning, takeReturn } from "./account.js";
 import { buildMaker } from "./maker.js";
+import { buildEditor } from "./editor.js";
 import { sound } from "./sound.js";
 import { logLine } from "./eventlog.js";
 import { buildBursts } from "./bursts.js";
-import { buildDirector, squeakShot, treeShot, butterflyShot, beingShot, arriveShot, boardShot, cairnShot } from "./director.js";
+import { buildDirector, squeakShot, treeShot, butterflyShot, beingShot, arriveShot, boardShot, cairnShot, portraitShot, portraitAngle, portraitDistance } from "./director.js";
 import { buildSkyBeings } from "./skybeings.js";
 import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
 import { biomeFor, koppenCode } from "./biome.js";
@@ -43,12 +44,31 @@ import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
 const params = new URLSearchParams(location.search);
 // Back from signing in with Bluesky: the page reloaded at its bare address, so put back where you were.
 if (isReturning()) { const back = takeReturn(); if (back) for (const [k, v] of new URLSearchParams(back)) params.set(k, v); }
+// Your creature is yours: kept on this device (seed, genes, stats), made in the editor. A ?seed in the URL shows
+// that creature instead (with your changes, if it's the one you keep).
+const CREATURE_KEY = "dream.creature";
+function keptCreature() {
+  try {
+    const v = JSON.parse(localStorage.getItem(CREATURE_KEY) || "null");
+    if (!v || !Number.isInteger(v.seed) || v.seed < 0 || v.seed > 0xffffffff) return null;
+    return { seed: v.seed, genes: parseGenes(v.genes), stats: Array.isArray(v.stats) ? parseStats(v.stats.join(",")) : null };
+  } catch { return null; }
+}
+const kept = keptCreature();
 const seedParam = params.get("seed");
-const seed = seedParam ? (/^\d+$/.test(seedParam) ? Number(seedParam) >>> 0 : hashString(seedParam)) : (Math.random() * 2 ** 32) >>> 0;
-// Separate streams, so choosing your stats doesn't move your spawn.
-const spawnRand = mulberry32(hashString(`spawn:${seed}`));
-const stats = parseStats(params.get("stats")) || randomStats(mulberry32(hashString(`stats:${seed}`)));
-const sp = speeds(stats);
+const urlSeed = seedParam ? (/^\d+$/.test(seedParam) ? Number(seedParam) >>> 0 : hashString(seedParam)) : null;
+const yours = urlSeed === null || urlSeed === kept?.seed ? kept : null;
+let seed = urlSeed ?? yours?.seed ?? (Math.random() * 2 ** 32) >>> 0;
+let genes = yours?.genes ?? null;
+let stats = parseStats(params.get("stats")) || yours?.stats || randomStats(mulberry32(hashString(`stats:${seed}`)));
+let sp = speeds(stats);
+function keepCreature() {
+  try { localStorage.setItem(CREATURE_KEY, JSON.stringify({ seed, genes, stats: STATS.map((k) => stats[k]) })); } catch { /* private mode */ }
+}
+if (!kept && urlSeed === null) keepCreature(); // the first creature you meet is yours
+// Separate streams, so choosing your stats doesn't move your spawn. A creature named in the URL lands where its
+// seed says, so any spawn is reproducible; your own lands somewhere new each visit.
+const spawnRand = mulberry32(hashString(`spawn:${urlSeed ?? (Math.random() * 2 ** 32) >>> 0}`));
 // The clock: the real one, or from ?t= (or a landmark) onward. Sun, clouds and sky beings all follow it.
 const clock = { base: params.get("t") ? Date.parse(params.get("t")) / 1000 : Date.now() / 1000, at: 0 };
 const unixAt = (sessionSeconds) => clock.base + (sessionSeconds - clock.at);
@@ -106,18 +126,20 @@ scene.add(rideFx.group);
 layerTransparent(rideFx.group);
 
 // ---- The creature ----
-const graph = generateCreature(seed);
-const creature = buildCreature(graph, stats);
+let graph = generateCreature(seed, genes);
+let creature = buildCreature(graph, stats);
 // Where it looks from: just in front of its eyes (or its head, or the front of its body), in its own units.
-const eyeLocal = (() => {
+function eyeOf(graph) {
   const eyes = graph.parts.filter((p) => p.kind === "eye"), heads = graph.parts.filter((p) => p.kind === "head");
   const src = eyes.length ? eyes : heads;
   if (!src.length) { const b = graph.parts.find((p) => p.kind === "body"); return new THREE.Vector3(0, (b?.size[1] ?? 3) * 0.4, -(b?.size[2] ?? 5) * 0.6 - 0.5); }
   const avg = (k) => src.reduce((n, p) => n + p.pos[k], 0) / src.length;
   return new THREE.Vector3(avg(0), avg(1) + 0.2, Math.min(...src.map((p) => p.pos[2] - (p.size?.[2] ?? 1))) - 0.6);
-})();
+}
+let eyeLocal = eyeOf(graph);
 /** How see-through the creature is (1 = solid). Translucent, it draws after the sky, or the sky pass would paint over it. */
 let creatureOpacity = 1;
+let editing = false; // the creature editor is open: the camera looks at it, not through it
 function fadeCreature(o) {
   if (Math.abs(o - creatureOpacity) < 0.004) return;
   const was = creatureOpacity < 1, now = o < 0.999;
@@ -131,6 +153,41 @@ function fadeCreature(o) {
 }
 scene.add(creature.group);
 layerTransparent(creature.group);
+/** Your creature as it is: { seed, genes, stats }, and a key that changes when its look does. */
+const myCreature = () => ({ seed, genes, stats });
+const lookKey = () => `${seed}:${STATS.map((k) => stats[k]).join(",")}:${JSON.stringify(genes)}`;
+let lookAt = -Infinity; // when the look last changed (real seconds), so mutuals get it once you've settled
+/** A new look (from the editor): regrow the creature where it stands, keep it, and tell mutuals once you've settled. */
+function setCreature(next) {
+  const was = creature;
+  seed = next.seed >>> 0;
+  genes = parseGenes(next.genes);
+  stats = next.stats;
+  sp = speeds(stats);
+  graph = generateCreature(seed, genes);
+  creature = buildCreature(graph, stats);
+  creature.group.position.copy(was.group.position);
+  creature.group.rotation.copy(was.group.rotation);
+  scene.remove(was.group);
+  was.group.traverse((o) => { o.geometry?.dispose(); o.material?.dispose?.(); });
+  scene.add(creature.group);
+  layerTransparent(creature.group);
+  const o = creatureOpacity; // translucent (looking through its eyes) stays translucent
+  creatureOpacity = 1;
+  fadeCreature(o);
+  eyeLocal = eyeOf(graph);
+  myName = creatureName(seed);
+  keepCreature();
+  lookAt = realNow();
+  // A URL that names a creature keeps naming this one.
+  if (params.has("seed")) {
+    const q = new URLSearchParams(location.search);
+    q.set("seed", String(seed));
+    q.set("stats", STATS.map((k) => stats[k]).join(","));
+    history.replaceState(null, "", `?${q}`);
+  }
+  Object.assign(window.__dream, { seed, stats, genes, triangles: creature.triangles });
+}
 // The camera is run by a director (director.js): framing by what you're doing, and shots for what happens.
 const director = buildDirector(camera);
 let sunInfo = { dir: null, gold: 0 };
@@ -439,7 +496,7 @@ function nodeName(ll) {
 // ---- Tap to move and to touch things: find what's under a tap, go there, and when you're
 // close enough it answers: trees shake, creatures squeak, sky beings hum, highways take you ----
 const tapRay = new THREE.Raycaster();
-const myName = creatureName(seed);
+let myName = creatureName(seed);
 const bursts = buildBursts(scene);
 let simT = 0, hopAt = -10, squeaks = 0, hums = 0, shareTickAt = 0;
 const shaken = new Map(); // how often each tree's been shaken, so it can say something new
@@ -721,7 +778,7 @@ function glintSpot(c, v, bs) {
   return v.set(c.x, c.alt, c.z);
 }
 function updateReach(t, dt) {
-  const on = !!world && !rebuilding && !state.ride && zoom < REACH_ZOOM;
+  const on = !!world && !rebuilding && !state.ride && zoom < REACH_ZOOM && !editing; // in the editor, nothing else asks for you
   if (!on) { reach = lit = []; focus = null; }
   else if (t >= scanAt) {
     scanAt = t + 0.15;
@@ -931,6 +988,37 @@ const maker = buildMaker({
     logLine("You unstack your cairn, stone by stone.", "artifact");
   },
 });
+// Your creature's editor, under its name in the top-right stack. While it's open the camera turns to face the creature.
+/** The creature's radius in metres, for framing it. */
+const reachOf = (g) => g.scale * Math.max(...g.parts.map((p) => Math.hypot(...p.pos) + Math.max(...p.size)));
+const editor = buildEditor({
+  maker,
+  button: document.getElementById("mine"),
+  hooks: {
+    get: myCreature,
+    set: (next) => {
+      const newName = next.seed >>> 0 !== seed;
+      setCreature(next);
+      editor.setName(myName);
+      // A puff of its own colours, and a squeak in its new voice (smaller creatures squeak higher).
+      const at = state.pos.clone();
+      at.y += 3 * graph.scale;
+      bursts.emit({ at, colors: graph.palette.map((c) => new THREE.Color().setHSL(c.h, c.s, c.l)), n: 18, spread: 3 * graph.scale, up: 3, fall: 2, life: 1.1 });
+      sound.squeak(1.25 / graph.scale);
+      if (newName) logLine(`Meet ${myName}.`, "creature");
+    },
+    name: creatureName,
+    portrait: (on) => {
+      editing = on;
+      if (!on) { if (director.shot === "portrait") director.release(simT); return; }
+      // Stand where no tree is in the way (a rainforest has plenty).
+      const r = reachOf(graph), p = creature.group.position;
+      const angle = world ? portraitAngle(p, state.heading, r, world.plants.near(p.x, p.z, portraitDistance(r) + 25)) : 0.55;
+      director.play("portrait", simT, portraitShot(() => reachOf(graph), matchMedia("(max-width: 640px)").matches, angle), { dur: 1e9, blendIn: 0.9, blendOut: 1 });
+    },
+  },
+});
+editor.setName(myName);
 account.onChange(async (did) => {
   share.can = false;
   if (did) {
@@ -970,7 +1058,7 @@ function touchCairn(e) {
 const flock = buildFlock(scene, document.getElementById("whos"));
 const who = new Map(); // did -> { did, handle, intent }
 let intentsAt = -Infinity, hearing = null, fetchingIntents = false;
-const share = { on: (() => { try { return localStorage.getItem("dream.share") !== "off"; } catch { return true; } })(), can: false, last: null, lastKind: "", lastKey: "", lastAt: -Infinity, writing: false, say: null, act: null, force: false, carried: false };
+const share = { on: (() => { try { return localStorage.getItem("dream.share") !== "off"; } catch { return true; } })(), can: false, last: null, lastKind: "", lastKey: "", lastLook: "", lastAt: -Infinity, writing: false, say: null, act: null, force: false, carried: false };
 function setWho() {
   flock.set([...who.values()].map((w) => ({ ...w, bot: isBot(w.did) })));
   maker.setCount(everywhere.length, who.size);
@@ -1097,7 +1185,7 @@ function placeMyBubble() {
 /** What I'm doing now, as an intent: a ride, a trip, steering, or resting. */
 function myIntent() {
   const p = state.pos, ll = world.frame.toLatLon(p.x, p.z), nowS = realNow();
-  const base = { p: { lat: ll.lat, lon: ll.lon, alt: p.y }, creature: { seed, stats }, say: fresh(share.say, nowS) ? share.say : null, act: fresh(share.act, nowS) ? share.act : null };
+  const base = { p: { lat: ll.lat, lon: ll.lon, alt: p.y }, creature: myCreature(), say: fresh(share.say, nowS) ? share.say : null, act: fresh(share.act, nowS) ? share.act : null };
   if (state.ride) {
     const r = state.ride, rl = rideLatLon(r);
     return { ...base, p: { lat: rl.lat, lon: rl.lon, alt: p.y }, kind: "ride", key: `ride:${r.line.i}:${r.dir}`, ride: { line: r.line.i, t: r.t, dir: r.dir } };
@@ -1114,9 +1202,10 @@ function shareTick() {
   if (!share.on || !share.can || !world || rebuilding || share.writing || people.viewer !== account.did || document.hidden) return;
   const nowS = realNow(), want = myIntent(), since = nowS - share.lastAt;
   const ll = want.p, drift = share.last ? driftOf(share.last, nowS, ll.lat, ll.lon) : Infinity;
-  const changed = want.key !== share.lastKey;
+  const changed = want.key !== share.lastKey, look = lookKey();
+  const restyled = look !== share.lastLook && nowS - lookAt > 3 && since > 3; // a new look, once you've stopped fiddling
   const moment = !!(want.say || want.act), clearMoment = share.carried && !moment; // words leave your record once they've been heard
-  if (!(share.force || clearMoment || (changed && since > 1.5) || (drift > 60 && since > 6) || since > HEARTBEAT_S)) return;
+  if (!(share.force || clearMoment || restyled || (changed && since > 1.5) || (drift > 60 && since > 6) || since > HEARTBEAT_S)) return;
   const record = makeIntent({ ...want, now: new Date(nowS * 1000) });
   share.force = false;
   share.carried = moment;
@@ -1124,6 +1213,7 @@ function shareTick() {
   account.putIntent(record).then(() => {
     share.last = parseIntent(record, nowS);
     share.lastKey = want.key;
+    share.lastLook = look;
     share.lastAt = nowS;
   }).catch((e) => {
     console.warn("intent:", e.message);
@@ -1133,7 +1223,7 @@ function shareTick() {
 }
 async function stopSharing() {
   if (!share.last && share.lastAt === -Infinity) return;
-  share.last = null; share.lastKey = ""; share.lastAt = -Infinity;
+  share.last = null; share.lastKey = ""; share.lastLook = ""; share.lastAt = -Infinity;
   await account.clearIntent();
 }
 
@@ -1341,7 +1431,7 @@ function worldView(dt, t) {
   let goal = null;
   if (state.target) { const g = state.target.pts[state.target.pts.length - 1], q = world.frame.toLocal(g.lat, g.lon); goal = new THREE.Vector3(q.x, state.target.ground, q.z); }
   // Zoomed all the way in, you look through its eyes, and it fades so you can see past it.
-  const eyes = THREE.MathUtils.smoothstep(34 - zoom, 0, 17);
+  const eyes = editing ? 0 : THREE.MathUtils.smoothstep(34 - zoom, 0, 17); // in the editor you look at it, not through it
   fadeCreature(1 - 0.85 * eyes);
   const eye = eyeLocal.clone().multiplyScalar(graph.scale).applyAxisAngle(UP_AXIS, state.heading);
   director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: graph.scale, eyes, eye });
@@ -1368,7 +1458,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, triangles: creature.triangles, editor: () => editor, editing: () => editing, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

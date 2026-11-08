@@ -23,6 +23,12 @@ export function hashString(s) {
   return h >>> 0;
 }
 
+/**
+ * mulberry32(seed) after n calls: its state only ever steps by 0x6d2b79f5, so a
+ * stream can start part-way along without replaying it.
+ */
+export const mulberry32At = (seed, n) => mulberry32((seed + Math.imul(n, 0x6d2b79f5)) >>> 0);
+
 export const pick = (rand, arr) => arr[Math.floor(rand() * arr.length)];
 export const range = (rand, lo, hi) => lo + rand() * (hi - lo);
 export const int = (rand, lo, hi) => Math.floor(range(rand, lo, hi + 1));

@@ -10,13 +10,15 @@ import { whereAt, fresh } from "./intents.js";
 import { highwayAltitude } from "./ride.js";
 
 const MAX = 24, LABEL_M = 600, WORLD_M = 16000;
+// A creature is rebuilt when any of this changes (genes come parsed, in a fixed key order).
+const keyOf = (c) => `${c.seed}:${Object.values(c.stats).join(",")}:${JSON.stringify(c.genes ?? null)}`;
 
 export function buildFlock(scene, labelsEl) {
   const live = new Map(); // did -> { who, body, graph, key, pos, heading, label, seen }
   const tmp = new THREE.Vector3();
 
   function make(who) {
-    const graph = generateCreature(who.intent.creature.seed);
+    const graph = generateCreature(who.intent.creature.seed, who.intent.creature.genes);
     const body = buildCreature(graph, who.intent.creature.stats);
     scene.add(body.group);
     const label = document.createElement("div");
@@ -25,7 +27,7 @@ export function buildFlock(scene, labelsEl) {
     bubble.className = "bubble";
     bubble.hidden = true;
     labelsEl.append(label, bubble);
-    return { who, graph, body, key: `${who.intent.creature.seed}:${Object.values(who.intent.creature.stats).join(",")}`, pos: null, heading: 0, label, bubble, hopAt: -10 };
+    return { who, graph, body, key: keyOf(who.intent.creature), pos: null, heading: 0, label, bubble, hopAt: -10 };
   }
   function drop(did) {
     const e = live.get(did);
@@ -44,9 +46,10 @@ export function buildFlock(scene, labelsEl) {
       for (const who of list.slice(0, MAX)) {
         keep.add(who.did);
         let e = live.get(who.did);
-        const key = `${who.intent.creature.seed}:${Object.values(who.intent.creature.stats).join(",")}`;
-        if (e && e.key !== key) { drop(who.did); e = null; }
-        if (!e) { e = make(who); live.set(who.did, e); }
+        const key = keyOf(who.intent.creature);
+        let was = null;
+        if (e && e.key !== key) { was = e.pos; drop(who.did); e = null; } // a new look: rebuilt where it stood
+        if (!e) { e = make(who); e.pos = was; live.set(who.did, e); }
         e.who = who;
         const tag = document.createElement("span");
         tag.className = "bot";

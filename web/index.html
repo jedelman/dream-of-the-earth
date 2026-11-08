@@ -20,7 +20,12 @@
   #log .line.old { opacity: 0; }
   #log .artifact { color: #ffe3a3; }
   #log .tree { color: #b6f59a; } #log .creature { color: #ffb8de; } #log .highway { color: var(--gold); } #log .sky { color: #c9b6ff; }
-  #places { position: fixed; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); max-width: 46vw; font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); border-radius: 0; padding: 3px 4px; }
+  /* Top right: one stack (landmarks, your creature, Bluesky, cairns, say), and the sheet dropping from under it */
+  #corner { position: fixed; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); bottom: max(8px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; z-index: 5; }
+  #corner > * { pointer-events: auto; flex: none; }
+  #corner > [hidden] { display: none; }
+  #corner > .sheet { flex: 0 1 auto; }
+  #places { max-width: 46vw; font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); border-radius: 0; padding: 3px 4px; }
   /* The interact prompt, bottom right (above ▲▼ on a phone, where a thumb is): a dark band, gold hairlines, a key in a ring */
   #act { position: fixed; right: max(6px, env(safe-area-inset-right)); bottom: max(32px, calc(env(safe-area-inset-bottom) + 24px)); display: flex; align-items: center; gap: 8px; padding: 6px 26px 6px 22px; border: 0; color: var(--ink); font: 12px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .04em; text-shadow: 1px 1px 0 #000; white-space: nowrap; background: linear-gradient(90deg, transparent, rgba(8, 5, 18, .78) 20%, rgba(8, 5, 18, .78) 80%, transparent); opacity: 0; pointer-events: none; transition: opacity .16s ease-out; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
   #act.on { opacity: 1; pointer-events: auto; }
@@ -31,10 +36,11 @@
   @keyframes press { from { background: var(--gold); color: #120a20; transform: scale(.8); } }
   @media (pointer: coarse) { #act { bottom: max(160px, calc(env(safe-area-inset-bottom) + 152px)); padding: 12px 34px 12px 28px; font-size: 13px; } #act .key { width: 24px; height: 24px; font-size: 14px; } }
   @media (prefers-reduced-motion: reduce) { #act { transition: none; } #act.hit .key { animation: none; } }
-  /* Bluesky: the button under LANDMARKS, and its sheet, dropping from it (the middle stays clear for the cairn you're choosing) */
-  #me { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 30px); font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); padding: 4px 8px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  /* The buttons in the stack; sheets drop from under them (the middle stays clear for the cairn you're choosing) */
+  #me, #mine { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); padding: 4px 8px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
   #me.on { color: var(--gold); }
-  #cairns { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 58px); font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #ffe3a3; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
+  #mine { color: #ffb8de; border-color: rgba(255, 184, 222, .75); }
+  #cairns { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #ffe3a3; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
   .sheet ul.cairns { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   .sheet ul.cairns li { display: grid; grid-template-columns: 14px 1fr auto; grid-template-areas: "sw who go" "sw where go" "sw what go"; column-gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid rgba(255, 211, 77, .18); }
   .sheet ul.cairns .swatch { grid-area: sw; width: 10px; height: 10px; align-self: start; margin-top: 4px; }
@@ -45,14 +51,14 @@
   #whos .who .bot { margin-left: 5px; padding: 0 3px; font-size: 9px; color: #120a20; background: #9ef0ff; vertical-align: 1px; }
   .bubble { position: fixed; left: 0; top: 0; max-width: 220px; padding: 4px 8px; font: 11px/1.35 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; color: #fff7e0; background: rgba(14, 8, 30, .88); border: 1px solid rgba(255, 211, 77, .7); white-space: normal; overflow-wrap: anywhere; pointer-events: none; will-change: transform; z-index: 2; }
   .bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; margin-left: -5px; border: 5px solid transparent; border-bottom: 0; border-top-color: rgba(255, 211, 77, .7); }
-  #saybtn { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 86px); font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #fff7e0; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
+  #saybtn { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #fff7e0; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
   #sayform { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(64px, calc(env(safe-area-inset-bottom) + 56px)); width: min(calc(100vw - 20px), 420px); display: flex; gap: 6px; z-index: 6; }
   #sayform[hidden] { display: none; }
   #sayform input { flex: 1; font: 13px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; color: #fff7e0; background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); padding: 8px 10px; }
   #sayform button { font: 12px ui-monospace, monospace; color: #120a20; background: var(--gold); border: 0; padding: 0 14px; }
   #log .say { color: #fff7e0; }
   #whos .who { position: fixed; left: 0; top: 0; font: 10px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; color: #c9f6ff; text-shadow: 1px 1px 0 #000, -1px 0 0 #000; pointer-events: none; white-space: nowrap; will-change: transform; }
-  .sheet { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 116px); max-height: calc(100vh - 140px); overflow-y: auto; width: min(calc(100vw - 20px), 380px); box-sizing: border-box; padding: 14px 16px 12px; color: var(--ink); background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 10px 30px rgba(0, 0, 0, .45); font: 12px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; z-index: 5; }
+  .sheet { position: relative; min-height: 0; overflow-y: auto; width: min(calc(100vw - 20px), 380px); box-sizing: border-box; margin-top: 2px; padding: 14px 16px 12px; color: var(--ink); background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 10px 30px rgba(0, 0, 0, .45); font: 12px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; z-index: 5; }
   .sheet h2 { margin: 0 0 8px; font-size: 13px; color: var(--gold); letter-spacing: .05em; font-weight: normal; }
   .sheet p { margin: 6px 0; } .sheet .small { opacity: .72; font-size: 11px; } .sheet .msg { color: #ffb0b0; min-height: 0; } .sheet .msg:empty { display: none; }
   .sheet .quote { color: #ffe3a3; }
@@ -66,7 +72,24 @@
   .sheet label { display: block; position: relative; } .sheet .count { position: absolute; right: 6px; bottom: 4px; font-size: 10px; opacity: .6; }
   .sheet input[type=range] { flex: 1; min-width: 120px; accent-color: var(--gold); }
   .sheet .swatch { width: 18px; height: 18px; border: 1px solid rgba(255, 255, 255, .5); display: inline-block; }
-  .sheet input:focus-visible, .sheet textarea:focus-visible, .sheet button:focus-visible, #me:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .sheet.creature { background: rgba(14, 8, 30, .97); }
+  .sheet.creature .traits { display: grid; grid-template-columns: 62px 1fr auto; gap: 4px 8px; align-items: center; margin: 8px 0 6px; }
+  .sheet.creature .trait { display: contents; }
+  .sheet.creature .k { color: #ffb8de; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+  .sheet.creature .n { display: flex; align-items: center; gap: 6px; min-height: 32px; }
+  .sheet.creature .n .v { min-width: 58px; text-align: center; }
+  .sheet.creature .trait.sub input { grid-column: 2 / 4; }
+  .sheet.creature .swatch { width: 14px; height: 14px; margin-right: 4px; vertical-align: -2px; }
+  .sheet.creature button.step, .sheet.creature button.reroll { min-height: 30px; min-width: 32px; padding: 2px 8px; }
+  .sheet.creature button.reroll { font-size: 15px; }
+  .sheet.creature .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 10px; border-top: 1px solid rgba(255, 211, 77, .18); padding-top: 10px; }
+  .sheet.creature .stat { display: flex; align-items: center; gap: 6px; }
+  .sheet.creature .stat .k { min-width: 40px; color: var(--gold); }
+  .sheet.creature .stat .bar { letter-spacing: -.05em; color: var(--gold); }
+  .sheet.creature .left { margin-top: 6px; }
+  /* A phone: the editor along the bottom, so the creature shows above it */
+  @media (max-width: 640px) { .sheet.creature { position: fixed; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; max-height: 50vh; } }
+  .sheet input:focus-visible, .sheet textarea:focus-visible, .sheet button:focus-visible, #me:focus-visible, #mine:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   @media (hover: hover) and (pointer: fine) { .btn { display: none; } }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
@@ -74,16 +97,19 @@
 <body>
 <canvas id="view" aria-label="Dream of the Earth: a low-poly view of a real place on Earth, with your creature"></canvas>
 <div id="hud" aria-live="off"></div>
+<div id="corner">
 <select id="places" aria-label="Go to a landmark"><option value="" selected disabled>LANDMARKS ▾</option></select>
+<button id="mine" aria-haspopup="dialog" aria-expanded="false" aria-label="Your creature">YOUR CREATURE ▾</button>
 <button id="me" aria-haspopup="dialog" aria-expanded="false">BLUESKY ▾</button>
 <button id="cairns" aria-haspopup="dialog" aria-expanded="false" hidden>CAIRNS ▾</button>
 <button id="saybtn" hidden aria-label="Say something to mutuals nearby">SAY</button>
 <div id="sheet" class="sheet" role="dialog" aria-label="Bluesky" hidden></div>
+</div>
 <div id="status" role="status" hidden></div>
 <div id="log" aria-live="polite"></div>
 <div id="whos" aria-hidden="true"><div id="mybubble" class="bubble" hidden></div></div>
 <form id="sayform" hidden autocomplete="off"><input id="saytext" maxlength="80" placeholder="Say something to mutuals nearby" aria-label="Say something" enterkeyhint="send"><button type="submit">Say</button></form>
-<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ENTER: SAY · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
+<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ENTER: SAY · YOUR CREATURE'S NAME ▾: CHANGE IT · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
 <button id="act" aria-hidden="true"><span class="key" aria-hidden="true">E</span><span class="what"></span></button>
 <button class="btn" id="up" aria-label="Up">▲</button>
 <button class="btn" id="down" aria-label="Down">▼</button>

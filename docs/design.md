@@ -312,6 +312,37 @@ interactions as well (mostly just speech bubbles) and then work on avatar custom
 however slowly a headless browser renders them; one screenshot per step, then ffmpeg, gives a smooth video. Playwright's
 fake clock deadlocks its screenshots, so this lives in the game. First used for the reply to Jason's "Buckle up" thread.
 
+## Your creature, customized (built 11-08)
+Jason: "Let's flesh out player interactions as well (mostly just speech bubbles) and then work on avatar
+customization." The design's editor verbs were randomize, mutate, edit; all three are in.
+- **A creature is a seed plus optional genes.** With no genes it's exactly what its seed always made: Nyo (seed 7)
+  is still Nyo, checked against a snapshot of 45 creatures taken before the change (`test/fixtures`).
+- **Each trait grows from its own stretch of the seed's stream.** The generator records where each trait's random
+  numbers began; with genes, an untouched trait starts its own stream there (`mulberry32At`), so changing one trait
+  doesn't reshuffle the others. A re-rolled trait gets a stream of its own. A new body keeps the same wings and legs,
+  moved to fit it; a new palette keeps every shape; one more eye leaves the others where they were.
+- **Genes:** `roll` (a re-roll seed for each of colours, body, heads, eyes, wings, legs, tail, spikes), `count`
+  (heads 0–3, eyes 0–9, wing and leg pairs 0–4, tail 0–4, spikes 0–10), `hue` (turns the palette round the wheel)
+  and `size` (80–160 %). Integers only, a few dozen bytes. The 256-triangle cap still holds: past it, parts aren't
+  built. `parseGenes` drops anything out of range, so a bad gene from another player costs only that gene.
+- **The editor** opens from your creature's name (top right). Each row re-rolls a trait or steps a count; sliders
+  turn the colours and set the size; the four stats spend the 12-point budget. Mutate re-rolls two traits (and now
+  and then the colours); "A whole new creature" is a new seed, so a new name. Undo, and Start over (the seed as it
+  came). Every change shows at once, with a puff of the creature's colours and a squeak in its new voice.
+- **The camera turns to face it:** a portrait shot, three-quarters front, swinging gently. It stands where the fewest
+  trees are in the way (a rainforest had parked it behind a kapok trunk). The creature sits left of the sheet on a
+  wide screen, above it on a phone (the sheet runs along the bottom there). Nothing else asks for you while editing:
+  no glints, no prompt.
+- **Your creature is yours:** kept on the device (`dream.creature`). The first creature you meet is kept. A `?seed`
+  in the URL shows that creature instead, with your changes if it's the one you keep; after an edit the URL follows.
+  Your own creature lands somewhere new each visit (a seed in the URL still sets the spawn, so links reproduce).
+- **Mutuals see it:** genes ride in the intent (`creature.genes`), so a mutual's phone grows the same creature. A new
+  look waits until you've stopped changing things for 3 seconds before it's written, so a burst of re-rolls is one
+  write.
+- **Not yet:** voices (Operator Field patches), part-by-part editing beyond counts, a creature that follows you
+  between devices (that would mean one more record in your repo, Jason's call), and the plain-shape option for
+  non-mutuals' creatures (only mutuals are shown, so it isn't needed yet).
+
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
   each with scale, rotation, colour and a palette cycle. Any number of heads, wings, legs, eyes or tails. The
@@ -799,7 +830,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
    - **Later:** CHELSA for continuous temperature and precipitation, SoilGrids, canopy height; braided
      interchange rings where networks cross; inland water (rivers and lakes are drawn as land today, sand
      where under 12 m).
-3. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.
+3. **Avatars:** the editor (randomize, mutate, edit) and stats are in (11-08, "Your creature, customized"); Operator Field voices next.
 
 **Multiplayer:**
 4. **iroh in the browser, tested first:** relay-only datagrams and gossip between two tabs. If they work, the
