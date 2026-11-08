@@ -440,6 +440,30 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
        cloud layer and darken by what's there (up to 42%).
      - **The cloud base follows the ground:** 1.5 km above the smoothed terrain around you (it was 1.5 km above
        sea level, which left the 2.4 km Ethiopian plateau permanently inside the clouds).
+   - **Orographic weather (11-08, Jason: "for the weather model we should incorporate orographic effect if we
+     don't already"; we didn't):**
+     - **The land in the shader:** each world hands the sky a 128² texture of the terrain ±240 km around it
+       (two bytes a texel: height and a ~15 km blur of it, in 30 m steps; `makeOrography` in weather.js).
+     - **Along the prevailing wind** (the same bands as before: trades blow west, westerlies east), each cloud
+       sample compares the broad land here with the land 12, 40, 70 and 100 km upwind:
+       - **windward lift** (rising into the wind over 12 km, or the broad slope over 40 km unless it's going
+         downhill right here) adds cover, up to +0.5, and on big slopes rain;
+       - **lee descent** clears (down to 15% of the cover);
+       - **a barrier upwind** (the highest land 12-100 km upwind standing 0.6-2 km above here) leaves a rain
+         shadow far downwind: cover down to 40%, no storms.
+     - **The cloud base rides the broad land** (1.5 km above the 15 km blur), so peaks poke up into their own
+       cap clouds; this replaces the camera-local base from earlier the same day.
+     - **The same in JS** (`weatherAt(lat, lon, unix, broad)`), tested on a synthetic ridge: the west face is
+       cloudier and rainier under the westerlies, the east face in the trades, the lee clears, and the shadow
+       reaches ~55 km downwind.
+     - **Seen on real terrain:** Patagonia, cumulus banked against the Andes from the Chilean side, clear over
+       Bariloche; the Sierra Nevada, a cloud band on the western slopes with the Owens Valley clear; Hawaii's
+       Big Island, cumulus on the windward east under the trades, Kona clear.
+     - **Also:** clouds now march 90 km past where a ray enters them (was 45), with steps growing faster, so
+       a mountain's cloud wall shows from across a valley; looking down from above the clouds the steps are
+       even. Clouds melt into the haze a little later than before.
+     - **Not modelled:** winds other than the zonal bands (so no monsoons, sea breezes or valley winds);
+       lenticular clouds in the lee waves.
    - **Landmarks menu (11-08, Jason: "drop down menu in HUD with the landmarks you gave me for the biome
      check"):** a select at the top right lists the biome check places plus a few sky views
      (`web/js/landmarks.js`). Choosing one regrows the world there, at that landmark's altitude, heading,

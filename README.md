@@ -22,7 +22,8 @@ ranges, coastlines, then a low-poly globe wrapped in the golden ley grid, with y
 **Sky and sea:** shader waves with foam and a sparkling sun glint. The sky is one shader: volumetric cumulus that
 tower into storms with rain shafts beneath them, cirrus streaks, a banded sun and stars, ray-marched over the
 curved Earth, with sólstafir (shafts of sunlight through the gaps) and cloud shadows on the land. The weather
-rides real-ish prevailing winds on the real clock, so everyone shares the same sky.
+rides real-ish prevailing winds on the real clock and feels the land: clouds bank up on windward slopes and
+rain shadows stretch downwind of mountains. Everyone shares the same sky.
 
 **Landmarks:** the menu at the top right carries you to a place in every biome (and a few sky views), at a
 moment with good light.

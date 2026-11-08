@@ -13,7 +13,7 @@
 // not adapted from any one shader.
 import * as THREE from "three";
 import { makeNoise3 } from "./skynoise.js";
-import { weatherField, windKm, WEATHER_SIZE, WEATHER_KM, CLOUD_BASE, KM_PER_DEG } from "./weather.js";
+import { weatherField, windKm, makeOrography, WEATHER_SIZE, WEATHER_KM, CLOUD_BASE, KM_PER_DEG, UPWIND_M, OROGRAPHY_M } from "./weather.js";
 import { R_EARTH } from "./geo.js";
 
 export const TRANSPARENT_LAYER = 1;
@@ -55,9 +55,10 @@ const fragmentShader = /* glsl */ `
   varying vec2 vUv;
 
   #define TWO_R ${(2 * R_EARTH).toFixed(1)}
-  uniform float uBase; // the cloud base: 1.5 km above the smoothed ground around you
-  #define BASE uBase
-  #define TOP_MAX (uBase + 8500.0)
+  uniform sampler2D tOro; // the land around: height and broad height
+  uniform vec4 uOro;       // its west and north edges (frame x, z), its width (m), whether it's loaded
+  uniform vec2 uSlab;      // the lowest cloud base and highest top anywhere in it
+  #define BASE0 ${CLOUD_BASE.toFixed(1)}
   #define SIGMA 0.03
   #define SIGMA_RAIN 0.0004
   #define PI 3.14159265
@@ -76,19 +77,40 @@ const fragmentShader = /* glsl */ `
     return vec2(lon * ${KM_PER_DEG} * cos(radians(lat)) - windSign(lat) * uWindKm, lat * ${KM_PER_DEG});
   }
   // The same weather as weather.js.
-  void weather(vec2 q, float lat, out float cover, out float storm) {
+  // The land at a frame point: (height, broad height) in metres; sea level outside the texture.
+  vec2 land(vec2 xz) {
+    if (uOro.w < 0.5) return vec2(0.0);
+    vec2 uv = (xz - uOro.xy) / uOro.z;
+    if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return vec2(0.0);
+    return texture(tOro, uv).rg * ${OROGRAPHY_M.toFixed(1)};
+  }
+  void weather(vec2 q, float lat, vec2 xz, out float cover, out float storm, out float base) {
     float n = 0.65 * texture(tWeather, q / ${WEATHER_KM[0].toFixed(1)}).r + 0.35 * texture(tWeather, q / ${WEATHER_KM[1].toFixed(1)} + 0.37).r;
     float c = cloudiness(lat);
     cover = smoothstep(1.0 - c - 0.1, 1.0 - c + 0.3, n);
     float tropic = 1.0 - smoothstep(12.0, 25.0, abs(lat));
     storm = smoothstep(0.7, 0.88, n) * tropic * 0.9 + smoothstep(0.8, 0.95, n) * (1.0 - tropic) * 0.5;
     if (storm > 0.0) storm *= smoothstep(0.45, 0.75, texture(tWeather, q / 37.0 + 0.71).r); // storms come in cells ~10 km across
+    // Orography (as weather.js): windward slopes cloud up and rain, lee sides dry out.
+    float here = land(xz).g, w = windSign(lat);
+    float up12 = land(xz - vec2(w * ${UPWIND_M[0].toFixed(1)}, 0.0)).g;
+    float up40 = land(xz - vec2(w * ${UPWIND_M[1].toFixed(1)}, 0.0)).g;
+    float up70 = land(xz - vec2(w * ${UPWIND_M[2].toFixed(1)}, 0.0)).g;
+    float up100 = land(xz - vec2(w * ${UPWIND_M[3].toFixed(1)}, 0.0)).g;
+    float local = here - up12;
+    float lift = local < 0.0 ? local : max(local, 0.6 * (here - up40));
+    float barrier = max(max(up12, up40), max(up70, up100)) - here;
+    cover = min(1.0, cover + 0.5 * smoothstep(100.0, 1200.0, lift));
+    cover *= 1.0 - 0.85 * smoothstep(100.0, 1200.0, -lift);
+    cover *= 1.0 - 0.6 * smoothstep(600.0, 2000.0, barrier);
+    storm = min(1.0, storm + 0.7 * smoothstep(500.0, 1800.0, lift) * cover) * (1.0 - smoothstep(600.0, 2000.0, barrier));
+    base = BASE0 + here; // the base rides the broad land; peaks poke up into it
   }
   // Cloud density, 0..1: billows eroded by the coverage, rounded at the top, towering in storms.
-  float cloud(vec2 q, float alt, float cover, float storm, float far) {
-    float top = BASE + 1200.0 + 2800.0 * cover + 6000.0 * storm;
-    if (alt < BASE || alt > top || cover < 0.01) return 0.0;
-    float hf = (alt - BASE) / (top - BASE);
+  float cloud(vec2 q, float alt, float cover, float storm, float far, float base) {
+    float top = base + 1200.0 + 2800.0 * cover + 6000.0 * storm;
+    if (alt < base || alt > top || cover < 0.01) return 0.0;
+    float hf = (alt - base) / (top - base);
     float prof = smoothstep(0.0, 0.06, hf) * (1.0 - smoothstep(0.4, 1.0, hf));
     vec3 p = vec3(q.x, alt * 0.001, q.y) / 12.0; // the detail repeats every 12 km: cumulus ~3 km across
     // Far away the fine octave would only alias: let it fade to its mean.
@@ -97,8 +119,8 @@ const fragmentShader = /* glsl */ `
     return clamp((b * prof - (1.0 - cover)) / max(cover, 0.05) * 1.6, 0.0, 1.0);
   }
   // Rain beneath a storm: streaks, falling.
-  float rain(vec2 q, float alt, float storm) {
-    if (storm < 0.25 || alt < 0.0 || alt > BASE) return 0.0;
+  float rain(vec2 q, float alt, float storm, float base) {
+    if (storm < 0.25 || alt < 0.0 || alt > base) return 0.0;
     float s = texture(tNoise, vec3(q.x * 2.0, alt * 0.0001 + uTime * 0.04, q.y * 2.0)).r;
     return smoothstep(0.25, 0.6, storm) * smoothstep(0.3, 0.75, s);
   }
@@ -130,12 +152,13 @@ const fragmentShader = /* glsl */ `
     return (m[i.x + i.y * 4] + 0.5) / 16.0;
   }
   // Clouds melt into the haze a little sooner than the ground does.
-  float fogAt(float t) { return smoothstep(uFogNear * 0.6, uFogFar * 0.8, t * cosF); }
+  float fogAt(float t) { return smoothstep(uFogNear * 0.7, uFogFar * 0.95, t * cosF); }
 
   // March [t0, t1] front to back, adding light into C and using up transmittance T.
   void march(float t0, float t1, int n, bool isRain, inout vec3 C, inout float T, inout float tHalf) {
-    // Steps grow geometrically: fine where the ray enters, coarse in the distance.
-    const float K = 4.0;
+    // Steps grow geometrically: fine where the ray enters, coarse in the distance. Looking down
+    // on the clouds from above, they sit at the far end of the stretch, so step evenly instead.
+    float K = uCam.y > uSlab.y ? 1.0 : 5.0;
     float L = t1 - t0, j = bayer4(gl_FragCoord.xy), norm = L / (exp2(K) - 1.0);
     float cosT = dot(rd, uSunDir);
     float phase = mix(hg(cosT, -0.25), hg(cosT, 0.6), 0.6);
@@ -149,10 +172,10 @@ const fragmentShader = /* glsl */ `
       vec2 dxz = pos.xz - uCam.xz;
       float alt = pos.y + dot(dxz, dxz) / TWO_R;
       float lat; vec2 q = airKm(pos, lat);
-      float cover, storm; weather(q, lat, cover, storm);
+      float cover, storm, base; weather(q, lat, pos.xz, cover, storm, base);
       float fog = fogAt(t);
       if (isRain) {
-        float r = rain(q, alt, storm);
+        float r = rain(q, alt, storm, base);
         if (r <= 0.0) continue;
         float a = 1.0 - exp(-SIGMA_RAIN * r * dt);
         vec3 col = mix(uAmbBot, uAmbTop, 0.35) * 0.8;
@@ -160,7 +183,7 @@ const fragmentShader = /* glsl */ `
         T *= 1.0 - a;
       } else {
         float far = smoothstep(6000.0, 25000.0, t);
-        float d = cloud(q, alt, cover, storm, far);
+        float d = cloud(q, alt, cover, storm, far, base);
         if (d <= 0.0) continue;
         // Light: a short march toward the sun through the same cloud (skipped far away).
         float lit = 0.6;
@@ -168,12 +191,12 @@ const fragmentShader = /* glsl */ `
           float od = 0.0;
           for (int k = 0; k < 2; k++) {
             float s = 150.0 * pow(3.5, float(k));
-            od += cloud(q + sunQ * s, alt + uSunDir.y * s, cover, storm, 1.0) * s * 0.6;
+            od += cloud(q + sunQ * s, alt + uSunDir.y * s, cover, storm, 1.0, base) * s * 0.6;
           }
           lit = mix(exp(-SIGMA * 0.25 * od), 0.6, far);
         }
         float powder = 1.0 - exp(-d * 6.0);
-        float top = (alt - BASE) / (BASE + 1200.0 + 2800.0 * cover + 6000.0 * storm - BASE);
+        float top = (alt - base) / (1200.0 + 2800.0 * cover + 6000.0 * storm);
         vec3 col = uSunCol * lit * min(phase, 2.5) * mix(0.7, 1.5, powder) + mix(uAmbBot, uAmbTop, clamp(top, 0.0, 1.0)) * (0.8 - 0.3 * storm);
         col = 1.0 - exp(-1.6 * col); // soft shoulder: sunlit tops stay white without clipping flat
         float a = 1.0 - exp(-SIGMA * d * dt);
@@ -187,12 +210,12 @@ const fragmentShader = /* glsl */ `
   // How much cloud stands between a point and the sun, 0 (clear) to 1: where the sun's ray
   // crosses the middle of the cloud layer. Cheap, so the ground and the air can both ask.
   float cloudShadow(vec3 pos, float alt) {
-    float h = BASE + 900.0;
+    float h = BASE0 + land(pos.xz).g + 900.0;
     if (uSunDir.y < 0.02 || alt > h) return 0.0;
     vec3 p = pos + uSunDir * ((h - alt) / uSunDir.y);
     float lat; vec2 q = airKm(p, lat);
-    float cover, storm; weather(q, lat, cover, storm);
-    return smoothstep(0.0, 0.3, cloud(q, h, cover, storm, 1.0));
+    float cover, storm, base; weather(q, lat, p.xz, cover, storm, base);
+    return smoothstep(0.0, 0.3, cloud(q, max(h, base + 600.0), cover, storm, 1.0, base));
   }
 
   vec3 skyColor(vec3 d) {
@@ -247,8 +270,8 @@ const fragmentShader = /* glsl */ `
       }
       vec3 C = vec3(0.0); float T = 1.0, tHalf = -1.0;
       float c0 = -1.0, c1 = -1.0, r0 = -1.0, r1 = -1.0;
-      bool hasC = slab(BASE, TOP_MAX, c0, c1), hasR = slab(0.0, BASE, r0, r1);
-      if (hasC) { c1 = min(min(c1, c0 + 45000.0), tScene); hasC = c1 > c0 && c0 * cosF < uFogFar; }
+      bool hasC = slab(uSlab.x, uSlab.y, c0, c1), hasR = slab(0.0, uSlab.x, r0, r1);
+      if (hasC) { c1 = min(min(c1, c0 + 90000.0), tScene); hasC = c1 > c0 && c0 * cosF < uFogFar; }
       if (hasR) { r1 = min(min(r1, r0 + 40000.0), tScene); hasR = r1 > r0 && r0 * cosF < uFogFar; }
       int steps = int(uSteps);
       // Nearest stretch first.
@@ -315,7 +338,8 @@ export function buildSkyShader() {
     uLat0: U(0), uLon0: U(0), uKx: U(1), uKz: U(1), uWindKm: U(0),
     uSunDir: U(new THREE.Vector3(0, 1, 0)), uSunCol: U(new THREE.Color()), uAmbTop: U(new THREE.Color()), uAmbBot: U(new THREE.Color()),
     uZenith: U(new THREE.Color()), uHorizon: U(new THREE.Color()), uHalo: U(new THREE.Color(1, 0.86, 0.62)), uSunDisc: U(new THREE.Color(1, 0.945, 0.659)), uFogCol: U(new THREE.Color()),
-    uFogNear: U(1), uFogFar: U(2), uStars: U(0), uSunUp: U(1), uClouds: U(1), uUnder: U(0), uSteps: U(48), uTime: U(0), uShadow: U(0), uBase: U(CLOUD_BASE),
+    uFogNear: U(1), uFogFar: U(2), uStars: U(0), uSunUp: U(1), uClouds: U(1), uUnder: U(0), uSteps: U(48), uTime: U(0), uShadow: U(0),
+    tOro: U(null), uOro: U(new THREE.Vector4(0, 0, 1, 0)), uSlab: U(new THREE.Vector2(CLOUD_BASE, CLOUD_BASE + 8500)),
   };
   const mat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
@@ -337,12 +361,9 @@ export function buildSkyShader() {
   return {
     /**
      * frame: the world frame; sun: { altitude, dir }; day 0..1; fog: { near, far, color (linear) };
-     * clouds: whether to draw them; steps: march steps (the detail governor's); ground: the smoothed
-     * terrain height around you (m), which lifts the cloud base.
+     * clouds: whether to draw them; steps: march steps (the detail governor's).
      */
-    update({ frame, camera, unix, sun, day, fog, clouds, underwater, steps, ground = 0 }) {
-      // Clouds form over the land, not at a fixed height: over a high plateau they float above it.
-      uniforms.uBase.value = CLOUD_BASE + Math.max(0, ground);
+    update({ frame, camera, unix, sun, day, fog, clouds, underwater, steps }) {
       const { zenith, horizon } = skyColors(sun.altitude);
       uniforms.uZenith.value.copy(zenith); // the dream's palette, shown as-is
       uniforms.uHorizon.value.copy(horizon);
@@ -384,6 +405,19 @@ export function buildSkyShader() {
       uniforms.uCam.value.copy(camera.position);
       uniforms.uLogFar.value = Math.log2(camera.far + 1);
       return horizon;
+    },
+    /** A new world: give the sky the land around it (±240 km), for orographic clouds and their bases. */
+    setWorld(terrain) {
+      const SPAN = 480000, SIZE = 128, x0 = -SPAN / 2, z0 = -SPAN / 2;
+      const o = makeOrography(terrain.heightAt, x0, z0, SPAN, SIZE);
+      const tex = new THREE.DataTexture(o.data, SIZE, SIZE, THREE.RGFormat, THREE.UnsignedByteType);
+      tex.minFilter = tex.magFilter = THREE.LinearFilter;
+      tex.unpackAlignment = 1;
+      tex.needsUpdate = true;
+      uniforms.tOro.value?.dispose();
+      uniforms.tOro.value = tex;
+      uniforms.uOro.value.set(x0, z0, SPAN, 1);
+      uniforms.uSlab.value.set(CLOUD_BASE + o.min, CLOUD_BASE + o.max + 8500);
     },
     /** Opaque world into the texture; sky and clouds to the screen; then the transparent things. */
     render(renderer, scene, camera) {
