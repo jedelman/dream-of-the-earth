@@ -64,7 +64,8 @@ export function groundColor(c, lat, lon, h, reliefM = 0, steep = false) {
   const biome = biomeFor(koppenAt(lat, lon), reliefM, lat, h);
   if (h < 12 && biome !== "ice") return c.setHex(SAND);
   if (steep && biome !== "ice") return c.setHex(ROCK);
-  return c.setHex(BIOMES[biome].color);
+  // Far off, the forest is the ground: the denser the trees, the darker the land.
+  return c.setHex(BIOMES[biome].color).multiplyScalar(1 - 0.22 * BIOMES[biome].density);
 }
 
 /** One ring: its height grid, its mesh (minus a hole for the ring inside it), and a heightAt. */

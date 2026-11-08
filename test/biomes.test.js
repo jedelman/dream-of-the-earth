@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { biomeFor, BIOMES, KOPPEN, RUNG_M, koppenCode } from "../web/js/biome.js";
-import { SPECIES, SPECIES_NAMES, VARIANTS, PLANT_TRIANGLES, plantForm, cellsAround, choosePlant, pickSpecies } from "../web/js/plantforms.js";
+import { SPECIES, SPECIES_NAMES, VARIANTS, PLANT_TRIANGLES, plantForm, cellsAround, choosePlant, pickSpecies, lodFor, midShape, NEAR_M, GROUND_COVER_M } from "../web/js/plantforms.js";
 import { butterflyHomes, fireflyHomes, BUTTERFLY_TRIANGLES } from "../web/js/insecthomes.js";
+import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "../web/js/detail.js";
 
 test("Köppen classes land in the biomes you'd expect", () => {
   assert.equal(biomeFor(1), "rainforest"); // Af, the Amazon
@@ -95,4 +96,43 @@ test("insects: butterflies by biome, fireflies only where they live", () => {
   assert.equal(fireflyHomes(-3.1, -60, land("taiga")).length, 0);
   assert.ok(fireflyHomes(-3.1, -60, land("rainforest")).length > 50);
   assert.equal(butterflyHomes(-3.1, -60, () => null).length, 0); // all sea
+});
+
+test("distance tiers: full shapes near the camera, spindles beyond, nothing past far", () => {
+  assert.equal(lodFor("broadleaf", 100, NEAR_M - 1), "near");
+  assert.equal(lodFor("broadleaf", 100, NEAR_M + 1), "mid");
+  assert.equal(lodFor("broadleaf", SPECIES.broadleaf.far + 1, 10), null);
+  assert.equal(lodFor("grass", 100, GROUND_COVER_M - 1), "near");
+  assert.equal(lodFor("grass", 100, GROUND_COVER_M + 1), null); // grass has no far shape
+  // Zoomed out, the camera is far from everything: no full shapes at all.
+  for (const sp of SPECIES_NAMES) assert.notEqual(lodFor(sp, 50, 5000), "near");
+});
+
+test("each far spindle sits where its full shape does", () => {
+  for (const sp of SPECIES_NAMES) {
+    const f = plantForm(sp, 0);
+    if (f.blades.length || !f.segments.length) continue; // grass and moss
+    const m = midShape(f);
+    assert.ok(m.top > 0.5 && m.top <= 1, `${sp} top ${m.top}`);
+    assert.ok(m.ringY > 0 && m.ringY < m.top, `${sp} ring ${m.ringY}`);
+    assert.ok(m.r > 0.05 && m.r < 1.5, `${sp} radius ${m.r}`);
+  }
+  assert.ok(midShape(plantForm("acacia", 0)).ringY > 0.7); // a flat crown up top
+  assert.ok(midShape(plantForm("conifer", 0)).ringY < 0.2); // skirts nearly to the ground
+});
+
+test("the detail governor: slow frames shorten the forests, headroom grows them back", () => {
+  assert.equal(governDetail(1, 16), 1); // 60 fps: already full
+  assert.ok(governDetail(1, 30) < 1 && governDetail(1, 30) > governDetail(1, 50)); // slower falls faster
+  assert.equal(governDetail(0.5, 20), 0.5); // between: hold
+  let s = 1;
+  for (let i = 0; i < 20; i++) s = governDetail(s, 200);
+  assert.equal(s, DETAIL_MIN); // never below the floor
+  for (let i = 0; i < 40; i++) s = governDetail(s, 10);
+  assert.equal(s, DETAIL_MAX);
+  assert.equal(median([16, 17, 300, 16, 18]), 17); // one hitch doesn't count
+  // A shorter reach drops far trees, never the ones near the camera.
+  assert.equal(lodFor("broadleaf", 2000, 2000, 0.5), null);
+  assert.equal(lodFor("broadleaf", 1000, 1000, 0.5), "mid");
+  assert.equal(lodFor("broadleaf", 200, 200, DETAIL_MIN), "near");
 });

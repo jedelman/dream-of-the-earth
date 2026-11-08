@@ -13,19 +13,19 @@ const COST = { prism: 6, bulb: 8, leaf: 2, cone: 10, blade: 2 }; // a blade has 
  * Species. L-system ones: a grammar and turtle opts, the branch depth from
  * which segments are leaves rather than wood (leafDepth), how bulbs are sized
  * and squashed, and whether segments are wood at all. Every species has a
- * height range in metres and a draw distance (reach).
+ * height range in metres and a draw distance from the creature (far).
  */
 export const SPECIES = {
-  broadleaf: { ls: { axiom: "FFA", rules: { A: [["F[+A][-A][&A]O", 3], ["F[/+A][\\-A]O", 2]] }, iterations: 2, opts: { angle: 42, lengthDecay: 0.8, radius: 0.17, radiusDecay: 0.7, jitter: 12 } }, bulb: 5, bulbY: 0.8, wood: true, height: [12, 24], reach: 900 },
-  emergent: { ls: { axiom: "FFFFFB", rules: { B: "[&&FO]////[&&FO]////[&&FO]O" }, iterations: 1, opts: { angle: 30, lengthDecay: 0.85, radius: 0.15, radiusDecay: 0.6, jitter: 8 } }, bulb: 6, bulbY: 0.5, wood: true, height: [35, 50], reach: 1000 },
-  palm: { ls: { axiom: "F^F^FC", rules: { C: "[&&&&F&F]///[&&&&F&F]///[&&&&F&F]///[&&&&F&F]///[&&&&F&F]///[&&&&F&F]///[&&&&F&F]O" }, iterations: 1, opts: { angle: 14, lengthDecay: 1.25, radius: 0.1, radiusDecay: 0.5, jitter: 6 } }, leafDepth: 1, leafWidth: 0.32, bulb: 1.2, bulbY: 1, wood: true, height: [12, 20], reach: 800 },
-  acacia: { ls: { axiom: "FF[&FF^O]///[&FF^O]///[&FF^O]///[&FF^O]", rules: {}, iterations: 0, opts: { angle: 30, lengthDecay: 0.85, radius: 0.13, radiusDecay: 0.7, jitter: 12 } }, bulb: 4.2, bulbY: 0.32, wood: true, height: [7, 11], reach: 900 },
-  shrub: { ls: { axiom: "[&FO]////[&FO]////[&FO]O", rules: {}, iterations: 0, opts: { angle: 35, lengthDecay: 0.9, radius: 0.08, radiusDecay: 0.8, jitter: 15 } }, bulb: 2.6, bulbY: 0.8, wood: true, height: [1.5, 3], reach: 450 },
-  cactus: { ls: { axiom: "FF[+F-FF]F[-F+FF]FO", rules: {}, iterations: 0, opts: { angle: 90, lengthDecay: 0.75, radius: 0.38, radiusDecay: 0.85, jitter: 6 } }, bulb: 0.9, bulbY: 0.6, wood: false, height: [5, 9], reach: 600 },
-  conifer: { cones: [5, 0.42], height: [14, 30], reach: 900 },
-  cypress: { cones: [2, 0.2], height: [10, 18], reach: 700 },
-  grass: { blades: 5, height: [1.4, 2.6], reach: 220 },
-  moss: { mounds: 3, height: [0.5, 0.9], reach: 220 },
+  broadleaf: { ls: { axiom: "FFA", rules: { A: [["F[+A][-A][&A]O", 3], ["F[/+A][\\-A]O", 2]] }, iterations: 2, opts: { angle: 42, lengthDecay: 0.8, radius: 0.17, radiusDecay: 0.7, jitter: 12 } }, bulb: 5, bulbY: 0.8, wood: true, height: [12, 24], far: 2500 },
+  emergent: { ls: { axiom: "FFFFFB", rules: { B: "[&&FO]////[&&FO]////[&&FO]O" }, iterations: 1, opts: { angle: 30, lengthDecay: 0.85, radius: 0.15, radiusDecay: 0.6, jitter: 8 } }, bulb: 6, bulbY: 0.5, wood: true, height: [35, 50], far: 3000 },
+  palm: { ls: { axiom: "F^F^FC", rules: { C: "[&&&&F&F]///[&&&&F&F]///[&&&&F&F]///[&&&&F&F]///[&&&&F&F]///[&&&&F&F]///[&&&&F&F]O" }, iterations: 1, opts: { angle: 14, lengthDecay: 1.25, radius: 0.1, radiusDecay: 0.5, jitter: 6 } }, leafDepth: 1, leafWidth: 0.32, bulb: 1.2, bulbY: 1, wood: true, height: [12, 20], far: 2000 },
+  acacia: { ls: { axiom: "FF[&FF^O]///[&FF^O]///[&FF^O]///[&FF^O]", rules: {}, iterations: 0, opts: { angle: 30, lengthDecay: 0.85, radius: 0.13, radiusDecay: 0.7, jitter: 12 } }, bulb: 4.2, bulbY: 0.32, wood: true, height: [7, 11], far: 2500 },
+  shrub: { ls: { axiom: "[&FO]////[&FO]////[&FO]O", rules: {}, iterations: 0, opts: { angle: 35, lengthDecay: 0.9, radius: 0.08, radiusDecay: 0.8, jitter: 15 } }, bulb: 2.6, bulbY: 0.8, wood: true, height: [1.5, 3], far: 700 },
+  cactus: { ls: { axiom: "FF[+F-FF]F[-F+FF]FO", rules: {}, iterations: 0, opts: { angle: 90, lengthDecay: 0.75, radius: 0.38, radiusDecay: 0.85, jitter: 6 } }, bulb: 0.9, bulbY: 0.6, wood: false, height: [5, 9], far: 1200 },
+  conifer: { cones: [5, 0.42], height: [14, 30], far: 2500 },
+  cypress: { cones: [2, 0.2], height: [10, 18], far: 1800 },
+  grass: { blades: 5, height: [1.4, 2.6], far: 220 },
+  moss: { mounds: 3, height: [0.5, 0.9], far: 220 },
 };
 export const SPECIES_NAMES = Object.keys(SPECIES);
 
@@ -98,6 +98,51 @@ export function plantForm(species, variant) {
     }
   }
   return out;
+}
+
+// Distance tiers. Within NEAR_M of the camera a plant is its full shape; beyond
+// it, trees and shrubs become one six-triangle spindle grown from the same
+// shape (crown above, tapering to the trunk's foot), out to their `far`.
+// Grass and moss have no far shape: they just stop.
+export const NEAR_M = 250;
+export const GROUND_COVER_M = 400; // grass and moss, from the camera
+export const MID_TRIANGLES = 6;
+
+/**
+ * Which tier a plant draws at: "near", "mid", or null (not at all). scale
+ * (0..1, from the detail governor) shortens how far trees and shrubs reach.
+ */
+export function lodFor(species, fromCreature, fromCamera, scale = 1) {
+  const sp = SPECIES[species];
+  if (sp.blades || sp.mounds) return fromCreature <= sp.far && fromCamera <= GROUND_COVER_M ? "near" : null;
+  if (fromCreature > Math.max(NEAR_M, sp.far * scale)) return null;
+  return fromCamera <= NEAR_M ? "near" : "mid";
+}
+
+/**
+ * The far shape of a plant form: a three-sided spindle, its widest ring at the
+ * crown's middle, its top at the crown's top, its foot on the ground. Returns
+ * { ringY, r, top, cx, cz }.
+ */
+export function midShape(form) {
+  const pts = []; // [x, y, z, horizontal radius]
+  for (const b of form.bulbs) pts.push([b.p[0], b.p[1] - b.r * b.sy, b.p[2], b.r], [b.p[0], b.p[1] + b.r * b.sy, b.p[2], b.r]);
+  for (const l of form.leaves) pts.push([...l.a, 0], [...l.b, 0]);
+  for (const c of form.cones) pts.push([0, c.y0, 0, c.r], [0, c.y1, 0, 0]);
+  // Green stems (a cactus) are the body itself, not wood hidden under a crown.
+  const body = form.segments.length > 0 && form.segments.every((s) => !s.wood);
+  if (body || !pts.length) for (const s of form.segments) pts.push([...s.a, s.r0], [...s.b, s.r1]);
+  const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[2]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+  const top = Math.min(1, Math.max(...pts.map((p) => p[1])));
+  const r = Math.max(...pts.map((p) => Math.hypot(p[0] - cx, p[2] - cz) + p[3]));
+  let ringY;
+  if (form.cones.length) ringY = Math.min(...form.cones.map((c) => c.y0));
+  else if (!body && (form.bulbs.length || form.leaves.length)) {
+    const ys = [...form.bulbs.map((b) => b.p[1]), ...form.leaves.flatMap((l) => [l.a[1], l.b[1]])];
+    ringY = ys.reduce((t, y) => t + y, 0) / ys.length;
+  } else ringY = 0.55 * top;
+  return { ringY: Math.min(ringY, top * 0.9), r, top, cx, cz };
 }
 
 /** Weighted pick from a [name, weight] table, by a 0..1 number. */
