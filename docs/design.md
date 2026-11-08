@@ -288,6 +288,12 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
   draws after the sky (otherwise the sky pass paints over it where there's sky behind), and its gleam sparkles
   hide (from inside its head they'd fill the view). Back to solid on a highway.
 
+## Filming (11-08)
+`?film=30` (frames per second) is for recording. After `__dream.filmStart()` the game stops its own loop, and
+`__dream.filmStep(n)` renders n frames exactly 1/30 s apart in game time (and on the clock intents and cairns use),
+however slowly a headless browser renders them; one screenshot per step, then ffmpeg, gives a smooth video. Playwright's
+fake clock deadlocks its screenshots, so this lives in the game. First used for the reply to Jason's "Buckle up" thread.
+
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
   each with scale, rotation, colour and a palette cycle. Any number of heads, wings, legs, eyes or tails. The
