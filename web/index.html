@@ -15,6 +15,10 @@
   #status { left: 50%; top: 42%; transform: translateX(-50%); color: var(--gold); font-size: 14px; text-align: center; white-space: normal; max-width: 80vw; }
   .btn { position: fixed; right: max(14px, env(safe-area-inset-right)); width: 52px; height: 52px; border: 2px solid var(--gold); background: rgba(20, 12, 40, .55); color: var(--gold); font: 20px/1 ui-monospace, monospace; touch-action: none; user-select: none; }
   #up { bottom: 96px; } #down { bottom: 34px; }
+  #log { position: fixed; left: max(10px, env(safe-area-inset-left)); bottom: max(28px, calc(env(safe-area-inset-bottom) + 20px)); max-width: min(70vw, 520px); font: 11px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .02em; text-shadow: 1px 1px 0 #000, -1px 0 0 #000; pointer-events: none; }
+  #log .line { color: var(--ink); transition: opacity 1.8s ease-out; }
+  #log .line.old { opacity: 0; }
+  #log .tree { color: #b6f59a; } #log .creature { color: #ffb8de; } #log .highway { color: var(--gold); } #log .sky { color: #c9b6ff; }
   #places { position: fixed; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); max-width: 46vw; font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); border-radius: 0; padding: 3px 4px; }
   @media (hover: hover) and (pointer: fine) { .btn { display: none; } }
 </style>
@@ -25,7 +29,8 @@
 <div id="hud" aria-live="off"></div>
 <select id="places" aria-label="Go to a landmark"><option value="" selected disabled>LANDMARKS ▾</option></select>
 <div id="status" role="status" hidden></div>
-<div id="help">TAP THE GROUND: GO THERE · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
+<div id="log" aria-live="polite"></div>
+<div id="help">TAP ANYTHING: GO TO IT · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
 <button class="btn" id="up" aria-label="Up">▲</button>
 <button class="btn" id="down" aria-label="Down">▼</button>
 <script type="module" src="./js/main.js"></script>

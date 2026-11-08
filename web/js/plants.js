@@ -162,6 +162,9 @@ export function midGeometry(form, woodHex) {
 }
 
 /** A plant material: Lambert, flat, curved with the Earth, swaying from the top. */
+// One tree at a time can be shaken: where (frame x, z), when (time), and how hard.
+const shake = { value: new THREE.Vector4(0, 0, -100, 0) };
+
 function plantMaterial(species, form, time, far = false) {
   const twoSided = form.leaves.length > 0, grass = form.blades.length > 0;
   // Grass and far shapes carry their own normals; everything else is faceted.
@@ -170,8 +173,9 @@ function plantMaterial(species, form, time, far = false) {
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
     shader.uniforms.uSway = sway;
+    shader.uniforms.uShake = shake;
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nattribute float aWood;\nuniform float uTime;\nuniform float uSway;")
+      .replace("#include <common>", "#include <common>\nattribute float aWood;\nuniform float uTime;\nuniform float uSway;\nuniform vec4 uShake;")
       .replace("#include <begin_vertex>", `#include <begin_vertex>
         #ifdef USE_INSTANCING
           float ph = dot(instanceMatrix[3].xz, vec2(0.013, 0.017));
@@ -181,7 +185,16 @@ function plantMaterial(species, form, time, far = false) {
         // The wind bends a plant more the higher up you go.
         float bend = position.y * position.y * uSway;
         transformed.x += bend * (sin(uTime * 1.1 + ph) + 0.4 * sin(uTime * 2.7 + ph * 1.9));
-        transformed.z += bend * 0.6 * cos(uTime * 0.9 + ph * 1.3);`)
+        transformed.z += bend * 0.6 * cos(uTime * 0.9 + ph * 1.3);
+        #ifdef USE_INSTANCING
+          // A shaken tree: a quick, dying wobble, strongest at the top.
+          float age = uTime - uShake.z;
+          if (age > 0.0 && age < 3.0 && distance(instanceMatrix[3].xz, uShake.xy) < 1.5) {
+            float k = uShake.w * exp(-age * 2.0) * sin(age * 24.0) * position.y;
+            transformed.x += k;
+            transformed.z += k * 0.7 * cos(age * 17.0);
+          }
+        #endif`)
       .replace("#include <color_vertex>", `#include <color_vertex>
         // Wood keeps its own colour; leaves take the plant's.
         #ifdef USE_COLOR
@@ -212,11 +225,13 @@ export function plantKit() {
   return kit;
 }
 
-/** The foliage colour of one plant. */
+/** Sets the foliage colour of one plant; returns BLOSSOM when it is in flower. */
+const BLOSSOM = "blossom";
 function foliage(c, biome, species, h) {
   const g = new THREE.Color(BIOMES[biome].color).getHSL({});
   if (BLOOMS.has(species) && BIOMES[biome].fireflies && unit(h, 3) < 0.03) {
-    return c.setHSL(BLOSSOM_HUES[h % BLOSSOM_HUES.length], 0.85, 0.62);
+    c.setHSL(BLOSSOM_HUES[h % BLOSSOM_HUES.length], 0.85, 0.62);
+    return BLOSSOM;
   }
   const [dh, s, l] = TINT[species];
   const hue = dh === null ? 0.4 : g.h + dh;
@@ -276,8 +291,8 @@ export function buildPlants(frame, terrain) {
     pos.set(p.x, y, p.z);
     q.setFromAxisAngle(up, c.yaw);
     scl.set(c.height * c.squash, c.height, c.height * (2 - c.squash));
-    foliage(col, biome, c.species, cell.h);
-    return { x: p.x, y, z: p.z, species: c.species, variant: c.variant, height: c.height, m: Float32Array.from(m4.compose(pos, q, scl).elements), c: [col.r, col.g, col.b], d: 0 };
+    const blossom = foliage(col, biome, c.species, cell.h) === BLOSSOM;
+    return { x: p.x, y, z: p.z, species: c.species, variant: c.variant, height: c.height, seed: cell.h, blossom, m: Float32Array.from(m4.compose(pos, q, scl).elements), c: [col.r, col.g, col.b], d: 0 };
   }
 
   function plant(x, z) {
@@ -316,6 +331,8 @@ export function buildPlants(frame, terrain) {
       list.forEach((rec, k) => { m.instanceMatrix.array.set(rec.m, k * 16); m.instanceColor.array.set(rec.c, k * 3); });
       m.count = list.length;
       m.instanceMatrix.needsUpdate = true;
+      m.userData.recs = list; // instance k is list[k], for picking
+      m.boundingSphere = null; // the instances moved: let three.js recompute it
       m.instanceColor.needsUpdate = true;
       placed += list.length;
     }
@@ -333,6 +350,17 @@ export function buildPlants(frame, terrain) {
       return placed;
     },
     get count() { return placed; },
+    /** The plant a ray hits first: { distance, rec } or null. */
+    pick(raycaster) {
+      const hits = raycaster.intersectObjects([...meshes.values()].filter((m) => m.count > 0), false);
+      for (const h of hits) {
+        const rec = h.object.userData.recs?.[h.instanceId];
+        if (rec && rec.species !== "grass" && rec.species !== "moss") return { distance: h.distance, rec }; // a tap on grass means "go there"
+      }
+      return null;
+    },
+    /** Shake the plant at a record; t is the plants' clock (the one update() is given). */
+    shake(rec, t, strength = 0.06) { shake.value.set(rec.x, rec.z, t, strength); },
     /** Triangles drawn, near and far. */
     triangles() {
       let near = 0, far = 0;

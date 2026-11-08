@@ -12,8 +12,9 @@ data, and creatures' movements pass directly between players.
 random ley node on the real Earth as a random creature with random stats. Terrain and seafloor come from real
 elevation data and run out to the real, curved horizon, under that place's real sun, with golden ley highways
 in the sky. Fly, run and swim with WASD/arrows, Space (up) and Shift (down); on touch, drag and use the ▲▼
-buttons. Tap or click the ground to go there: flyers fly straight over, walkers find a way round lakes and
-cliffs. The design is in
+buttons. Tap or click anything to go to it: flyers fly straight over, walkers find a way round lakes and
+cliffs. When you get there it answers: trees shake and drop things, your creature squeaks, butterflies chirp,
+sky beings hum, and highways take you aboard, all told in a little log. M mutes the sounds. The design is in
 [`docs/design.md`](docs/design.md).
 
 **Zoom:** the mouse wheel, +/−, or a pinch takes the camera from just behind you out to the whole planet: hills,

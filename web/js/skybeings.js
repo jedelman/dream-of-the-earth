@@ -179,6 +179,7 @@ export function buildSkyBeings(frame, heightAt) {
         if (!e) {
           const being = generateBeing(b.seed);
           e = { being, mesh: buildBeingMesh(being) };
+          e.mesh.group.userData.being = being; // so a tap can tell which being it touched
           live.set(key, e);
           group.add(e.mesh.group);
         }

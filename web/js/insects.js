@@ -106,10 +106,11 @@ export function buildInsects(frame, terrain) {
     return { p: { x: p.x, z: p.z }, h, biome: BIOMES[biomeFor(koppenAt(c.lat, c.lon), terrain.reliefAt(p.x, p.z), c.lat, h)] };
   };
   const m4 = new THREE.Matrix4(), col = new THREE.Color();
-  let centre = null;
+  let centre = null, homes = [];
   function settle(x, z) {
     const ll = frame.toLatLon(x, z);
     const bs = butterflyHomes(ll.lat, ll.lon, at);
+    homes = bs;
     bs.forEach((b, k) => {
       butterflies.setMatrixAt(k, m4.makeScale(b.size, b.size, b.size).setPosition(b.x, b.y, b.z));
       butterflies.setColorAt(k, col.setHSL(b.hue, 0.95, 0.6));
@@ -130,6 +131,18 @@ export function buildInsects(frame, terrain) {
   return {
     group,
     /** sunAltitude in degrees; clock in seconds (the shared one, wrapped to a day). */
+    /**
+     * Where each butterfly is right now: the same figure-eight the vertex shader flies, on
+     * the CPU, so a tap can find one. [{ x, y, z, hue, seed, k }].
+     */
+    butterflies() {
+      if (!butterflies.visible) return [];
+      const t = time.value;
+      return homes.map((b, k) => {
+        const ph = b.seed * 6.2831, tt = t * (0.25 + 0.15 * b.seed) + ph;
+        return { x: b.x + Math.sin(tt) * 9 * b.size, y: b.y + 1.4 * Math.sin(tt * 2.3 + ph) * b.size, z: b.z + Math.sin(tt * 2 + ph * 0.7) * 5 * b.size, hue: b.hue, seed: b.seed, k };
+      });
+    },
     update(x, z, clock, sunAltitude) {
       if (!centre || Math.hypot(x - centre.x, z - centre.z) > REGROW_M) settle(x, z);
       time.value = clock;
