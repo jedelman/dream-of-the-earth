@@ -1,0 +1,12 @@
+{
+  "client_id": "https://dream-of-the-earth.jason-edelman.org/client-metadata.json",
+  "client_name": "Dream of the Earth",
+  "client_uri": "https://dream-of-the-earth.jason-edelman.org/",
+  "redirect_uris": ["https://dream-of-the-earth.jason-edelman.org/"],
+  "scope": "atproto repo:org.jason-edelman.dream.artifact",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none",
+  "application_type": "web",
+  "dpop_bound_access_tokens": true
+}

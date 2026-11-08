@@ -1,0 +1,33 @@
+{
+  "lexicon": 1,
+  "id": "org.jason-edelman.dream.artifact",
+  "description": "Something a player left in Dream of the Earth (dream-of-the-earth.jason-edelman.org) for their mutuals to find. The game shows it for one lunar month after createdAt or renewedAt.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["kind", "place", "latE6", "lonE6", "createdAt"],
+        "properties": {
+          "kind": { "type": "string", "knownValues": ["cairn", "postcard", "echo", "sound"], "description": "Only cairn is built so far." },
+          "place": { "type": "string", "format": "uri", "description": "The ~11 km cell it stands in: https://dream-of-the-earth.jason-edelman.org/place/1/{band}/{cell}. The backlink target that lets mutuals find it." },
+          "latE6": { "type": "integer", "minimum": -90000000, "maximum": 90000000, "description": "Latitude in microdegrees (atproto records have no floats)." },
+          "lonE6": { "type": "integer", "minimum": -180000000, "maximum": 180000000, "description": "Longitude in microdegrees." },
+          "cairn": { "type": "ref", "ref": "#cairn" },
+          "note": { "type": "string", "maxGraphemes": 140, "maxLength": 1000 },
+          "createdAt": { "type": "string", "format": "datetime" },
+          "renewedAt": { "type": "string", "format": "datetime", "description": "Renewing starts another moon." }
+        }
+      }
+    },
+    "cairn": {
+      "type": "object",
+      "required": ["seed", "hue"],
+      "properties": {
+        "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295, "description": "Grows the stones; no geometry travels." },
+        "hue": { "type": "integer", "minimum": 0, "maximum": 359, "description": "The crystal's colour." }
+      }
+    }
+  }
+}

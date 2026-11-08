@@ -1,2 +1,5 @@
 three.js 0.186.1 (npm, resolved --before 2026-10-24), MIT: see three-LICENSE.
 Files: build/three.module.js, build/three.core.js, unmodified.
+
+oauth-client-browser.js: @atproto/oauth-client-browser 0.5.10 and its dependencies (MIT, ISC, Apache-2.0 OR MIT),
+bundled by scripts/vendor-atproto (esbuild 0.28.2). Notices: LICENSES.txt. Loaded only when someone signs in.

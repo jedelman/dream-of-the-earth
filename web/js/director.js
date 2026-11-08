@@ -37,6 +37,8 @@ export function buildDirector(camera) {
       shot = { kind, t0: t, dur, blendIn, blendOut, frame, start };
     },
     get shot() { return shot && shot.kind; },
+    /** End the current shot early, blending back to the base framing. */
+    release(t) { if (shot) shot.dur = Math.min(shot.dur, t - shot.t0 + shot.blendOut); },
 
     /**
      * ctx: { t, dt, subject (Vector3), heading, mode ("air" | "ground" | "water"), speed01, riding,
@@ -161,6 +163,17 @@ export function treeShot(subject, rec) {
     const off = mid.clone().add(side(tx, tz).multiplyScalar(d * 0.9)).add(new THREE.Vector3(0, -rec.height * 0.25, 0));
     off.y = Math.max(off.y, rec.y - subject.y + 3);
     return { off, look: mid, fov: 58 };
+  };
+}
+/** You and a cairn, from the side, the cairn on the left of the frame (sheets open on the right). */
+export function cairnShot(subject, at, height) {
+  return () => {
+    const tx = at.x - subject.x, tz = at.z - subject.z, L = Math.hypot(tx, tz) || 1;
+    const mid = new THREE.Vector3(tx * 0.5, at.y - subject.y + height * 0.4, tz * 0.5);
+    const d = Math.max(height * 1.8, L * 1.6, 30);
+    // Looking along -s, screen right is (s.z, 0, -s.x); with s = (tz, 0, -tx)/L the cairn falls on the left.
+    const off = mid.clone().add(new THREE.Vector3(tz / L, 0, -tx / L).multiplyScalar(d)).add(new THREE.Vector3(0, height * 0.35, 0));
+    return { off, look: mid, fov: 56 };
   };
 }
 /** You and a butterfly, from the side. */

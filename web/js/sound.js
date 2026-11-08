@@ -66,6 +66,15 @@ export const sound = {
     const t = ctx.currentTime;
     tone("triangle", 900 * pitch, 1900 * pitch, t, 0.16, 0.5, 1300 * pitch);
   },
+  /** A cairn answering: a click of stone, then a small bell. */
+  chime() {
+    if (!audio()) return;
+    const t = ctx.currentTime;
+    noise(t, 0.05, 0.25, "bandpass", 2400, 1800, 6);
+    tone("sine", 784, 783, t + 0.04, 1.8, 0.22);
+    tone("sine", 1176, 1174, t + 0.05, 1.4, 0.09);
+    tone("sine", 1568, 1565, t + 0.06, 0.9, 0.04);
+  },
   /** A butterfly's two quick chirps. */
   chirp() {
     if (!audio()) return;

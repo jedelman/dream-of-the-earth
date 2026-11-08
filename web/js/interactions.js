@@ -4,7 +4,7 @@
 import { hash2 } from "./plantforms.js";
 
 /** How close you need to be (metres) before a tapped thing answers. */
-export const RANGE = { tree: 20, butterfly: 30, being: 3000, highway: 170 };
+export const RANGE = { tree: 20, butterfly: 30, being: 3000, highway: 170, artifact: 30 };
 
 export const TREE_NAMES = {
   ceiba: "kapok", ficus: "banyan", cocos: "coconut palm", adansonia: "baobab", vachellia: "umbrella thorn",
@@ -79,12 +79,13 @@ export function promptFor(c) {
   if (c.kind === "being") return "Hum to the sky being";
   if (c.kind === "highway") return "Board the highway";
   if (c.kind === "ride") return "Step off";
+  if (c.kind === "artifact") return c.own ? "Tend your cairn" : c.handle ? `Read @${c.handle}'s cairn` : "Read the cairn";
   return "Squeak";
 }
 
 // Small things close at hand come before big things far off: under a highway,
 // beside a tree, with a sky being on the horizon, the tree is what you meant.
-const BIAS = { butterfly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
+const BIAS = { artifact: -0.05, butterfly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
 
 /**
  * How much a thing in reach wants the prompt (lower wins). c: { kind, d, range, facing, species? },
@@ -113,4 +114,17 @@ export function chooseFocus(cands, currentKey = null, hold = 0.15) {
 export function glinting(cands, focus, n = 5) {
   const rest = cands.filter((c) => c !== focus).sort((a, b) => focusScore(a) - focusScore(b));
   return (focus ? [focus, ...rest] : rest).slice(0, n);
+}
+
+// ---- Artifacts ----
+/** How long ago, in words: "today", "yesterday", "3 days ago". */
+export function ago(sinceS, nowS) {
+  const d = Math.floor((nowS - sinceS) / 86400);
+  return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
+}
+/** The log line for reading a cairn: its note, who left it and when; or, with no note, that someone did. */
+export function cairnLine(a, nowS, fade = 1) {
+  const who = a.handle ? `@${a.handle}` : "someone", when = ago(a.since, nowS);
+  const tail = fade < 1 ? " It's fading with the moon." : "";
+  return a.note ? `\u201c${a.note}\u201d \u2014 ${who}, ${when}.${tail}` : `${who} left a cairn here ${when}.${tail}`;
 }

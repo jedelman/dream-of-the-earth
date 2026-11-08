@@ -16,6 +16,12 @@ the latest file in `conversations/`.
 ## Principles that constrain the code
 - **Leave no trace.** No world state on any server, and nothing a player does changes the world. If a feature
   seems to need stored shared state, stop and ask Jason.
+  - **The one exception, artifacts (Jason, 11-08):** "I know we said leave no trace but let's use atproto back
+    links to host artifacts for mutuals to discover." Things players leave live as records in their *own* Bluesky
+    repos, found through a backlink index (Constellation) and shown only to mutuals; they fade after a lunar month
+    unless renewed. Our Worker still stores nothing, and the computed world (terrain, plants, sky) never changes.
+    Records from other players are untrusted input: parse them against hard caps (`parseArtifact`). See
+    "Artifacts" in `docs/design.md`.
 - **The world is computed.** The same data plus the same seed gives the same world on every phone. Nothing
   random without a place-derived seed, and no `Math.random` in world generation.
 - **Untrusted peers.** Avatars, voices and datagrams from other players are parsed against hard caps (256
