@@ -15,12 +15,13 @@ const h = (tag, attrs = {}, ...kids) => {
 
 /**
  * hooks: { look(handle), signIn(handle), signOut(), stopLooking(), preview(spec | null), leave({ seed, hue, note }),
- *          renew(entry), takeDown(entry), cairns() -> [{ a, metres, age }] nearest first, travel(a), globe() }.
+ *          renew(entry), takeDown(entry), cairns() -> [{ a, metres, age }] nearest first, travel(a), globe(),
+ *          flock() -> [{ did, handle, metres, doing }] nearest first, travelToMutual(did), toggleShare() }.
  *          Each may return a promise; errors are shown in the sheet.
  */
 export function buildMaker(hooks) {
   const button = document.getElementById("me"), sheet = document.getElementById("sheet"), list = document.getElementById("cairns");
-  let person = { did: null, handle: null, signedIn: false }, open = null;
+  let person = { did: null, handle: null, signedIn: false }, open = null, sharing = { on: true, can: false }, counts = [0, 0];
 
   const close = () => {
     if (open === "leave" || open === "tend") hooks.preview(null); // the camera comes back to you
@@ -56,7 +57,7 @@ export function buildMaker(hooks) {
       h("p", {}, "See what your Bluesky mutuals left in the dream, and leave cairns of your own."),
       h("form", { onsubmit: (e) => { e.preventDefault(); busy(go, msg, () => hooks.signIn(input.value)); } }, input, h("div", { class: "row" }, go, look)),
       msg,
-      h("p", { class: "small" }, "Signing in lets the game write one kind of record to your Bluesky repo: the cairns you leave. They're public on the network; the game shows them to your mutuals. Just look only reads."));
+      h("p", { class: "small" }, "Signing in lets the game write two kinds of record to your Bluesky repo: the cairns you leave, and your creature's current plan (one record, overwritten, so your mutuals can see you fly; you can turn it off). It also reads your mute list, so muted accounts stay out of your world. Records are public on the network; the game only shows mutuals'. Just look only reads."));
   }
   function menuSheet() {
     const msg = h("p", { class: "msg", role: "status" });
@@ -65,6 +66,9 @@ export function buildMaker(hooks) {
         h("h2", {}, person.handle ? `@${person.handle}` : "Signed in"),
         h("div", { class: "col" },
           h("button", { class: "go", onclick: leaveSheet }, "Leave a cairn here"),
+          sharing.can
+            ? h("button", { onclick: async () => { await hooks.toggleShare(); menuSheet(); } }, sharing.on ? "Showing you to mutuals: turn off" : "Hidden from mutuals: show me")
+            : h("button", { onclick: () => signInSheet(person.handle || "") }, "Sign in again to show yourself to mutuals"),
           h("button", { onclick: (e) => busy(e.currentTarget, msg, async () => { await hooks.signOut(); close(); }) }, "Sign out")),
         msg);
     } else {
@@ -101,6 +105,12 @@ export function buildMaker(hooks) {
   }
 
   function listSheet() {
+    const here = hooks.flock();
+    const hereItems = here.map((m) => h("li", {},
+      h("span", { class: "swatch", style: "background:#9ef0ff" }),
+      h("span", { class: "who" }, m.handle ? `@${m.handle}` : "a mutual"),
+      h("span", { class: "where" }, `${distanceText(m.metres)} · ${m.doing}`),
+      h("button", { class: "go", "aria-label": `Travel to ${m.handle ? "@" + m.handle : "them"}`, onclick: () => { close(); hooks.travelToMutual(m.did); } }, "Go")));
     const rows = hooks.cairns();
     const items = rows.map(({ a, metres, age }) => h("li", {},
       h("span", { class: "swatch", style: `background:hsl(${a.hue} 85% 62%)` }),
@@ -109,6 +119,8 @@ export function buildMaker(hooks) {
       a.note ? h("span", { class: "what" }, `\u201c${a.note}\u201d`) : null,
       h("button", { class: "go", "aria-label": `Travel to ${a.own ? "your" : a.handle ? "@" + a.handle + "'s" : "the"} cairn`, onclick: () => { close(); hooks.travel(a); } }, "Go")));
     show("list",
+      here.length ? h("h2", {}, `In the dream now (${here.length})`) : null,
+      here.length ? h("ul", { class: "cairns" }, hereItems) : null,
       h("h2", {}, rows.length ? `Cairns to visit (${rows.length})` : "Cairns to visit"),
       rows.length ? h("ul", { class: "cairns" }, items) : h("p", {}, person.signedIn ? "None of your mutuals has left a cairn yet. Leave the first: Bluesky \u25be, then Leave a cairn here." : "None of your mutuals has left a cairn yet."),
       h("div", { class: "row" },
@@ -135,10 +147,17 @@ export function buildMaker(hooks) {
       list.hidden = !p.did;
       if (open === "menu") menuSheet();
     },
-    /** How many cairns there are to visit (the button's count); refreshes the list if it's open. */
-    setCount(n) {
-      list.textContent = `CAIRNS${n ? ` (${n})` : ""} \u25be`;
+    /** How many cairns there are to visit, and mutuals in the dream (the button); refreshes the list if it's open. */
+    setCount(n, here = 0) {
+      if (n === counts[0] && here === counts[1]) return;
+      counts = [n, here];
+      list.textContent = `CAIRNS${n ? ` (${n})` : ""}${here ? ` \u00b7 ${here} HERE` : ""} \u25be`;
       if (open === "list") listSheet();
+    },
+    /** Whether your creature is shown to mutuals: { on, can } (can: this sign-in covers it). */
+    setSharing(s) {
+      sharing = s;
+      if (open === "menu") menuSheet();
     },
     openLeave: () => (person.signedIn ? leaveSheet() : signInSheet(person.handle || "")),
     /** Your own cairn: renew it or take it down. info: { note, age, left } in words. */

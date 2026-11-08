@@ -6,6 +6,7 @@
 // replies are size-capped, and records go through parseArtifact.
 import { placesAround } from "./places.js";
 import { NSID, WORLD_URL, parseArtifact, fadeOf } from "./artifacts.js";
+import { INTENT_NSID, INTENT_RKEY, parseIntent, allowed } from "./intents.js";
 
 export const CONSTELLATION = "https://constellation.microcosm.blue";
 export const APPVIEW = "https://public.api.bsky.app";
@@ -44,46 +45,58 @@ export function pdsOf(did) {
 }
 
 /** The records that point at a URL from one field: [{ did, rkey }], newest first, at most pages × 100. */
-export async function linksTo(url, field = "place", pages = 3) {
+export async function linksTo(url, field = "place", pages = 3, nsid = NSID) {
   const out = [];
   let cursor = null;
   for (let page = 0; page < pages; page++) {
-    const q = new URLSearchParams({ subject: url, source: `${NSID}:${field}`, limit: "100" });
+    const q = new URLSearchParams({ subject: url, source: `${nsid}:${field}`, limit: "100" });
     if (cursor) q.set("cursor", cursor);
     const r = await getJson(`${CONSTELLATION}/xrpc/blue.microcosm.links.getBacklinks?${q}`);
-    for (const x of r.records || []) if (x && x.collection === NSID && DID_RE.test(x.did) && RKEY_RE.test(x.rkey)) out.push({ did: x.did, rkey: x.rkey });
+    for (const x of r.records || []) if (x && x.collection === nsid && DID_RE.test(x.did) && RKEY_RE.test(x.rkey)) out.push({ did: x.did, rkey: x.rkey });
     cursor = typeof r.cursor === "string" ? r.cursor : null;
     if (!cursor) break;
   }
   return out;
 }
 
-const rel = new Map(); // "viewer did" -> mutual?
-/** Which of these DIDs are mutuals of the viewer (the viewer counts as their own). */
-export async function mutualsAmong(viewer, dids) {
-  const ask = [...new Set(dids)].filter((d) => d !== viewer && !rel.has(`${viewer} ${d}`));
-  for (let k = 0; k < ask.length; k += 30) {
-    const q = new URLSearchParams({ actor: viewer });
-    for (const d of ask.slice(k, k + 30)) q.append("others", d);
-    const r = await getJson(`${APPVIEW}/xrpc/app.bsky.graph.getRelationships?${q}`);
-    for (const x of r.relationships || []) if (x && DID_RE.test(x.did)) rel.set(`${viewer} ${x.did}`, !!(x.following && x.followedBy));
-  }
-  return new Set(dids.filter((d) => d === viewer || rel.get(`${viewer} ${d}`)));
-}
-
-const handleCache = new Map(); // did -> handle
-/** Handles for DIDs, from the AppView: Map(did -> "name.bsky.social"). Unknown ones are left out. */
-export async function handlesOf(dids) {
-  const ask = [...new Set(dids)].filter((d) => !handleCache.has(d));
+// ---- Whose things we show (see allowed() in intents.js): mutuals, no blocks, served, not hidden, not muted ----
+const FRESH_S = 600; // relationships and profiles are re-read after 10 minutes, so a new block takes effect
+const rels = new Map(); // "viewer did" -> { rel, at }
+const profiles = new Map(); // did -> { p (profile, or null if Bluesky doesn't serve it), at }
+let muted = new Set();
+/** The viewer's own mutes (from their signed-in session); nothing when just looking. */
+export function setMuted(dids) { muted = new Set(dids); }
+const fresh = (e) => e && Date.now() / 1000 - e.at < FRESH_S;
+async function loadProfiles(dids) {
+  const ask = [...new Set(dids)].filter((d) => !fresh(profiles.get(d)));
   for (let k = 0; k < ask.length; k += 25) {
-    const q = new URLSearchParams();
-    for (const d of ask.slice(k, k + 25)) q.append("actors", d);
-    try {
-      const r = await getJson(`${APPVIEW}/xrpc/app.bsky.actor.getProfiles?${q}`);
-      for (const p of r.profiles || []) if (p && DID_RE.test(p.did) && typeof p.handle === "string" && /^[a-z0-9.-]{1,253}$/i.test(p.handle)) handleCache.set(p.did, p.handle);
-    } catch { /* names are a nicety */ }
+    const chunk = ask.slice(k, k + 25), q = new URLSearchParams();
+    for (const d of chunk) q.append("actors", d);
+    const r = await getJson(`${APPVIEW}/xrpc/app.bsky.actor.getProfiles?${q}`);
+    const got = new Map((r.profiles || []).filter((p) => p && DID_RE.test(p.did)).map((p) => [p.did, p]));
+    for (const d of chunk) profiles.set(d, { p: got.get(d) || null, at: Date.now() / 1000 });
   }
-  return new Map(dids.filter((d) => handleCache.has(d)).map((d) => [d, handleCache.get(d)]));
+}
+/** Which of these DIDs the viewer may see things from (the viewer always sees their own). */
+export async function visibleAmong(viewer, dids) {
+  const others = [...new Set(dids)].filter((d) => d !== viewer);
+  const ask = others.filter((d) => !fresh(rels.get(`${viewer} ${d}`)));
+  for (let k = 0; k < ask.length; k += 30) {
+    const chunk = ask.slice(k, k + 30), q = new URLSearchParams({ actor: viewer });
+    for (const d of chunk) q.append("others", d);
+    const r = await getJson(`${APPVIEW}/xrpc/app.bsky.graph.getRelationships?${q}`);
+    const got = new Map((r.relationships || []).filter((x) => x && DID_RE.test(x.did)).map((x) => [x.did, x]));
+    for (const d of chunk) rels.set(`${viewer} ${d}`, { rel: got.get(d) || null, at: Date.now() / 1000 });
+  }
+  await loadProfiles(others.filter((d) => rels.get(`${viewer} ${d}`)?.rel?.following && rels.get(`${viewer} ${d}`)?.rel?.followedBy));
+  return new Set(dids.filter((d) => d === viewer || allowed(rels.get(`${viewer} ${d}`)?.rel, profiles.get(d)?.p, muted.has(d))));
+}
+/** Handles for DIDs: Map(did -> "name.bsky.social"). Unknown ones are left out. */
+export async function handlesOf(dids) {
+  try { await loadProfiles(dids); } catch { /* names are a nicety */ }
+  const out = new Map();
+  for (const d of dids) { const h = profiles.get(d)?.p?.handle; if (typeof h === "string" && /^[a-z0-9.-]{1,253}$/i.test(h)) out.set(d, h); }
+  return out;
 }
 
 /** A handle's DID, or null. */
@@ -95,9 +108,9 @@ export async function didOf(handle) {
 }
 
 /** One record's value, read from its maker's PDS (small: 16 KB at most). */
-export async function getRecord(did, rkey) {
+export async function getRecord(did, rkey, nsid = NSID) {
   const base = await pdsOf(did);
-  const q = new URLSearchParams({ repo: did, collection: NSID, rkey });
+  const q = new URLSearchParams({ repo: did, collection: nsid, rkey });
   const r = await getJson(`${base}/xrpc/com.atproto.repo.getRecord?${q}`, { maxBytes: 16 * 1024 });
   return r.value;
 }
@@ -114,7 +127,7 @@ async function pool(items, n, job) {
 
 /** Read, check and name the wanted records: the artifacts that are still standing. */
 async function gather(viewer, byMaker, nowS) {
-  const ok = await mutualsAmong(viewer, [...byMaker.keys()]);
+  const ok = await visibleAmong(viewer, [...byMaker.keys()]);
   const wanted = [];
   for (const [did, rkeys] of byMaker) if (ok.has(did)) for (const rkey of [...rkeys].sort().reverse().slice(0, PER_MAKER)) wanted.push({ did, rkey });
   const values = await pool(wanted, 6, (w) => getRecord(w.did, w.rkey));
@@ -148,4 +161,16 @@ export async function discover({ viewer, lat, lon, radiusM = 16000, nowS = Date.
   const cells = placesAround(lat, lon, radiusM);
   const found = (await pool(cells, 6, (c) => linksTo(c.url))).flatMap((x) => x || []);
   return gather(viewer, group(found), nowS);
+}
+
+/** The mutuals in the dream right now: [{ did, handle, intent }], from each one's current intent record. */
+export async function currentIntents({ viewer, nowS = Date.now() / 1000 }) {
+  if (!DID_RE.test(viewer)) return [];
+  const dids = [...new Set((await linksTo(WORLD_URL, "world", 3, INTENT_NSID)).map((l) => l.did))].filter((d) => d !== viewer);
+  const ok = [...(await visibleAmong(viewer, dids))].filter((d) => d !== viewer);
+  const values = await pool(ok, 6, (d) => getRecord(d, INTENT_RKEY, INTENT_NSID));
+  const names = await handlesOf(ok);
+  const out = [];
+  ok.forEach((did, k) => { const it = parseIntent(values[k], nowS); if (it) out.push({ did, handle: names.get(did) || null, intent: it }); });
+  return out;
 }

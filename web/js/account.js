@@ -1,11 +1,16 @@
-// Signing in with Bluesky, only to leave things. The OAuth client (web/vendor,
-// ~210 KB) loads only when someone signs in or comes back signed in, and its scope
-// reaches one collection: our artifacts. Seeing what mutuals left needs none of this.
+// Signing in with Bluesky, to leave cairns and to let mutuals see your creature. The
+// OAuth client (web/vendor, ~210 KB) loads only when someone signs in or comes back
+// signed in; its scope reaches two collections (artifacts, your one intent) and reading
+// your own mute list. Seeing what mutuals left needs none of this.
 // Writes go through the session's own fetch handler (DPoP-bound tokens), to the
 // player's own PDS.
 import { NSID } from "./artifacts.js";
+import { INTENT_NSID, INTENT_RKEY } from "./intents.js";
 
-export const SCOPE = `atproto repo:${NSID}`;
+// Two collections in your repo (the cairns you leave, your one current intent), and reading your own mute list so
+// muted accounts stay out of your world. Nothing else.
+const MUTES = "rpc:app.bsky.graph.getMutes?aud=did:web:api.bsky.app%23bsky_appview";
+export const SCOPE = `atproto repo:${NSID} repo:${INTENT_NSID} ${MUTES}`;
 const HANDLE_RESOLVER = "https://bsky.social";
 const KEY = "dream.did", RETURN = "dream.return";
 
@@ -55,6 +60,35 @@ async function xrpc(method, body) {
 
 export const account = {
   get did() { return session ? session.did : null; },
+  /** Whether this sign-in covers sharing your intent (a sign-in from before intents existed doesn't). */
+  async canShare() {
+    if (!session) return false;
+    try { const info = await session.getTokenInfo(false); return String(info.scope || "").split(" ").includes(`repo:${INTENT_NSID}`); } catch { return false; }
+  },
+  /** Your one current intent, overwritten. */
+  putIntent: (record) => xrpc("com.atproto.repo.putRecord", { repo: session.did, collection: INTENT_NSID, rkey: INTENT_RKEY, record }),
+  /** Gone from your repo (it's fine if it already was). */
+  async clearIntent() {
+    if (!session) return;
+    try { await xrpc("com.atproto.repo.deleteRecord", { repo: session.did, collection: INTENT_NSID, rkey: INTENT_RKEY }); } catch { /* not there, or offline */ }
+  },
+  /** The DIDs you've muted on Bluesky (up to 1,000), through your PDS to Bluesky's AppView; [] if not allowed. */
+  async mutes() {
+    if (!session) return [];
+    const out = [];
+    let cursor = "";
+    try {
+      for (let page = 0; page < 10; page++) {
+        const r = await session.fetchHandler(`/xrpc/app.bsky.graph.getMutes?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, { headers: { "atproto-proxy": "did:web:api.bsky.app#bsky_appview" } });
+        if (!r.ok) break;
+        const j = await r.json();
+        for (const m of j.mutes || []) if (m && typeof m.did === "string") out.push(m.did);
+        if (!j.cursor) break;
+        cursor = j.cursor;
+      }
+    } catch { /* mutes are a courtesy; carry on without */ }
+    return out;
+  },
   /** fn(did | null) whenever someone signs in or out. */
   onChange(fn) { listeners.add(fn); },
   /** At boot: pick the session back up, or finish a sign-in. Loads the client only if there may be one. */

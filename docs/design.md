@@ -405,8 +405,43 @@ Jason: "I'm wondering how much multiplayer we can do on atproto." Measured and r
      your repo, not from anything that already saw it.
   3. **Real time, not atproto:** 15 Hz positions in a flock, avatars, voice. That stays iroh (identity and the node
      record on atproto, as designed).
-- **Not decided:** whether to build presence on atproto at all (it's Jason's call on leave-no-trace), and if so, as an
-  opt-in "show me to my mutuals" toggle.
+- **Decided (Jason, 11-08):** "We might need an intents model" → "Yep! And we only keep current intent in the repo,
+  just overwrite; and we only ever show data from mutuals. Let's respect Bluesky mod and block norms. Should keep
+  everything light." Built as below.
+
+## Presence by intents (built 11-08, PR #26)
+- **The record** (`org.jason-edelman.dream.intent`, rkey `self`; `docs/lexicons/`): what the creature is doing, not
+  where it is: `rest`, `goto` (route of up to 64 points, speed, flying or not, cruise height), `ride` (highway, start
+  fraction, direction) or `steer` (heading, speed, climb), with a start time and place, and the creature's seed and
+  stats so mutuals grow the same creature. About 300 bytes, integers only. Always overwritten (`putRecord`), never
+  accumulated.
+- **Where they are** (`whereAt` in `intents.js`): a trip is replayed along its route at its speed, a ride is a pure
+  function of time, steering is dead-reckoned (up to 90 s). Rest stays put.
+- **When yours is written:** checked once a second; written when what you're doing changes (at most every 1.5 s),
+  when you've drifted over 60 m from what mutuals compute (at most every 6 s), and every 4 minutes as a heartbeat.
+  Deleted when the tab hides, on sign-out, and when you switch it off (Bluesky ▾). Readers drop any intent older
+  than 10 minutes, so a closed tab leaves no ghost.
+- **Hearing mutuals:** one Jetstream WebSocket, filtered to this game's two collections (intents and cairns, so new
+  cairns arrive live too, without the index lag), reconnecting with backoff across the four public instances; plus,
+  on arrival and every 3 minutes, a fetch of current intents (Constellation's `world` backlinks for intent records,
+  then each mutual's `intent/self`).
+- **Whose things we show** (`allowed()`), for cairns and creatures alike: mutuals (both follow), no block either way
+  (direct or by list, from the public `getRelationships`), an account Bluesky still serves (a profile comes back),
+  no `!hide`/`!takedown`/`!suspend` label from Bluesky's moderation, and not muted by you (your mute list, read
+  through your PDS with the narrow `rpc:app.bsky.graph.getMutes` permission). Relationships and profiles are re-read
+  after 10 minutes, so a new block takes effect.
+- **In the game:** mutuals' creatures where their intents put them, eased so a new intent glides; a small @handle
+  over each within 600 m; pale cyan dots on the globe (tap to go); "In the dream now" in the CAIRNS list (distance,
+  what they're doing, Go); E near one squeaks at them (just you and the sound; nothing is sent).
+- **Sign-in scope** grew to `atproto repo:…artifact repo:…intent rpc:app.bsky.graph.getMutes?aud=…#bsky_appview`
+  (bsky.social accepted it at PAR, 11-08). A sign-in from before this doesn't cover intents: the menu says "Sign in
+  again to show yourself to mutuals."
+- **Checked 11-08:** Claude walked laps around the two Amazon cairns from a script (one intent per ~98 s lap); looking
+  as Jason, the game found Claude within 2 s, labelled and listed it ("110 m · on the move"), and drew Claude's
+  creature walking between the cairns. **Not yet seen:** your own intent written by the game through an OAuth
+  session (it needs the new scope, so Jason's next sign-in).
+- **Costs, unchanged by lightness:** intents are public records on the firehose and may be archived; destinations are
+  public before you arrive; phone clocks a second or two apart put a creature tens of metres out.
 
 ## Identity, mutuals, calls
 - **Sign in with Bluesky** (atproto OAuth for a native client; metadata on jason-edelman.org, as Library does).

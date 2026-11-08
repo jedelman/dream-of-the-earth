@@ -1,0 +1,27 @@
+{
+  "lexicon": 1,
+  "id": "org.jason-edelman.dream.intent",
+  "description": "A Dream of the Earth player's current intent: what their creature is doing, from which every mutual computes where it is. One record (rkey 'self'), overwritten; deleted when they leave. Stale after 10 minutes without renewal.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["kind", "at", "latE6", "lonE6", "altDm", "creature"],
+        "properties": {
+          "world": { "type": "string", "format": "uri", "const": "https://dream-of-the-earth.jason-edelman.org/" },
+          "kind": { "type": "string", "knownValues": ["rest", "goto", "ride", "steer"] },
+          "at": { "type": "string", "format": "datetime", "description": "When this intent starts." },
+          "latE6": { "type": "integer", "minimum": -90000000, "maximum": 90000000 },
+          "lonE6": { "type": "integer", "minimum": -180000000, "maximum": 180000000 },
+          "altDm": { "type": "integer", "description": "Decimetres above sea level." },
+          "creature": { "type": "object", "required": ["seed", "stats"], "properties": { "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 }, "stats": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 6 }, "minLength": 4, "maxLength": 4, "description": "fly, swim, run, gleam (total at most 12)." } } },
+          "goto": { "type": "object", "properties": { "pts": { "type": "array", "maxLength": 64, "items": { "type": "array", "items": { "type": "integer" }, "minLength": 2, "maxLength": 2 } }, "speedCm": { "type": "integer" }, "fly": { "type": "boolean" }, "cruiseDm": { "type": "integer" } } },
+          "ride": { "type": "object", "properties": { "line": { "type": "integer" }, "tE6": { "type": "integer", "minimum": 0, "maximum": 1000000 }, "dir": { "type": "integer", "enum": [-1, 1] } } },
+          "steer": { "type": "object", "properties": { "headingMdeg": { "type": "integer", "minimum": 0, "maximum": 360000 }, "speedCm": { "type": "integer" }, "climbCm": { "type": "integer" } } }
+        }
+      }
+    }
+  }
+}
