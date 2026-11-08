@@ -15,6 +15,9 @@ in the sky. Fly, run and swim with WASD/arrows, Space (up) and Shift (down); on 
 buttons. The design is in
 [`docs/design.md`](docs/design.md).
 
+**Zoom:** the mouse wheel, +/−, or a pinch takes the camera from just behind you out to the whole planet: hills,
+ranges, coastlines, then a low-poly globe wrapped in the golden ley grid, with you as a sparkle on it.
+
 **Sky and sea:** shader waves with foam and a sparkling sun glint, a high cloud deck, and L-system cumulus that
 drift with real-ish prevailing winds on the real clock, so everyone shares the same sky.
 
@@ -27,8 +30,8 @@ its end. Shift or S steps off anywhere. Where two highways cross, A/D hops onto 
 pillar of light that lifts any creature up to the network, wings or not.
 
 URL parameters make any spawn reproducible: `?seed=42` (creature, stats and spawn), `&stats=6,2,2,2`
-(fly, swim, run, gleam; 12 points, 0–6 each), `&t=2026-11-07T15:00:00Z` (a fixed moment for the sun), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north) and `&alt=` (metres up), and
-`&ride=N` (start out riding highway N, 0–723).
+(fly, swim, run, gleam; 12 points, 0–6 each), `&t=2026-11-07T15:00:00Z` (a fixed moment for the sun), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north), `&alt=` (metres up), `&zoom=` (camera distance in
+metres, up to 40,000,000), and `&ride=N` (start out riding highway N, 0–723).
 
 ## Develop
 ```bash

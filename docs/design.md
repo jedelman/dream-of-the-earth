@@ -383,6 +383,19 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
      - **Curvature moved to the projection step,** so instanced and rotated meshes curve correctly.
      - **Headless (CPU-rendered) frame rate fell from 60 to ~30–34 fps,** mostly the sea shader. Real GPUs should
        be well above that at 400×224 internal pixels **(unverified on a phone)**.
+   - **Zoom for scale (11-08, Jason: "zoom way out of your creature to get a sense of scale"):**
+     - **Controls:** the wheel, +/− or PageUp/PageDown, or a pinch zooms from 15 m to 40,000 km (`&zoom=`
+       metres).
+     - **In the world (to 400 km):** the camera pulls back and tilts down, from 18° to 70°. Past ~6 km up the
+       highways also draw as thin gold lines, since the ribbons go sub-pixel, and a sparkle marks you. Fog is
+       capped inside the outer terrain ring, so its edge melts into haze.
+     - **Past 400 km, the globe:** a faceted icosphere (20,480 facets, ~240 km each) coloured and lifted by real
+       zoom-2 elevation (relief ×25), with oceans coloured as water. The whole ley grid wraps it in gold, each
+       class its own lines; from far out only the two rarest show. There's an atmosphere rim, stars, the real
+       sun on the day side via the subsolar point, and you as a sparkle. Riding while zoomed out shows you
+       crossing the planet.
+     - **Found while building it:** in three.js 0.186, an icosphere's `detail` subdivides linearly ((d+1)² per face),
+       not recursively; detail 5 gave only 720 facets.
 2. **Biomes and life:** the CHELSA/SoilGrids/canopy pipeline to world tiles (R2); lapse-rate downscaling;
    L-system plants; braided interchange rings where networks cross.
 3. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.
