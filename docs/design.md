@@ -384,6 +384,36 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
        cells: 0.55 in the doldrums, 0.18 under the subtropical highs, 0.45 in the mid-latitudes. Same sky for
        everyone, nothing stored.
      - **Curvature moved to the projection step,** so instanced and rotated meshes curve correctly.
+     - **Superseded 11-08 for the sky and clouds** by the sky shader (below); the sea stays.
+   - **The sky as one shader (11-08, Jason: "Let's rethink clouds and sky, actually. Can we do the whole thing as
+     a shader? There's some really cool stuff up on shadertoy for that"):** `web/js/skyshader.js`.
+     - **Three passes:** the opaque world is drawn into a texture with its depth; one full-screen pass draws the
+       sky and marches each pixel's ray through the clouds up to whatever the world put in the way; then the
+       transparent things (sea, highways, sparkles, fireflies) are drawn on top. Where a cloud is more than half
+       opaque the pass writes its depth, so a highway behind a cloud is hidden and one in front isn't.
+     - **Clouds:** volumetric, on the curved Earth (true altitude is the ray's height plus d²/2R). Cumulus from
+       1.5 km, ~3 km across, from billowy noise (inverted Worley plus value noise, a tileable 32³ texture made on
+       the phone from a fixed seed) eroded by the weather's coverage, rounded on top. The strongest cells in
+       the tropics tower to ~10 km as storms, ~10 km across, with rain shafts falling in streaks beneath. Cirrus
+       streaks on a shell 9 km up. Light: Beer-Lambert extinction, a two-step march toward the sun, a
+       two-lobe Henyey-Greenstein phase, a powder term, and skylight in the dream's lavender and pink.
+       Steps grow geometrically (fine where the ray enters a cloud, coarse far off), the fine noise octave fades
+       with distance, a 4×4 Bayer dither hides banding, and clouds melt into the haze a little before the ground.
+     - **The weather** (`web/js/weather.js`, the same model in JS for tests): a tileable 256² field riding the
+       prevailing winds (unchanged: 8 m/s, trades west, westerlies east), thresholded by each latitude's
+       cloudiness (unchanged), with storms where it peaks in the tropics. A function of place and unix time
+       only, so everyone shares one sky; the wind offset wraps every 40,000 km (~58 days).
+     - **Sky:** the same banded palette as before, plus a banded halo around the sun, the big stylized sun, and
+       hashed stars at night.
+     - **Cost:** march steps follow the detail governor (20 + 44 × its scale, so 31–64). Headless software
+       rendering, governed: ~15 fps in the Amazon (was ~20 with the old clouds). Unverified on a phone.
+     - **Not copied from Shadertoy.** Its terms page refused an automated read; secondary sources consistently
+       report that shaders with no stated licence default to CC BY-NC-SA 3.0 **(unverified first-hand)**, and
+       non-commercial plus share-alike doesn't fit this MIT repo. So this is written from the published
+       techniques, not adapted from any one shader. A Shadertoy shader whose author states MIT or CC0 could be
+       used with credit.
+     - **Seen, not fixed:** storm tops from above are a little flat; the farthest clouds still stipple slightly
+       near the horizon; storms are only in the tropics and the mid-latitude storm tracks, not monsoons.
      - **Headless (CPU-rendered) frame rate fell from 60 to ~30–34 fps,** mostly the sea shader. Real GPUs should
        be well above that at 400×224 internal pixels **(unverified on a phone)**.
    - **Zoom for scale (11-08, Jason: "zoom way out of your creature to get a sense of scale"):**

@@ -9,12 +9,11 @@ import { generateCreature } from "./creature-graph.js";
 import { buildCreature } from "./creature.js";
 import { buildTerrain } from "./terrain.js";
 import { buildSea } from "./water.js";
-import { buildClouds } from "./clouds.js";
 import { buildGlobe } from "./globe.js";
 import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount } from "./ride.js";
-import { buildSky } from "./sky.js";
+import { buildSkyShader, skyColors, layerTransparent } from "./skyshader.js";
 import { curveUniform } from "./curvature.js";
 import { buildSkyBeings } from "./skybeings.js";
 import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
@@ -67,12 +66,11 @@ resize();
 const hemi = new THREE.HemisphereLight(0xb9a8ff, 0x3a2a55, 1.2);
 const sunLight = new THREE.DirectionalLight(0xfff0d0, 2.2);
 scene.add(hemi, sunLight, sunLight.target);
-const sky = buildSky();
-scene.add(sky.group);
+// The sky and its clouds are one shader pass over the opaque world (skyshader.js).
+const skyPass = buildSkyShader();
 const sea = buildSea(); // rings around the camera, out past the horizon
 scene.add(sea.mesh);
-const clouds = buildClouds();
-scene.add(clouds.group);
+layerTransparent(sea.mesh);
 // A sparkle on you, for when the camera is far away.
 const markerGeo = new THREE.BufferGeometry();
 markerGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
@@ -80,14 +78,17 @@ const marker = new THREE.Points(markerGeo, new THREE.PointsMaterial({ color: 0xf
 marker.renderOrder = 10;
 marker.frustumCulled = false;
 scene.add(marker);
+layerTransparent(marker);
 const rideFx = buildRideFx();
 rideFx.group.visible = false;
 scene.add(rideFx.group);
+layerTransparent(rideFx.group);
 
 // ---- The creature ----
 const graph = generateCreature(seed);
 const creature = buildCreature(graph, stats);
 scene.add(creature.group);
+layerTransparent(creature.group);
 // ?heading= (degrees clockwise from north) and ?alt= (metres above the ground
 // or sea) make a view reproducible.
 const headingParam = params.get("heading"), altParam = params.get("alt");
@@ -106,6 +107,7 @@ async function buildWorld(lat, lon) {
   const insects = buildInsects(frame, terrain);
   const group = new THREE.Group();
   group.add(terrain.mesh, highways.group, beings.group, plants.group, insects.group);
+  layerTransparent(group); // glows, sparkles and fireflies draw after the sky
   return { frame, terrain, highways, beings, plants, insects, group };
 }
 function swapWorld(next, place) {
@@ -385,7 +387,7 @@ function frame() {
     lastSun = t;
   }
   const dir = sunDirection(sunState);
-  const horizon = sky.update(sunState.altitude, dir, camera);
+  const horizon = skyColors(sunState.altitude).horizon;
   const day = Math.max(0, Math.min(1, (sunState.altitude + 6) / 16));
   const p = view.pos;
   sunLight.position.set(p.x + dir.x * 10000, p.y + dir.y * 10000, p.z + dir.z * 10000);
@@ -407,7 +409,6 @@ function frame() {
     scene.fog.far = Math.min(440000, Math.max(40000, horizonM * 1.2));
     scene.fog.near = scene.fog.far * 0.25;
   }
-  sky.group.visible = !underwater;
   if (world) world.highways.group.visible = !underwater;
   sea.underwater = underwater;
   scene.background = scene.fog.color;
@@ -418,7 +419,7 @@ function frame() {
   // clouds follow it, so every player sees the same sky.
   const unix = (fixedTime ? fixedTime.getTime() / 1000 : t0Unix) + t;
   if (world) world.highways.update(t);
-  if (world) window.__dream.beings = world.beings.update(unix, t);
+  if (world) { window.__dream.beings = world.beings.update(unix, t); layerTransparent(world.beings.group); }
   // Plants and insects around you; too small to matter from far up.
   if (world && !state.ride) {
     const life = zoom < 6000;
@@ -428,8 +429,6 @@ function frame() {
       window.__dream.insects = world.insects.update(state.pos.x, state.pos.z, unix % 86400, sunState.altitude);
     }
   }
-  clouds.group.visible = !underwater && !state.ride && !!world;
-  if (clouds.group.visible) window.__dream.puffs = clouds.update(world.frame, view.ll, camera, unix, sunState.altitude, day, horizon, world.terrain.heightAt);
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
   // From far away: a sparkle on you, and the highways as thin lines.
   marker.visible = zoom > 700;
@@ -443,7 +442,8 @@ function frame() {
     renderer.render(globe.scene, globe.camera);
   } else {
     curveUniform.value.copy(camera.position); // the Earth curves away from the eye
-    renderer.render(scene, camera);
+    skyPass.update({ frame: world ? world.frame : makeFrame(view.ll.lat, view.ll.lon), camera, unix, sun: { altitude: sunState.altitude, dir }, day, fog: scene.fog, clouds: !underwater && !state.ride && !!world, underwater, steps: 20 + 44 * detail.scale });
+    skyPass.render(renderer, scene, camera);
   }
   window.__dream.frames++;
   requestAnimationFrame(frame);
@@ -500,7 +500,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh, clouds: clouds.group, sky: sky.group }, world: () => world, detail };
+window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail };
 setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);

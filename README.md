@@ -18,8 +18,9 @@ buttons. The design is in
 **Zoom:** the mouse wheel, +/−, or a pinch takes the camera from just behind you out to the whole planet: hills,
 ranges, coastlines, then a low-poly globe wrapped in the golden ley grid, with you as a sparkle on it.
 
-**Sky and sea:** shader waves with foam and a sparkling sun glint, a high cloud deck, and L-system cumulus that
-drift with real-ish prevailing winds on the real clock, so everyone shares the same sky.
+**Sky and sea:** shader waves with foam and a sparkling sun glint. The sky is one shader: volumetric cumulus that
+tower into storms with rain shafts beneath them, cirrus streaks, a banded sun and stars, ray-marched over the
+curved Earth. The weather rides real-ish prevailing winds on the real clock, so everyone shares the same sky.
 
 **Biomes:** the land is coloured by its real climate (the Köppen-Geiger map), and ground that rises above its
 surroundings turns colder, one step per 900 m. Ten charismatic trees, each its own genus and body plan, grow
