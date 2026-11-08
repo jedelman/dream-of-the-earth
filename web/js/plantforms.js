@@ -295,10 +295,18 @@ export const MID_TRIANGLES = 10; // at most: a five-sided dome (conifers and cac
  * Which tier a plant draws at: "near", "mid", or null (not at all). scale
  * (0..1, from the detail governor) shortens how far trees and shrubs reach.
  */
-export function lodFor(species, fromCreature, fromCamera, scale = 1, height = 0) {
+// From a low camera you look along the forest, not down on it: past a kilometre or so the far shapes are
+// specks a pixel or two high, stacked dozens deep behind each pixel of the horizon, and phones pay for every
+// layer. So a low camera draws the far forest only so far (giants further, so emergents still break the
+// skyline); from higher up, where they spread out instead of stacking, the full reach comes back.
+export const LOW_REACH_M = 800, LOW_REACH_PER_M = 14, GIANT_REACH = 45;
+export const lowReach = (camHeight, height = 0) => Math.max(LOW_REACH_M + LOW_REACH_PER_M * Math.max(0, camHeight), height * GIANT_REACH);
+
+/** "near", "mid" or null. camHeight: the camera's height above the land, in metres. */
+export function lodFor(species, fromCreature, fromCamera, scale = 1, height = 0, camHeight = Infinity) {
   const sp = SPECIES[species];
   if (sp.blades || sp.mounds) return fromCreature <= sp.far && fromCamera <= GROUND_COVER_M ? "near" : null;
-  if (fromCreature > Math.max(NEAR_M, sp.far * scale)) return null;
+  if (fromCreature > Math.max(NEAR_M, Math.min(sp.far * scale, lowReach(camHeight, height)))) return null;
   // Giants keep their full shape further out, so a sequoia doesn't pop at 250 m.
   return fromCamera <= Math.max(NEAR_M, height * 6) ? "near" : "mid";
 }

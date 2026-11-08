@@ -258,9 +258,19 @@ function step(dt) {
   if (state.mode === "air" && stats.fly === 0) target = Math.max(target, 0.6 * sp.fly); // a glide, not a hover
   state.speed += (target - state.speed) * Math.min(1, dt * 1.8);
 
+  if (state.mode !== "air" || up !== 0) state.clear = null;
   if (state.mode === "air") {
     if (stats.fly > 0) {
-      const vyTarget = up > 0 ? sp.climb : up < 0 ? -sp.climb * 1.6 : 0;
+      let vyTarget = up > 0 ? sp.climb : up < 0 ? -sp.climb * 1.6 : 0;
+      if (up === 0) {
+        // Hands off the climb: keep the clearance you let go at (4 to 30 m) over the land ahead,
+        // so rising ground lifts you instead of landing you. Higher up, you keep your altitude.
+        const hx = -Math.sin(state.heading), hz = -Math.cos(state.heading), look = Math.max(0, state.speed) * 1.2;
+        const ahead = Math.max(0, ground, world.terrain.heightAt(p.x + hx * look * 0.5, p.z + hz * look * 0.5), world.terrain.heightAt(p.x + hx * look, p.z + hz * look));
+        if (state.clear == null) state.clear = Math.min(30, Math.max(4, p.y - Math.max(0, ground)));
+        const short = ahead + state.clear - p.y;
+        if (short > 0) vyTarget = Math.min(sp.climb + 0.3 * Math.max(0, state.speed), short * 1.5);
+      }
       state.vy += (vyTarget - state.vy) * Math.min(1, dt * 3);
     } else {
       state.vy = Math.max(state.vy - GRAVITY * dt, -sp.glideSink); // zero fly: glide down
@@ -282,7 +292,8 @@ function step(dt) {
     if (p.y > -1.5 && !(up > 0 && stats.fly > 0)) { p.y = -1.5; state.vy = Math.min(state.vy, 0); } // float at the surface
     if (p.y < g2 + 2) p.y = g2 + 2;
   }
-  if (g2 >= 0 && p.y < g2) { p.y = g2; state.vy = Math.max(0, state.vy); }
+  // Land only on purpose: a flyer not heading down skims a slope too steep to climb, still flying.
+  if (g2 >= 0 && p.y < g2) { p.y = state.mode === "air" && stats.fly > 0 && up >= 0 ? g2 + 0.5 : g2; state.vy = Math.max(0, state.vy); }
   if (g2 < 0 && p.y < g2 + 2) p.y = g2 + 2;
 
   // Pillars of light at the nodes lift any creature up to the ring, wings or not.
@@ -297,7 +308,7 @@ function step(dt) {
 
   // Fly along a highway, inside its ribbon, and it takes you.
   state.captureCooldown -= dt;
-  if (state.captureCooldown <= 0 && state.speed > 5) {
+  if (state.captureCooldown <= 0 && state.speed > 5 && !state.target) { // not on a trip you tapped for: a highway you cross shouldn't take you
     const ll = world.frame.toLatLon(p.x, p.z);
     const c = chooseCapture(ll.lat, ll.lon, { e: fx, n: -fz });
     if (c && Math.abs(p.y - highwayAltitude(world.terrain.heightAt(p.x, p.z))) < captureRadius(c.line.cls.rank)) boardRide(c);
@@ -476,10 +487,12 @@ function onTap(clientX, clientY) {
   }
   if (hit.kind === "being") {
     hit.obj.getWorldPosition(v);
-    const act = () => hum(hit.being, hit.obj);
+    const seed = hit.being.seed, act = () => hum(hit.being, beingObj(seed) || hit.obj);
     if (v.distanceTo(p) < RANGE.being) return act();
-    logLine("The sky being is too far off to hear you. You set off toward it.", "sky");
-    return moveTo({ x: v.x, z: v.z, h: world.terrain.heightAt(v.x, v.z) }, { range: RANGE.being * 0.5, act, alt: v.y - 400 });
+    logLine("The sky being is too far off to hear you. You set off after it.", "sky");
+    // Sky beings drift along their lines (25 m/s), so the trip follows the being, not the spot it was in.
+    const follow = () => { const o = beingObj(seed); if (!o) return null; o.getWorldPosition(v); return { x: v.x, z: v.z, h: world.terrain.heightAt(v.x, v.z), alt: v.y - 400 }; };
+    return moveTo({ x: v.x, z: v.z, h: world.terrain.heightAt(v.x, v.z) }, { range: RANGE.being * 0.5, act, alt: v.y - 400, follow });
   }
   if (hit.kind === "highway") {
     const act = () => boardTapped(hit.line);
@@ -487,12 +500,21 @@ function onTap(clientX, clientY) {
   }
   moveTo(hit);
 }
-/** Set off for a point. Anything with wings flies straight; the rest find a way on foot and by water. */
-function moveTo(hit, { range, act, alt } = {}) {
+/** The sky being with this seed in the current world (they're rebuilt when the world regrows), or null. */
+function beingObj(seed) {
+  for (const o of world.beings.group.children) if (o.userData.being?.seed === seed) return o;
+  return null;
+}
+/**
+ * Set off for a point. Anything with wings flies straight; the rest find a way on foot and by water.
+ * follow: () => { x, z, h, alt } | null, for a goal that moves (a sky being): flyers steer for where it is now;
+ * walkers who arrive and find it gone set off again.
+ */
+function moveTo(hit, { range, act, alt, follow } = {}) {
   const p = state.pos, fly = stats.fly > 0;
   const pts = fly ? [{ x: hit.x, z: hit.z }] : planPath({ x: p.x, z: p.z }, hit, world.terrain.heightAt, sp);
   if (!pts) { logLine("There's no way there on foot.", "note"); return; }
-  state.target = { fly, ground: Math.max(0, hit.h ?? 0), range, act, alt, pts: pts.map((q) => world.frame.toLatLon(q.x, q.z)), idx: 0 };
+  state.target = { fly, ground: Math.max(0, hit.h ?? 0), range, act, alt, follow, pts: pts.map((q) => world.frame.toLatLon(q.x, q.z)), idx: 0 };
   routeDots.visible = true;
 }
 function clearTarget() { if (state.target) state.target = null; routeDots.visible = false; }
@@ -501,13 +523,23 @@ function autopilot() {
   const tg = state.target;
   if (!tg || !world) return null;
   const p = state.pos, last = tg.idx === tg.pts.length - 1;
+  if (tg.follow && tg.fly) {
+    const f = tg.follow(); // where it is now (null when it's out of the world's reach: keep the last sighting)
+    if (f) { tg.pts[tg.pts.length - 1] = world.frame.toLatLon(f.x, f.z); tg.ground = Math.max(0, f.h); if (f.alt !== undefined) tg.alt = f.alt; }
+  }
   const wp = world.frame.toLocal(tg.pts[tg.idx].lat, tg.pts[tg.idx].lon);
   const dx = wp.x - p.x, dz = wp.z - p.z, dist = Math.hypot(dx, dz);
   if (!last && dist < 18) { tg.idx++; return autopilot(); }
-  if (last && tg.act && dist < tg.range) { const act = tg.act; clearTarget(); act(); return null; }
+  if (last && tg.act && dist < tg.range) {
+    const f = tg.follow && !tg.fly ? tg.follow() : null;
+    if (f && Math.hypot(f.x - p.x, f.z - p.z) > tg.range) { moveTo(f, { range: tg.range, act: tg.act, alt: tg.alt, follow: tg.follow }); return null; } // it moved on
+    const act = tg.act; clearTarget(); act(); return null;
+  }
   if (last && dist < 6) {
-    // There. A flyer settles down onto it; then the controls are yours again.
-    if (!tg.fly || p.y - tg.ground < 3 || state.mode !== "air") { clearTarget(); return null; }
+    // There. A flyer settles all the way down onto it (or gives up after 6 s, say over a pillar of light that holds
+    // it up); then the controls are yours again.
+    tg.settling ??= simT;
+    if (!tg.fly || state.mode !== "air" || simT - tg.settling > 6) { clearTarget(); return null; }
     return { turn: 0, thrust: 0, up: -1 };
   }
   let diff = Math.atan2(-dx, -dz) - state.heading;

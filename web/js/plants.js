@@ -316,9 +316,9 @@ export function buildPlants(frame, terrain) {
 
   // Sort the plants in range into near and far shapes by distance from the camera.
   function tier(cam, scale) {
-    const lists = new Map();
+    const lists = new Map(), camHeight = cam.y - Math.max(0, terrain.heightAt(cam.x, cam.z));
     for (const rec of live) {
-      const lod = lodFor(rec.species, rec.d, Math.hypot(rec.x - cam.x, rec.y - cam.y, rec.z - cam.z), scale, rec.height);
+      const lod = lodFor(rec.species, rec.d, Math.hypot(rec.x - cam.x, rec.y - cam.y, rec.z - cam.z), scale, rec.height, camHeight);
       if (!lod) continue;
       const key = lod === "mid" ? `${rec.species}:mid` : `${rec.species}:${rec.variant}`;
       if (!lists.has(key)) lists.set(key, []);
