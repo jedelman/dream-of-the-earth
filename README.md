@@ -14,7 +14,9 @@ elevation data and run out to the real, curved horizon, under that place's real 
 in the sky. Fly, run and swim with WASD/arrows, Space (up) and Shift (down); on touch, drag and use the ▲▼
 buttons. Tap or click anything to go to it: flyers fly straight over, walkers find a way round lakes and
 cliffs. When you get there it answers: trees shake and drop things, your creature squeaks, butterflies chirp,
-sky beings hum, and highways take you aboard, all told in a little log. M mutes the sounds. The design is in
+sky beings hum, and highways take you aboard, all told in a little log. M mutes the sounds. The camera
+frames what you're doing: low on the ground, banking in the air, a crane down when you arrive somewhere, a low
+angle on a tree you shook, and a slow orbit when you sit still. The design is in
 [`docs/design.md`](docs/design.md).
 
 **Zoom:** the mouse wheel, +/−, or a pinch takes the camera from just behind you out to the whole planet: hills,
