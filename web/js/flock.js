@@ -1,10 +1,12 @@
 // Your mutuals' creatures, where their intents put them: each grown from its seed
 // and stats like your own, placed by whereAt() on the shared clock, eased so a new
-// intent glides rather than jumps, with a small @handle over it when it's near.
+// intent glides rather than jumps, with a small @handle over it when it's near (marked
+// "bot" for accounts that label themselves so), a speech bubble when it says
+// something, and a hop when it squeaks.
 import * as THREE from "three";
 import { generateCreature } from "./creature-graph.js";
 import { buildCreature } from "./creature.js";
-import { whereAt } from "./intents.js";
+import { whereAt, fresh } from "./intents.js";
 import { highwayAltitude } from "./ride.js";
 
 const MAX = 24, LABEL_M = 600, WORLD_M = 16000;
@@ -19,8 +21,11 @@ export function buildFlock(scene, labelsEl) {
     scene.add(body.group);
     const label = document.createElement("div");
     label.className = "who";
-    labelsEl.appendChild(label);
-    return { who, graph, body, key: `${who.intent.creature.seed}:${Object.values(who.intent.creature.stats).join(",")}`, pos: null, heading: 0, label };
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.hidden = true;
+    labelsEl.append(label, bubble);
+    return { who, graph, body, key: `${who.intent.creature.seed}:${Object.values(who.intent.creature.stats).join(",")}`, pos: null, heading: 0, label, bubble, hopAt: -10 };
   }
   function drop(did) {
     const e = live.get(did);
@@ -28,6 +33,7 @@ export function buildFlock(scene, labelsEl) {
     scene.remove(e.body.group);
     e.body.group.traverse((o) => { o.geometry?.dispose(); o.material?.dispose?.(); });
     e.label.remove();
+    e.bubble.remove();
     live.delete(did);
   }
 
@@ -42,7 +48,10 @@ export function buildFlock(scene, labelsEl) {
         if (e && e.key !== key) { drop(who.did); e = null; }
         if (!e) { e = make(who); live.set(who.did, e); }
         e.who = who;
-        e.label.textContent = who.handle ? `@${who.handle}` : "";
+        const tag = document.createElement("span");
+        tag.className = "bot";
+        tag.textContent = "bot";
+        e.label.replaceChildren(document.createTextNode(who.handle ? `@${who.handle}` : ""), ...(who.bot ? [tag] : []));
       }
       for (const did of [...live.keys()]) if (!keep.has(did)) drop(did);
     },
@@ -54,13 +63,15 @@ export function buildFlock(scene, labelsEl) {
         const far = Math.hypot(p.x, p.z) > WORLD_M;
         e.body.group.visible = !far;
         e.where = w;
-        if (far) { e.label.hidden = true; e.pos = null; continue; }
+        if (far) { e.label.hidden = true; e.bubble.hidden = true; e.pos = null; continue; }
         const g = Math.max(0, world.terrain.heightAt(p.x, p.z));
         const y = w.mode === "ride" ? highwayAltitude(world.terrain.heightAt(p.x, p.z)) : Math.max(g, w.alt ?? g);
         tmp.set(p.x, y, p.z);
         if (!e.pos || e.pos.distanceTo(tmp) > 2000) e.pos = tmp.clone(); // first sight, or a jump (a ride, a teleport)
         else e.pos.lerp(tmp, Math.min(1, dt * 3));
         e.body.group.position.copy(e.pos);
+        const hop = t - e.hopAt;
+        if (hop < 0.45) e.body.group.position.y += Math.sin((Math.PI * hop) / 0.45) * 3 * e.graph.scale;
         // Facing: compass bearing (0 = north = -z) to the creature's yaw.
         const yaw = -w.bearing;
         e.heading += Math.atan2(Math.sin(yaw - e.heading), Math.cos(yaw - e.heading)) * Math.min(1, dt * 4);
@@ -73,8 +84,23 @@ export function buildFlock(scene, labelsEl) {
         tmp.project(camera);
         const show = d < LABEL_M && tmp.z < 1 && Math.abs(tmp.x) < 1.1 && Math.abs(tmp.y) < 1.1 && !!e.who.handle;
         e.label.hidden = !show;
-        if (show) e.label.style.transform = `translate(${((tmp.x + 1) / 2) * r.width + r.left}px, ${((1 - tmp.y) / 2) * r.height + r.top}px) translate(-50%, -100%)`;
+        const at = `translate(${((tmp.x + 1) / 2) * r.width + r.left}px, ${((1 - tmp.y) / 2) * r.height + r.top}px)`;
+        if (show) e.label.style.transform = `${at} translate(-50%, -100%)`;
+        // A speech bubble over the name, while it's fresh.
+        const say = e.who.intent.say, talking = show && fresh(say, nowS);
+        e.bubble.hidden = !talking;
+        if (talking) {
+          if (e.bubble.textContent !== say.text) e.bubble.textContent = say.text;
+          e.bubble.style.transform = `${at} translate(-50%, calc(-100% - 16px))`;
+        }
       }
+    },
+    /** A mutual's creature hops (they squeaked). Returns where it is in this world, or null if it's not in view. */
+    hop(did, t) {
+      const e = live.get(did);
+      if (!e || !e.pos || !e.body.group.visible) return null;
+      e.hopAt = t;
+      return { pos: e.pos.clone(), scale: e.graph.scale };
     },
     /** Mutuals within r metres of (x, z) in this world: [{ did, handle, x, y, z, entry }]. */
     near(x, z, r) {

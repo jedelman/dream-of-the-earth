@@ -91,6 +91,8 @@ export async function visibleAmong(viewer, dids) {
   await loadProfiles(others.filter((d) => rels.get(`${viewer} ${d}`)?.rel?.following && rels.get(`${viewer} ${d}`)?.rel?.followedBy));
   return new Set(dids.filter((d) => d === viewer || allowed(rels.get(`${viewer} ${d}`)?.rel, profiles.get(d)?.p, muted.has(d))));
 }
+/** Whether an account labels itself a bot (Bluesky's "bot" self-label), from the profiles already read. */
+export const isBot = (did) => !!profiles.get(did)?.p?.labels?.some((l) => l && l.val === "bot");
 /** Handles for DIDs: Map(did -> "name.bsky.social"). Unknown ones are left out. */
 export async function handlesOf(dids) {
   try { await loadProfiles(dids); } catch { /* names are a nicety */ }

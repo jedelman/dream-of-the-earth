@@ -19,8 +19,8 @@ import { planPath } from "./pathfind.js";
 import { RANGE, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
 import { buildGlints } from "./glints.js";
 import { buildCairns } from "./cairns.js";
-import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted } from "./atproto.js";
-import { makeIntent, parseIntent, driftOf, whereAt, INTENT_NSID, HEARTBEAT_S, STALE_S } from "./intents.js";
+import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted, isBot } from "./atproto.js";
+import { makeIntent, parseIntent, driftOf, whereAt, fresh, INTENT_NSID, HEARTBEAT_S, STALE_S, MOMENT_S } from "./intents.js";
 import { listen } from "./presence.js";
 import { buildFlock } from "./flock.js";
 import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm, byDistance, metresBetween, distanceText, NSID as ARTIFACT_NSID } from "./artifacts.js";
@@ -217,6 +217,7 @@ addEventListener("keydown", (e) => {
   if (["Space", "ArrowUp", "ArrowDown"].includes(e.code)) e.preventDefault();
   if (e.code === "KeyM" && !e.repeat) logLine(sound.toggle() ? "Sound off." : "Sound on.", "note");
   if (e.code === "KeyE" && !e.repeat) interact();
+  if ((e.code === "Enter" || e.code === "NumpadEnter") && !e.repeat && document.activeElement?.tagName !== "BUTTON" && document.activeElement?.tagName !== "SELECT") { e.preventDefault(); openSay(); }
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
 const touch = { turn: 0, thrust: 0, up: 0, id: null, x: 0, y: 0 };
@@ -606,6 +607,7 @@ function autopilot() {
 
 // ---- What things do when you reach them ----
 function squeak() {
+  if (canSpeak()) { share.act = { kind: "squeak", at: realNow() }; share.force = true; } // mutuals nearby hear it too
   sound.squeak(1.25 / graph.scale);
   hopAt = simT;
   director.play("squeak", simT, squeakShot(state.heading, graph.scale, zoom), { dur: 2.4, blendIn: 0.4, blendOut: 0.8 });
@@ -832,6 +834,7 @@ function setViewer(did, handle) {
   people.viewer = did;
   people.handle = handle;
   maker.setPerson({ did, handle, signedIn: !!did && account.did === did });
+  sayBtn.hidden = !(did && account.did === did);
   artifactsAt = -Infinity;
   hearMutuals(!!did);
 }
@@ -967,9 +970,9 @@ function touchCairn(e) {
 const flock = buildFlock(scene, document.getElementById("whos"));
 const who = new Map(); // did -> { did, handle, intent }
 let intentsAt = -Infinity, hearing = null, fetchingIntents = false;
-const share = { on: (() => { try { return localStorage.getItem("dream.share") !== "off"; } catch { return true; } })(), can: false, last: null, lastKind: "", lastKey: "", lastAt: -Infinity, writing: false };
+const share = { on: (() => { try { return localStorage.getItem("dream.share") !== "off"; } catch { return true; } })(), can: false, last: null, lastKind: "", lastKey: "", lastAt: -Infinity, writing: false, say: null, act: null, force: false, carried: false };
 function setWho() {
-  flock.set([...who.values()]);
+  flock.set([...who.values()].map((w) => ({ ...w, bot: isBot(w.did) })));
   maker.setCount(everywhere.length, who.size);
   globe.setFlock(flock.everyone(realNow()));
 }
@@ -1008,7 +1011,11 @@ function hearMutuals(on) {
       const handle = (await handlesOf([e.did])).get(e.did) || null;
       if (c.collection === INTENT_NSID) {
         const intent = c.rkey === "self" ? parseIntent(c.record) : null;
-        if (intent) { who.set(e.did, { did: e.did, handle, intent }); setWho(); }
+        if (!intent) return;
+        const prev = who.get(e.did)?.intent;
+        who.set(e.did, { did: e.did, handle, intent });
+        setWho();
+        heard(e.did, handle, intent, prev);
         return;
       }
       const a = parseArtifact(c.record, realNow());
@@ -1038,10 +1045,59 @@ function squeakAt(m) {
   logLine(`You squeak at @${m.handle || "them"}.`, "creature");
 }
 
+/** Something a mutual said or did just now: a line in the log if they're within 2 km, a squeak if within 600 m. */
+function heard(did, handle, it, prev) {
+  if (!world) return;
+  const nowS = realNow(), at = whereAt(it, nowS), me = world.frame.toLatLon(state.pos.x, state.pos.z);
+  const metres = metresBetween(me.lat, me.lon, at.lat, at.lon), name = handle ? `@${handle}` : "a mutual";
+  if (fresh(it.say, nowS) && it.say.at !== prev?.say?.at && metres < 2000) logLine(`${name}: ${it.say.text}`, "say");
+  if (fresh(it.act, nowS) && it.act.at !== prev?.act?.at && it.act.kind === "squeak") {
+    const h = flock.hop(did, simT);
+    if (h && h.pos.distanceTo(camera.position) < 600) {
+      sound.squeak(1.25 / h.scale);
+      bursts.emit({ at: h.pos.clone().add(new THREE.Vector3(0, 4 * h.scale, 0)), colors: [new THREE.Color(0xff9ec7), new THREE.Color(0xfff3b0)], n: 14, spread: 2.5, up: 4, fall: 2, life: 1.2 });
+      if (metres < 2000) logLine(`${name} squeaks!`, "creature");
+    }
+  }
+}
+// ---- Speaking: a line of up to 80 characters, carried on your intent for a few seconds ----
+const sayForm = document.getElementById("sayform"), sayText = document.getElementById("saytext"), sayBtn = document.getElementById("saybtn"), myBubble = document.getElementById("mybubble");
+const canSpeak = () => share.on && share.can && !!account.did && people.viewer === account.did;
+function openSay() {
+  if (!canSpeak()) { logLine(account.did ? "Show yourself to your mutuals first (Bluesky ▾), then you can speak." : "Sign in with Bluesky to speak to your mutuals.", "note"); return; }
+  sayForm.hidden = false;
+  sayText.value = "";
+  sayText.focus();
+}
+function closeSay() { sayForm.hidden = true; sayText.blur(); }
+sayForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = sayText.value.trim();
+  closeSay();
+  if (!text || !canSpeak()) return;
+  share.say = { text: text.slice(0, 200), at: realNow() };
+  share.force = true;
+  shareTick();
+  logLine(`You: ${makeIntent({ kind: "rest", p: { lat: 0, lon: 0 }, creature: { seed, stats }, say: share.say }).say?.text ?? ""}`, "say");
+});
+sayText.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); closeSay(); } });
+sayBtn.addEventListener("click", () => (sayForm.hidden ? openSay() : closeSay()));
+/** Your own bubble, over your creature, while it's fresh. */
+function placeMyBubble() {
+  const say = share.say;
+  const show = !!say && fresh(say, realNow()) && !!world && !state.ride;
+  myBubble.hidden = !show;
+  if (!show) return;
+  const r = canvas.getBoundingClientRect(), v = creature.group.position.clone().add(new THREE.Vector3(0, 7 * graph.scale, 0)).project(camera);
+  if (v.z > 1) { myBubble.hidden = true; return; }
+  if (myBubble.textContent !== say.text) myBubble.textContent = makeIntent({ kind: "rest", p: { lat: 0, lon: 0 }, creature: { seed, stats }, say }).say?.text ?? say.text;
+  myBubble.style.transform = `translate(${((v.x + 1) / 2) * r.width + r.left}px, ${((1 - v.y) / 2) * r.height + r.top}px) translate(-50%, -100%)`;
+}
 // ---- Sharing your own intent (signed in, sharing on) ----
 /** What I'm doing now, as an intent: a ride, a trip, steering, or resting. */
 function myIntent() {
-  const p = state.pos, ll = world.frame.toLatLon(p.x, p.z), base = { p: { lat: ll.lat, lon: ll.lon, alt: p.y }, creature: { seed, stats } };
+  const p = state.pos, ll = world.frame.toLatLon(p.x, p.z), nowS = realNow();
+  const base = { p: { lat: ll.lat, lon: ll.lon, alt: p.y }, creature: { seed, stats }, say: fresh(share.say, nowS) ? share.say : null, act: fresh(share.act, nowS) ? share.act : null };
   if (state.ride) {
     const r = state.ride, rl = rideLatLon(r);
     return { ...base, p: { lat: rl.lat, lon: rl.lon, alt: p.y }, kind: "ride", key: `ride:${r.line.i}:${r.dir}`, ride: { line: r.line.i, t: r.t, dir: r.dir } };
@@ -1059,8 +1115,11 @@ function shareTick() {
   const nowS = realNow(), want = myIntent(), since = nowS - share.lastAt;
   const ll = want.p, drift = share.last ? driftOf(share.last, nowS, ll.lat, ll.lon) : Infinity;
   const changed = want.key !== share.lastKey;
-  if (!((changed && since > 1.5) || (drift > 60 && since > 6) || since > HEARTBEAT_S)) return;
+  const moment = !!(want.say || want.act), clearMoment = share.carried && !moment; // words leave your record once they've been heard
+  if (!(share.force || clearMoment || (changed && since > 1.5) || (drift > 60 && since > 6) || since > HEARTBEAT_S)) return;
   const record = makeIntent({ ...want, now: new Date(nowS * 1000) });
+  share.force = false;
+  share.carried = moment;
   share.writing = true;
   account.putIntent(record).then(() => {
     share.last = parseIntent(record, nowS);
@@ -1231,6 +1290,7 @@ function frame() {
   if (people.viewer && simT - everywhereAt > 180) refreshEverywhere();
   cairns.update(t, realNow());
   if (world && !state.ride) flock.update(t, dt, realNow(), world, camera, canvas);
+  placeMyBubble();
   if (t - shareTickAt > 1) {
     shareTickAt = t;
     shareTick();
