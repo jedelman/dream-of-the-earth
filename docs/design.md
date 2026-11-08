@@ -100,7 +100,8 @@ as it stands. The game was already going to be a web bundle (three.js) that the 
 - **Soil:** SoilGrids 2.0 (250 m): texture, organic carbon, sand/clay.
 - **Canopy:** ETH Global Canopy Height (10 m, 2020; Lang et al. 2023).
 - **An alternative:** the Köppen-Geiger 1 km maps (Beck et al. 2023), if a ready-made climate class is
-  simpler than continuous values.
+  simpler than continuous values. **This is what the first pass uses (built 11-08):** the 1991–2020 map at
+  0.1° (~11 km), cut into 72 PNG tiles of 30° (388 KB in all) by `scripts/koppen-tiles.py`. See the build order.
 
 Not WorldClim: its own terms say non-commercial use only, with no redistribution without permission, and
 serving derived tiles is redistribution. The licenses come from catalogue pages and the ETH record. Confirm
@@ -129,8 +130,10 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
 - **Seeded by place.** Each plant's seed is a hash of the cell, the biome and an index, so every phone grows
   the same tree in the same spot and nothing is stored or sent. That makes the world leave-no-trace by
   construction.
-- **Budgets keep it SNES-era.** Recursion depth is capped, branches become 3–5-sided prisms, and leaves are
-  single triangles. Each plant has a triangle budget (start at ~48) and is drawn instanced.
+- **Budgets keep it SNES-era.** Recursion depth is capped, branches become 3-sided prisms, crowns become
+  squashed octahedra, palm fronds flat diamonds, and grass blades single triangles (front and back). Each plant
+  has a budget of 64 triangles, spent trunk first, then foliage, then the finer branches the foliage hides, and
+  is drawn instanced. (Built 11-08; the grammars live in `web/js/plantforms.js` for now, not on the Worker.)
 - **Textures:** an L-system turtle draws into tiny palette textures (32×32), sampled with nearest-neighbour
   filtering.
 - **Sky whales** are ambient creatures grown from grammars. Their paths are functions of the clock (say,
@@ -396,8 +399,34 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
        crossing the planet.
      - **Found while building it:** in three.js 0.186, an icosphere's `detail` subdivides linearly ((d+1)² per face),
        not recursively; detail 5 gave only 720 facets.
-2. **Biomes and life:** the CHELSA/SoilGrids/canopy pipeline to world tiles (R2); lapse-rate downscaling;
-   L-system plants; braided interchange rings where networks cross.
+2. **Biomes and life:**
+   - **First pass (11-08, Jason: "Let's do biomes next! Plants first but if we can get insects that would
+     rule. Even if the insects are like 4 triangles"):**
+     - **Climate from Köppen-Geiger** (Beck et al. 2023, 1991–2020, 0.1°). Each of the 30 classes becomes a
+       moisture regime (wet, seasonal, arid) and a rung on a temperature ladder of seven, from ice to the
+       warmest. Each regime has its own ladder: wet runs tundra, taiga, continental, oceanic, subtropical,
+       rainforest; seasonal ends in highland, mediterranean, savanna; arid in cold desert, cold steppe, steppe,
+       desert. Where the map has no data (small islands, coastal edges), latitude and the lapse rate decide.
+     - **Jason's rule:** ground that stands above its smoothed surroundings (a ~4 km blur of the near terrain)
+       climbs one rung per 900 m, since air cools ~6.5 °C per km and a rung is ~6 °C. So a desert mountain
+       standing 2 km above its plain turns cold steppe. The land, the seafloor and the globe are all
+       coloured by biome; steep faces stay bare rock.
+     - **Plants:** ten species from small L-systems or procedures: broadleaf, rainforest emergents, palms,
+       acacias, shrubs, saguaro-ish cacti, conifers, cypresses, grass and moss. Three shapes each, picked per
+       plant. Trees and shrubs stand on a global 40 m lat/lon grid out to ~1 km; grass and moss on a 10 m
+       grid out to 220 m. Each cell's hash decides whether anything grows there (by the biome's density),
+       what, how tall, which way it faces, and its colour, a shift from the biome's own. So every phone grows
+       the same forest and nothing is stored. Some warm-biome trees and shrubs blossom; everything sways from
+       the top. Replanting after 200 m of travel takes ~10 ms.
+     - **Insects:** butterflies of exactly 4 triangles by day, flying figure-eights around hashed homes on the
+       shared clock (dream-sized, 3–5 m wingspans, so they read from the camera), and blinking fireflies at
+       night where the biome has them. Both cost almost nothing: the flight is in the vertex shader.
+     - **Cost:** in the rainforest, headless (CPU-rendered) frame rate falls from ~30 to ~17 fps with plants,
+       or from ~34 to ~19 at the default 350 m. Cutting plant triangles by 38% didn't change it, so it's
+       fragment overdraw in software rendering. A phone GPU at 400×224 should not notice **(unverified on a
+       phone)**.
+   - **Later:** CHELSA for continuous temperature and precipitation, SoilGrids, canopy height; braided
+     interchange rings where networks cross.
 3. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.
 
 **Multiplayer:**
@@ -414,7 +443,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 | CHELSA | temperature, precipitation | CC BY 4.0 (catalogue pages) |
 | SoilGrids 2.0 (ISRIC) | soil | CC BY 4.0 (JRC catalogue) |
 | ETH Global Canopy Height 2020 (Lang et al. 2023) | canopy height | CC BY 4.0 (ETH record) |
-| Köppen-Geiger 1 km (Beck et al. 2023), if used | climate class | CC BY 4.0 |
+| Köppen-Geiger (Beck et al. 2023, Scientific Data 10:724), 1991–2020 at 0.1°, from figshare 10.6084/m9.figshare.21937571 | climate class (biomes) | CC0 on the figshare record (its API, checked 11-08); an earlier session's search found the maps' page saying CC BY 4.0 **(not rechecked)**, so credit them either way |
 | leylines-solids (Joerg Roth) | ley geometry | Apache-2.0 (package.json) |
 | Becker & Hagens; Leland (judsyn.weebly.com); McCooey's Visual Polyhedra | grid origins | credit |
 | three.js | renderer | MIT |

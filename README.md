@@ -21,6 +21,11 @@ ranges, coastlines, then a low-poly globe wrapped in the golden ley grid, with y
 **Sky and sea:** shader waves with foam and a sparkling sun glint, a high cloud deck, and L-system cumulus that
 drift with real-ish prevailing winds on the real clock, so everyone shares the same sky.
 
+**Biomes:** the land is coloured by its real climate (the Köppen-Geiger map), and ground that rises above its
+surroundings turns colder, one step per 900 m. Low-poly L-system forests, palms, acacias, cacti, conifers,
+grass and moss grow where they should, the same on every phone. Butterflies of four triangles fly by day, and
+fireflies blink at night.
+
 **Sky beings:** sparkling eldritch things grown from L-systems drift slowly along every ley line, and everyone
 sees the same one in the same place at the same moment.
 
@@ -37,7 +42,7 @@ metres, up to 40,000,000), and `&ride=N` (start out riding highway N, 0–723).
 ```bash
 npm ci
 npm run dev     # wrangler dev: the Worker plus web/ on localhost
-npm test        # unit tests for the pure modules (ley geometry, sun, creatures, stats)
+npm test        # unit tests for the pure modules (ley geometry, sun, creatures, stats, biomes, plants)
 npm run check   # bundle and validate the Worker without deploying
 ```
 No build step: `web/` is plain ES modules with three.js vendored in `web/vendor/`. CI (`.github/workflows/ci.yml`)

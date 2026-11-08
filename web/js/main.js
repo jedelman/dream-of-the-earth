@@ -18,7 +18,10 @@ import { buildSky } from "./sky.js";
 import { curveUniform } from "./curvature.js";
 import { buildSkyBeings } from "./skybeings.js";
 import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
-import { interimTemperature, biomeFor } from "./geo.js";
+import { biomeFor, koppenCode } from "./biome.js";
+import { koppenAt } from "./koppen.js";
+import { buildPlants } from "./plants.js";
+import { buildInsects } from "./insects.js";
 
 // ---- Who and where (URL params make any spawn reproducible) ----
 const params = new URLSearchParams(location.search);
@@ -98,9 +101,11 @@ async function buildWorld(lat, lon) {
   const terrain = await buildTerrain(frame, lat, lon);
   const highways = buildHighways(frame, terrain.heightAt);
   const beings = buildSkyBeings(frame, terrain.heightAt);
+  const plants = buildPlants(frame, terrain);
+  const insects = buildInsects(frame, terrain);
   const group = new THREE.Group();
-  group.add(terrain.mesh, highways.group, beings.group);
-  return { frame, terrain, highways, beings, group };
+  group.add(terrain.mesh, highways.group, beings.group, plants.group, insects.group);
+  return { frame, terrain, highways, beings, plants, insects, group };
 }
 function swapWorld(next, place) {
   if (place) {
@@ -113,7 +118,11 @@ function swapWorld(next, place) {
   }
   if (world) {
     scene.remove(world.group);
-    world.group.traverse((o) => { o.geometry?.dispose(); });
+    // Plant shapes are shared between worlds; only their instance buffers go.
+    world.group.traverse((o) => {
+      if (o.isInstancedMesh) o.dispose();
+      if (!o.userData.sharedGeometry) o.geometry?.dispose();
+    });
   }
   world = next;
   scene.add(world.group);
@@ -322,7 +331,9 @@ function updateHud() {
   const ground = world.terrain.heightAt(state.pos.x, state.pos.z);
   const { node, meters } = nearestNode(ll.lat, ll.lon);
   const cls = CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
-  const where = ground < 0 ? `sea, ${Math.round(-ground)} m deep` : `${biomeFor(interimTemperature(ll.lat, ground))} (interim)`;
+  const k = koppenAt(ll.lat, ll.lon);
+  const biome = biomeFor(k, world.terrain.reliefAt(state.pos.x, state.pos.z), ll.lat, ground);
+  const where = ground < 0 ? `sea, ${Math.round(-ground)} m deep` : `${biome.toUpperCase()}${k ? ` (${koppenCode(k)})` : ""}`;
   hud.textContent = [
     `${state.mode.toUpperCase()}  ${Math.round(state.pos.y)} M  ·  ${where}`,
     `${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}`,
@@ -392,6 +403,15 @@ function frame() {
   const unix = (fixedTime ? fixedTime.getTime() / 1000 : t0Unix) + t;
   if (world) world.highways.update(t);
   if (world) window.__dream.beings = world.beings.update(unix, t);
+  // Plants and insects around you; too small to matter from far up.
+  if (world && !state.ride) {
+    const life = zoom < 6000;
+    world.plants.group.visible = world.insects.group.visible = life;
+    if (life) {
+      window.__dream.plants = world.plants.update(state.pos.x, state.pos.z, t);
+      window.__dream.insects = world.insects.update(state.pos.x, state.pos.z, unix % 86400, sunState.altitude);
+    }
+  }
   clouds.group.visible = !underwater && !state.ride && !!world;
   if (clouds.group.visible) window.__dream.puffs = clouds.update(world.frame, view.ll, camera, unix, sunState.altitude, day, horizon, world.terrain.heightAt);
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
@@ -464,7 +484,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh, clouds: clouds.group, sky: sky.group } };
+window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh, clouds: clouds.group, sky: sky.group }, world: () => world };
 setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);
