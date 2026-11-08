@@ -7,7 +7,9 @@ import { sunPosition, sunDirection } from "./sun.js";
 import { mulberry32, hashString } from "./rng.js";
 import { generateCreature } from "./creature-graph.js";
 import { buildCreature } from "./creature.js";
-import { buildTerrain, buildSea } from "./terrain.js";
+import { buildTerrain } from "./terrain.js";
+import { buildSea } from "./water.js";
+import { buildClouds } from "./clouds.js";
 import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount } from "./ride.js";
@@ -62,8 +64,10 @@ const sunLight = new THREE.DirectionalLight(0xfff0d0, 2.2);
 scene.add(hemi, sunLight, sunLight.target);
 const sky = buildSky();
 scene.add(sky.group);
-const sea = buildSea(1200000); // to the horizon and past it
+const sea = buildSea(); // rings around the camera, out past the horizon
 scene.add(sea.mesh);
+const clouds = buildClouds();
+scene.add(clouds.group);
 const rideFx = buildRideFx();
 rideFx.group.visible = false;
 scene.add(rideFx.group);
@@ -330,15 +334,18 @@ function frame() {
   }
   sky.group.visible = !underwater;
   if (world) world.highways.group.visible = !underwater;
-  sea.mesh.material.opacity = underwater ? 0.92 : 0.55;
+  sea.underwater = underwater;
   scene.background = scene.fog.color;
 
   sea.mesh.position.set(camera.position.x, 0, camera.position.z); // its waves are keyed to world position
-  sea.update(t);
+  sea.update(t, dir, day, horizon);
+  // The shared clock: the real one, or ?t= when it's fixed. Sky beings and
+  // clouds follow it, so every player sees the same sky.
+  const unix = (fixedTime ? fixedTime.getTime() / 1000 : t0Unix) + t;
   if (world) world.highways.update(t);
-  // Sky beings drift on the real clock (or from ?t= when it's fixed), so every
-  // player sees the same one in the same place.
-  if (world) window.__dream.beings = world.beings.update((fixedTime ? fixedTime.getTime() / 1000 : t0Unix) + t, t);
+  if (world) window.__dream.beings = world.beings.update(unix, t);
+  clouds.group.visible = !underwater && !state.ride && !!world;
+  if (clouds.group.visible) window.__dream.puffs = clouds.update(world.frame, view.ll, camera, unix, sunState.altitude, day, horizon, world.terrain.heightAt);
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
   curveUniform.value.copy(camera.position); // the Earth curves away from the eye
   renderer.render(scene, camera);
@@ -386,7 +393,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state };
+window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh, clouds: clouds.group, sky: sky.group } };
 setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);

@@ -15,6 +15,9 @@ in the sky. Fly, run and swim with WASD/arrows, Space (up) and Shift (down); on 
 buttons. The design is in
 [`docs/design.md`](docs/design.md).
 
+**Sky and sea:** shader waves with foam and a sparkling sun glint, a high cloud deck, and L-system cumulus that
+drift with real-ish prevailing winds on the real clock, so everyone shares the same sky.
+
 **Sky beings:** sparkling eldritch things grown from L-systems drift slowly along every ley line, and everyone
 sees the same one in the same place at the same moment.
 

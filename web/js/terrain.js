@@ -204,30 +204,3 @@ export async function buildTerrain(frame, lat, lon) {
   }
   return { mesh, heightAt, failed: rings[0].failed, bounds: rings[0].bounds };
 }
-
-/**
- * A translucent sea out to the horizon. It wobbles on the GPU, keyed to world
- * position, so the mesh can simply follow the camera.
- */
-export function buildSea(size) {
-  const seg = 120;
-  const geo = new THREE.PlaneGeometry(size, size, seg, seg).rotateX(-Math.PI / 2);
-  const time = { value: 0 };
-  const mat = new THREE.MeshLambertMaterial({ color: 0x3fd6ff, transparent: true, opacity: 0.55, flatShading: true, side: THREE.DoubleSide, depthWrite: false });
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uSeaTime = time;
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nuniform float uSeaTime;")
-      .replace(
-        "#include <begin_vertex>",
-        `#include <begin_vertex>
-        { vec4 sw = modelMatrix * vec4(transformed, 1.0);
-          transformed.y += sin(sw.x * 0.0021 + uSeaTime * 0.9) * 6.0 + cos(sw.z * 0.0017 - uSeaTime * 0.7) * 6.0; }`,
-      );
-  };
-  curved(mat, "-sea");
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.renderOrder = 1;
-  mesh.frustumCulled = false;
-  return { mesh, update(t) { time.value = t; } };
-}
