@@ -6,7 +6,7 @@
 // is dead-reckoned until the next intent. Records from others are untrusted:
 // parseIntent checks every field. Also here, the one rule for whose things we
 // show at all. Pure, so Node can test it.
-import { WORLD_URL, metresBetween } from "./artifacts.js";
+import { WORLD_URL, metresBetween, cleanNote } from "./artifacts.js";
 import { STATS, valid } from "./stats.js";
 import { pointOn, rideSpeed, lineAt, lineCount } from "./ride.js";
 import { vecToLatLon } from "./geo.js";
@@ -17,6 +17,9 @@ export const KINDS = ["rest", "goto", "ride", "steer"];
 export const STALE_S = 600; // an intent not renewed for 10 minutes is a creature that's left
 export const HEARTBEAT_S = 240; // so a player renews it every 4 minutes while playing
 export const MAX_POINTS = 64;
+export const SAY_MAX = 80; // characters in a speech bubble
+export const MOMENT_S = 8; // how long a bubble (or a squeak) shows after it's said
+export const ACTS = ["squeak"];
 const STEER_FOR_S = 90; // dead reckoning stops this long after the intent (the next one should have come)
 
 const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -26,7 +29,7 @@ const E6 = (x) => Math.round(x * 1e6);
  * My intent now. p: { lat, lon, alt (m, above sea level) }; creature: { seed, stats }; plus one of
  * goto: { pts: [{ lat, lon }], speed (m/s), fly, cruise (m) }, ride: { line, t (0..1), dir }, steer: { heading (rad), speed, climb }.
  */
-export function makeIntent({ kind, p, creature, goto, ride, steer, now = new Date() }) {
+export function makeIntent({ kind, p, creature, goto, ride, steer, say, act, now = new Date() }) {
   const v = {
     $type: INTENT_NSID,
     world: WORLD_URL,
@@ -38,6 +41,9 @@ export function makeIntent({ kind, p, creature, goto, ride, steer, now = new Dat
   if (kind === "goto") v.goto = { pts: goto.pts.slice(0, MAX_POINTS).map((q) => [E6(q.lat), E6(q.lon)]), speedCm: Math.round(goto.speed * 100), fly: !!goto.fly, cruiseDm: Math.round((goto.cruise ?? 0) * 10) };
   if (kind === "ride") v.ride = { line: ride.line, tE6: Math.round(ride.t * 1e6), dir: ride.dir > 0 ? 1 : -1 };
   if (kind === "steer") v.steer = { headingMdeg: Math.round(((((steer.heading * 180) / Math.PI) % 360) + 360) % 360 * 1000), speedCm: Math.round(steer.speed * 100), climbCm: Math.round(steer.climb * 100) };
+  // Moments ride along on the same record, for a few seconds: something said, a squeak.
+  if (say?.text) v.say = { text: Array.from(cleanNote(say.text)).slice(0, SAY_MAX).join(""), at: new Date(say.at * 1000).toISOString() };
+  if (act && ACTS.includes(act.kind)) v.act = { kind: act.kind, at: new Date(act.at * 1000).toISOString() };
   return v;
 }
 
@@ -71,8 +77,21 @@ export function parseIntent(v, nowS = Date.now() / 1000) {
     if (!s || !int(s.headingMdeg, 0, 360000) || !int(s.speedCm, -100000, 100000) || !int(s.climbCm, -100000, 100000)) return null;
     out.steer = { heading: ((s.headingMdeg / 1000) * Math.PI) / 180, speed: s.speedCm / 100, climb: s.climbCm / 100 };
   }
+  // Moments: something said (a bubble) and an act (a squeak), each with its own time; bad ones are dropped, not fatal.
+  const when = (x) => (typeof x === "string" && x.length <= 40 ? Date.parse(x) / 1000 : NaN);
+  if (v.say && typeof v.say === "object" && typeof v.say.text === "string" && v.say.text.length <= 1000) {
+    const at2 = when(v.say.at), text = Array.from(cleanNote(v.say.text)).slice(0, SAY_MAX).join("");
+    if (Number.isFinite(at2) && at2 <= nowS + 60 && text) out.say = { text, at: at2 };
+  }
+  if (v.act && typeof v.act === "object" && ACTS.includes(v.act.kind)) {
+    const at2 = when(v.act.at);
+    if (Number.isFinite(at2) && at2 <= nowS + 60) out.act = { kind: v.act.kind, at: at2 };
+  }
   return out;
 }
+
+/** Whether a moment (say or act) is still showing at nowS. */
+export const fresh = (m, nowS) => !!m && nowS - m.at >= -1 && nowS - m.at < MOMENT_S;
 
 const R = 6371008.8, D2R = Math.PI / 180;
 /** A step of d metres from (lat, lon) along a bearing (radians, 0 = north, clockwise). Fine at game distances. */

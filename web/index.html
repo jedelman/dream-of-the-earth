@@ -42,8 +42,17 @@
   .sheet ul.cairns .where { grid-area: where; font-size: 11px; opacity: .75; }
   .sheet ul.cairns .what { grid-area: what; font-size: 11px; color: #ffe3a3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sheet ul.cairns button.go { grid-area: go; padding: 5px 12px; }
+  #whos .who .bot { margin-left: 5px; padding: 0 3px; font-size: 9px; color: #120a20; background: #9ef0ff; vertical-align: 1px; }
+  .bubble { position: fixed; left: 0; top: 0; max-width: 220px; padding: 4px 8px; font: 11px/1.35 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; color: #fff7e0; background: rgba(14, 8, 30, .88); border: 1px solid rgba(255, 211, 77, .7); white-space: normal; overflow-wrap: anywhere; pointer-events: none; will-change: transform; z-index: 2; }
+  .bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; margin-left: -5px; border: 5px solid transparent; border-bottom: 0; border-top-color: rgba(255, 211, 77, .7); }
+  #saybtn { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 86px); font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #fff7e0; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
+  #sayform { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(64px, calc(env(safe-area-inset-bottom) + 56px)); width: min(calc(100vw - 20px), 420px); display: flex; gap: 6px; z-index: 6; }
+  #sayform[hidden] { display: none; }
+  #sayform input { flex: 1; font: 13px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; color: #fff7e0; background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); padding: 8px 10px; }
+  #sayform button { font: 12px ui-monospace, monospace; color: #120a20; background: var(--gold); border: 0; padding: 0 14px; }
+  #log .say { color: #fff7e0; }
   #whos .who { position: fixed; left: 0; top: 0; font: 10px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; color: #c9f6ff; text-shadow: 1px 1px 0 #000, -1px 0 0 #000; pointer-events: none; white-space: nowrap; will-change: transform; }
-  .sheet { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 88px); max-height: calc(100vh - 140px); overflow-y: auto; width: min(calc(100vw - 20px), 380px); box-sizing: border-box; padding: 14px 16px 12px; color: var(--ink); background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 10px 30px rgba(0, 0, 0, .45); font: 12px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; z-index: 5; }
+  .sheet { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 116px); max-height: calc(100vh - 140px); overflow-y: auto; width: min(calc(100vw - 20px), 380px); box-sizing: border-box; padding: 14px 16px 12px; color: var(--ink); background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 10px 30px rgba(0, 0, 0, .45); font: 12px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; z-index: 5; }
   .sheet h2 { margin: 0 0 8px; font-size: 13px; color: var(--gold); letter-spacing: .05em; font-weight: normal; }
   .sheet p { margin: 6px 0; } .sheet .small { opacity: .72; font-size: 11px; } .sheet .msg { color: #ffb0b0; min-height: 0; } .sheet .msg:empty { display: none; }
   .sheet .quote { color: #ffe3a3; }
@@ -68,11 +77,13 @@
 <select id="places" aria-label="Go to a landmark"><option value="" selected disabled>LANDMARKS ▾</option></select>
 <button id="me" aria-haspopup="dialog" aria-expanded="false">BLUESKY ▾</button>
 <button id="cairns" aria-haspopup="dialog" aria-expanded="false" hidden>CAIRNS ▾</button>
+<button id="saybtn" hidden aria-label="Say something to mutuals nearby">SAY</button>
 <div id="sheet" class="sheet" role="dialog" aria-label="Bluesky" hidden></div>
 <div id="status" role="status" hidden></div>
 <div id="log" aria-live="polite"></div>
-<div id="whos" aria-hidden="true"></div>
-<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
+<div id="whos" aria-hidden="true"><div id="mybubble" class="bubble" hidden></div></div>
+<form id="sayform" hidden autocomplete="off"><input id="saytext" maxlength="80" placeholder="Say something to mutuals nearby" aria-label="Say something" enterkeyhint="send"><button type="submit">Say</button></form>
+<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ENTER: SAY · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
 <button id="act" aria-hidden="true"><span class="key" aria-hidden="true">E</span><span class="what"></span></button>
 <button class="btn" id="up" aria-label="Up">▲</button>
 <button class="btn" id="down" aria-label="Down">▼</button>

@@ -288,6 +288,24 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
   draws after the sky (otherwise the sky pass paints over it where there's sky behind), and its gleam sparkles
   hide (from inside its head they'd fill the view). Back to solid on a highway.
 
+## Speech, squeaks and agents (built 11-08, PR #28)
+Jason: "Whoa, so this means any atproto capable agent can play as well. Fun!!" → "Hahahah yes! Let's flesh out player
+interactions as well (mostly just speech bubbles) and then work on avatar customization."
+- **Speech bubbles** ride on the intent: `say: { text, at }`, at most 80 characters, cleaned like cairn notes (control
+  and direction characters out). They show over the creature for 8 s to mutuals in label range (600 m), and in the
+  log within 2 km. Speak with Enter (or SAY, top right, when signed in and showing yourself). About 10 s later the game
+  rewrites your intent without the words, so they don't linger in your repo.
+- **Squeaks are shared:** `act: { kind: "squeak", at }`. Mutuals within 600 m hear it and see your creature hop.
+- **Bad moments are dropped, not fatal:** a malformed say or act is ignored and the creature still shows.
+- **Agents:** `docs/agents.md` is the guide for any atproto agent that wants to play (records, limits, heartbeat,
+  cleanup, speech, cairns, seeing the world, a minimal example, manners). Accounts with Bluesky's `bot` self-label get
+  a small "bot" on their name tag. Scout-Two and Jason are mutuals and Scout is bot-labelled (checked 11-08), so Scout
+  could join by writing one record.
+- **Checked 11-08:** looking as Jason, Claude (from a script) said "Jason! It's me, in your dream. The kapok really
+  does snow." and squeaked: the bubble showed over Claude's creature, the name tag read "@claude.jason-edelman.org"
+  with the bot mark, the log had the line and "squeaks!", and Claude hopped. **Not yet seen:** your own words sent from
+  the game (it needs a sign-in with the intent scope).
+
 ## Filming (11-08)
 `?film=30` (frames per second) is for recording. After `__dream.filmStart()` the game stops its own loop, and
 `__dream.filmStep(n)` renders n frames exactly 1/30 s apart in game time (and on the clock intents and cairns use),

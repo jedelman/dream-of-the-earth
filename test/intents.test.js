@@ -70,3 +70,17 @@ test("whose things we show: mutuals, no blocks, no takedowns, not muted", () => 
   assert.equal(allowed(mutual, { labels: [{ val: "!hide" }] }), false, "hidden by moderation");
   assert.equal(allowed(mutual, profile, true), false, "muted");
 });
+
+import { SAY_MAX, MOMENT_S, fresh } from "../web/js/intents.js";
+test("speech bubbles and squeaks ride on the intent, briefly, cleaned and capped", () => {
+  const v = makeIntent({ kind: "rest", p: { lat: 1, lon: 2, alt: 3 }, creature, say: { text: "hello\u202e there\n friend", at: t0 }, act: { kind: "squeak", at: t0 }, now });
+  const it = parseIntent(v, t0);
+  assert.equal(it.say.text, "hello there friend", "no direction overrides or newlines");
+  assert.equal(it.act.kind, "squeak");
+  assert.ok(fresh(it.say, t0 + 1) && !fresh(it.say, t0 + MOMENT_S + 1), "shows for a few seconds");
+  const long = parseIntent({ ...v, say: { text: "x".repeat(500), at: v.say.at } }, t0);
+  assert.equal(long.say.text.length, SAY_MAX, "cut to 80 characters");
+  const bad = parseIntent({ ...v, say: { text: "x".repeat(5000), at: v.say.at }, act: { kind: "explode", at: v.act.at } }, t0);
+  assert.ok(bad && !bad.say && !bad.act, "a bad moment is dropped; the creature still shows");
+  assert.equal(parseIntent({ ...v, say: { text: "hi", at: "2026-11-08T21:00:00Z" } }, t0).say, undefined, "not from the future");
+});
