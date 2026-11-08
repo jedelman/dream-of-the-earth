@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, TREE_NAMES, TREE_LINES, RANGE } from "../web/js/interactions.js";
+import { treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, TREE_NAMES, TREE_LINES, RANGE, promptFor, focusScore, chooseFocus, glinting } from "../web/js/interactions.js";
 import { SPECIES_NAMES } from "../web/js/plantforms.js";
 
 test("every species has a name and something to say when shaken", () => {
@@ -29,4 +29,49 @@ test("creatures have names; everything else has a line", () => {
   assert.ok(beingLine(5).length > 10);
   assert.equal(highwayLine("Becker-Hagens", 1234.4), "You step onto the Becker-Hagens highway. 1,234 km to the next node.");
   assert.ok(RANGE.highway >= 150 && RANGE.tree > 10);
+});
+
+test("every thing in reach has words for the prompt", () => {
+  for (const sp of SPECIES_NAMES) {
+    const words = promptFor({ kind: "tree", species: sp });
+    assert.match(words, /^[A-Z][a-z]+ the [a-z ]+$/, sp);
+  }
+  assert.equal(promptFor({ kind: "tree", species: "adansonia" }), "Shake the baobab");
+  assert.equal(promptFor({ kind: "tree", species: "carnegiea" }), "Hug the saguaro");
+  assert.equal(promptFor({ kind: "butterfly", hue: 0.9 }), "Greet the pink butterfly");
+  assert.equal(promptFor({ kind: "being" }), "Hum to the sky being");
+  assert.equal(promptFor({ kind: "highway" }), "Board the highway");
+  assert.equal(promptFor({ kind: "ride" }), "Step off");
+});
+
+test("the prompt goes to what's close and in front, and small things beat big ones", () => {
+  const ahead = { key: "a", kind: "tree", species: "quercus", d: 12, range: 28, facing: 1 };
+  const behind = { key: "b", kind: "tree", species: "quercus", d: 8, range: 28, facing: -1 };
+  assert.equal(chooseFocus([behind, ahead]), ahead, "facing counts for more than a few metres");
+  const being = { key: "s", kind: "being", d: 400, range: 3000, facing: 1 };
+  const highway = { key: "h", kind: "highway", d: 60, range: 320, facing: 1 };
+  assert.equal(chooseFocus([being, highway, ahead]), ahead, "the tree beside you, not the highway overhead");
+  assert.equal(chooseFocus([being, highway]), highway);
+  assert.equal(chooseFocus([]), null);
+  const shrub = { key: "r", kind: "tree", species: "shrub", d: 10, range: 21, facing: 1 };
+  assert.ok(focusScore(shrub) > focusScore({ ...shrub, species: "picea" }), "a shrub gives way to a tree");
+});
+
+test("the prompt holds steady between two near-equal things", () => {
+  const a = { key: "a", kind: "tree", species: "picea", d: 10, range: 30, facing: 0.9 };
+  const b = { key: "b", kind: "tree", species: "picea", d: 9, range: 30, facing: 0.95 };
+  assert.equal(chooseFocus([a, b]), b);
+  assert.equal(chooseFocus([a, b], "a"), a, "a slightly better tree doesn't steal the prompt");
+  const c = { ...b, key: "c", d: 2 };
+  assert.equal(chooseFocus([a, c], "a"), c, "a clearly better one does");
+  assert.equal(chooseFocus([b], "gone"), b, "the old focus left reach");
+});
+
+test("a few things glint, the focus first", () => {
+  const cands = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => ({ key: String(k), kind: "tree", species: "picea", d: 2 + k * 3, range: 30, facing: 1 }));
+  const g = glinting(cands, cands[5], 5);
+  assert.equal(g.length, 5);
+  assert.equal(g[0], cands[5]);
+  assert.deepEqual(g.slice(1).map((c) => c.key), ["0", "1", "2", "3"]);
+  assert.equal(glinting([], null).length, 0);
 });

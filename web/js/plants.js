@@ -350,6 +350,12 @@ export function buildPlants(frame, terrain) {
       return placed;
     },
     get count() { return placed; },
+    /** The plants (not grass or moss) within r metres of (x, z), as records. */
+    near(x, z, r) {
+      const out = [];
+      for (const rec of live) if (rec.species !== "grass" && rec.species !== "moss" && Math.abs(rec.x - x) < r && Math.abs(rec.z - z) < r && Math.hypot(rec.x - x, rec.z - z) < r) out.push(rec);
+      return out;
+    },
     /** The plant a ray hits first: { distance, rec } or null. */
     pick(raycaster) {
       const hits = raycaster.intersectObjects([...meshes.values()].filter((m) => m.count > 0), false);
