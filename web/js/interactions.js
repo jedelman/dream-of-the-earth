@@ -62,3 +62,55 @@ export function creatureName(seed) {
   for (let k = 0; k < n; k++) s += SYL[hash2(h, k, 72) % SYL.length];
   return s[0].toUpperCase() + s.slice(1);
 }
+
+// ---- What's in reach: the prompt and its focus ----
+// Everything in reach glints; the one you're most likely after gets the prompt,
+// "(E) Shake the baobab", and the interact button does it.
+
+/** The prompt's words for a thing in reach: { kind, species?, hue? }. */
+export function promptFor(c) {
+  if (c.kind === "tree") {
+    if (c.species === "carnegiea") return "Hug the saguaro";
+    if (c.species === "sequoiadendron") return "Push the giant sequoia";
+    if (c.species === "shrub") return "Rustle the shrub";
+    return `Shake the ${TREE_NAMES[c.species] ?? c.species}`;
+  }
+  if (c.kind === "butterfly") return `Greet the ${hueName(c.hue)} butterfly`;
+  if (c.kind === "being") return "Hum to the sky being";
+  if (c.kind === "highway") return "Board the highway";
+  if (c.kind === "ride") return "Step off";
+  return "Squeak";
+}
+
+// Small things close at hand come before big things far off: under a highway,
+// beside a tree, with a sky being on the horizon, the tree is what you meant.
+const BIAS = { butterfly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
+
+/**
+ * How much a thing in reach wants the prompt (lower wins). c: { kind, d, range, facing, species? },
+ * facing being the cosine between your heading and the way to it (1 straight ahead).
+ */
+export function focusScore(c) {
+  const bias = (BIAS[c.kind] ?? 0.5) + (c.kind === "tree" && c.species === "shrub" ? 0.2 : 0);
+  return c.d / c.range + 0.35 * (1 - (c.facing ?? 1)) + bias;
+}
+
+/**
+ * The thing that gets the prompt, or null. It sticks to the current one (by key)
+ * unless another is clearly better, so the prompt doesn't flicker between two trees.
+ */
+export function chooseFocus(cands, currentKey = null, hold = 0.15) {
+  let best = null, bestS = Infinity, cur = null, curS = Infinity;
+  for (const c of cands) {
+    const s = focusScore(c);
+    if (s < bestS) { best = c; bestS = s; }
+    if (c.key === currentKey) { cur = c; curS = s; }
+  }
+  return cur && curS <= bestS + hold ? cur : best;
+}
+
+/** The few things that glint: the best-scoring n, focus first. */
+export function glinting(cands, focus, n = 5) {
+  const rest = cands.filter((c) => c !== focus).sort((a, b) => focusScore(a) - focusScore(b));
+  return (focus ? [focus, ...rest] : rest).slice(0, n);
+}

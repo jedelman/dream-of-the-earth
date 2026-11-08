@@ -20,6 +20,16 @@
   #log .line.old { opacity: 0; }
   #log .tree { color: #b6f59a; } #log .creature { color: #ffb8de; } #log .highway { color: var(--gold); } #log .sky { color: #c9b6ff; }
   #places { position: fixed; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); max-width: 46vw; font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); border-radius: 0; padding: 3px 4px; }
+  /* The interact prompt, bottom right (above ▲▼ on a phone, where a thumb is): a dark band, gold hairlines, a key in a ring */
+  #act { position: fixed; right: max(6px, env(safe-area-inset-right)); bottom: max(32px, calc(env(safe-area-inset-bottom) + 24px)); display: flex; align-items: center; gap: 8px; padding: 6px 26px 6px 22px; border: 0; color: var(--ink); font: 12px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .04em; text-shadow: 1px 1px 0 #000; white-space: nowrap; background: linear-gradient(90deg, transparent, rgba(8, 5, 18, .78) 20%, rgba(8, 5, 18, .78) 80%, transparent); opacity: 0; pointer-events: none; transition: opacity .16s ease-out; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  #act.on { opacity: 1; pointer-events: auto; }
+  #act::before, #act::after { content: ""; position: absolute; left: 12%; right: 12%; height: 1px; background: linear-gradient(90deg, transparent, rgba(255, 211, 77, .6), transparent); }
+  #act::before { top: 0; } #act::after { bottom: 0; }
+  #act .key { display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--gold); border-radius: 50%; color: var(--gold); font-size: 11px; box-shadow: 0 0 6px rgba(255, 211, 77, .45); }
+  #act.hit .key { animation: press .22s ease-out; }
+  @keyframes press { from { background: var(--gold); color: #120a20; transform: scale(.8); } }
+  @media (pointer: coarse) { #act { bottom: max(160px, calc(env(safe-area-inset-bottom) + 152px)); padding: 12px 34px 12px 28px; font-size: 13px; } #act .key { width: 24px; height: 24px; font-size: 14px; } }
+  @media (prefers-reduced-motion: reduce) { #act { transition: none; } #act.hit .key { animation: none; } }
   @media (hover: hover) and (pointer: fine) { .btn { display: none; } }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
@@ -30,7 +40,8 @@
 <select id="places" aria-label="Go to a landmark"><option value="" selected disabled>LANDMARKS ▾</option></select>
 <div id="status" role="status" hidden></div>
 <div id="log" aria-live="polite"></div>
-<div id="help">TAP ANYTHING: GO TO IT · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
+<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
+<button id="act" aria-hidden="true"><span class="key" aria-hidden="true">E</span><span class="what"></span></button>
 <button class="btn" id="up" aria-label="Up">▲</button>
 <button class="btn" id="down" aria-label="Down">▼</button>
 <script type="module" src="./js/main.js"></script>

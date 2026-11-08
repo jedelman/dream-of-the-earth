@@ -1,7 +1,7 @@
 // Dream of the Earth, single-player: a low-poly piece of the real Earth near a
 // ley node, its real sun, the golden highways you can ride, and one creature.
 import * as THREE from "three";
-import { makeFrame, offset } from "./geo.js";
+import { makeFrame, offset, vecToLatLon } from "./geo.js";
 import { network, nearestNode, CLASSES } from "./ley.js";
 import { sunPosition, sunDirection } from "./sun.js";
 import { mulberry32, hashString } from "./rng.js";
@@ -16,7 +16,8 @@ import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, cr
 import { buildSkyShader, skyColors, layerTransparent } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
-import { RANGE, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName } from "./interactions.js";
+import { RANGE, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting } from "./interactions.js";
+import { buildGlints } from "./glints.js";
 import { sound } from "./sound.js";
 import { logLine } from "./eventlog.js";
 import { buildBursts } from "./bursts.js";
@@ -180,6 +181,7 @@ addEventListener("keydown", (e) => {
   sound.unlock();
   if (["Space", "ArrowUp", "ArrowDown"].includes(e.code)) e.preventDefault();
   if (e.code === "KeyM" && !e.repeat) logLine(sound.toggle() ? "Sound off." : "Sound on.", "note");
+  if (e.code === "KeyE" && !e.repeat) interact();
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
 const touch = { turn: 0, thrust: 0, up: 0, id: null, x: 0, y: 0 };
@@ -474,7 +476,7 @@ function onTap(clientX, clientY) {
   }
   if (hit.kind === "being") {
     hit.obj.getWorldPosition(v);
-    const act = () => { hit.obj.getWorldPosition(v); director.play("being", simT, beingShot(state.pos.clone(), v.clone()), { dur: 4.5, blendIn: 0.9, blendOut: 1.2 }); humWith(hit.being); };
+    const act = () => hum(hit.being, hit.obj);
     if (v.distanceTo(p) < RANGE.being) return act();
     logLine("The sky being is too far off to hear you. You set off toward it.", "sky");
     return moveTo({ x: v.x, z: v.z, h: world.terrain.heightAt(v.x, v.z) }, { range: RANGE.being * 0.5, act, alt: v.y - 400 });
@@ -557,6 +559,10 @@ function chirp(k) {
   bursts.emit({ at: new THREE.Vector3(b.x, b.y, b.z), colors: [new THREE.Color().setHSL(b.hue, 0.95, 0.65), new THREE.Color(0xffffff)], n: 12, spread: 1.5, up: 2, fall: 0.8, life: 1.6 });
   logLine(butterflyLine(b.hue, Math.round(b.seed * 1e6), squeaks++), "creature");
 }
+function hum(being, obj) {
+  director.play("being", simT, beingShot(state.pos.clone(), obj.getWorldPosition(new THREE.Vector3())), { dur: 4.5, blendIn: 0.9, blendOut: 1.2 });
+  humWith(being);
+}
 function humWith(being) {
   sound.hum();
   const at = state.pos.clone();
@@ -571,6 +577,104 @@ function boardTapped(line) {
   const tg = tangentEN(line, c.t, 1), fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
   boardRide({ line, t: c.t, dir: tg.e * fx - tg.n * fz >= 0 ? 1 : -1 });
 }
+// ---- What's in reach: a glint on each, and a prompt for the likeliest, "(E) Shake the baobab" ----
+const glints = buildGlints(scene);
+const actBtn = document.getElementById("act"), actWhat = actBtn.querySelector(".what");
+actBtn.querySelector(".key").textContent = matchMedia("(hover: hover) and (pointer: fine)").matches ? "E" : "✦";
+actBtn.addEventListener("pointerdown", (e) => e.preventDefault()); // don't take focus: Space is "up"
+actBtn.addEventListener("click", () => { sound.unlock(); interact(); });
+const REACH_ZOOM = 2500; // zoomed out farther than this, the glints and the prompt step aside
+let reach = [], lit = [], focus = null, scanAt = 0, shownPrompt = "";
+const glintAt = new THREE.Vector3();
+/** Everything in reach of the creature, each { kind, key, d, range, facing, ... } (see chooseFocus). */
+function inReach() {
+  const p = state.pos, out = [], v = new THREE.Vector3();
+  const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
+  const add = (c, x, z) => {
+    const dx = x - p.x, dz = z - p.z, L = Math.hypot(dx, dz);
+    c.facing = L > 0.5 ? (dx * fx + dz * fz) / L : 1;
+    c.phase = (hashString(c.key) % 997) / 997;
+    out.push(c);
+  };
+  for (const rec of world.plants.near(p.x, p.z, RANGE.tree + 40)) {
+    const range = RANGE.tree + rec.height * 0.4, d = Math.hypot(rec.x - p.x, rec.z - p.z); // as a tap reaches
+    if (d < range) add({ kind: "tree", key: `t${rec.seed}`, species: rec.species, d, range, rec }, rec.x, rec.z);
+  }
+  for (const b of world.insects.butterflies()) {
+    const d = Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z);
+    if (d < RANGE.butterfly) add({ kind: "butterfly", key: `b${b.seed}`, seed: b.seed, k: b.k, hue: b.hue, d, range: RANGE.butterfly }, b.x, b.z);
+  }
+  for (const o of world.beings.group.children) {
+    const being = o.userData.being;
+    if (!being) continue;
+    const d = o.getWorldPosition(v).distanceTo(p);
+    if (d < RANGE.being) add({ kind: "being", key: `s${being.seed}`, d, range: RANGE.being, being, obj: o }, v.x, v.z);
+  }
+  const ll = world.frame.toLatLon(p.x, p.z);
+  for (const c of linesNear(ll.lat, ll.lon, RANGE.highway)) {
+    const q = vecToLatLon(c.at), l = world.frame.toLocal(q.lat, q.lon);
+    // The glint sits a little way along the line, the way you're facing, so at a node they fan out along the roads.
+    const tg = tangentEN(c.line, c.t, 1), dir = tg.e * fx - tg.n * fz >= 0 ? 30 : -30, gx = l.x + tg.e * dir, gz = l.z - tg.n * dir;
+    add({ kind: "highway", key: `h${c.line.i}`, d: c.meters, range: captureRadius(c.line.cls.rank) + RANGE.highway, line: c.line, x: gx, z: gz, alt: highwayAltitude(world.terrain.heightAt(gx, gz)) }, l.x, l.z);
+  }
+  return out;
+}
+/** Where a thing's glint sits: on the near side of a crown, on a butterfly, a sky being, the line overhead. */
+function glintSpot(c, v, bs) {
+  if (c.kind === "tree") {
+    const r = c.rec, cx = camera.position.x - r.x, cz = camera.position.z - r.z, L = Math.hypot(cx, cz) || 1;
+    const off = Math.min(r.height * 0.25, 5, L * 0.5);
+    return v.set(r.x + (cx / L) * off, r.y + Math.min(r.height * 0.55, 6 + r.height * 0.15), r.z + (cz / L) * off);
+  }
+  if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
+  if (c.kind === "being") return c.obj.getWorldPosition(v);
+  return v.set(c.x, c.alt, c.z);
+}
+function updateReach(t, dt) {
+  const on = !!world && !rebuilding && !state.ride && zoom < REACH_ZOOM;
+  if (!on) { reach = lit = []; focus = null; }
+  else if (t >= scanAt) {
+    scanAt = t + 0.15;
+    reach = inReach();
+    focus = chooseFocus(reach, focus?.key);
+    lit = glinting(reach, focus, 5);
+  }
+  const r = state.ride, words = r ? (!r.leaving && r.age > 0.6 ? promptFor({ kind: "ride" }) : "") : focus ? promptFor(focus) : "";
+  if (words !== shownPrompt) {
+    shownPrompt = words;
+    if (words) actWhat.textContent = words;
+    actBtn.classList.toggle("on", !!words);
+    actBtn.setAttribute("aria-hidden", words ? "false" : "true");
+  }
+  if (lit.length) {
+    const bs = lit.some((c) => c.kind === "butterfly") ? world.insects.butterflies() : null, spots = [];
+    for (const c of lit) {
+      const s = glintSpot(c, glintAt, bs);
+      if (s && !spots.some((o) => Math.hypot(o.x - s.x, o.y - s.y, o.z - s.z) < 15)) spots.push({ x: s.x, y: s.y, z: s.z, focus: c === focus, phase: c.phase }); // one glint per spot
+    }
+    glints.set(spots);
+  }
+  glints.update(t, dt, lit.length > 0);
+}
+/** The interact button (E): touch what has the prompt; with nothing in reach, squeak. On a highway, step off. */
+function interact() {
+  const r = state.ride;
+  if (r) { if (!r.leaving && r.age > 0.6) leaveRide(false); return; }
+  if (!world || rebuilding || zoom > GLOBE_AT) return;
+  director.input(simT);
+  clearTarget();
+  actBtn.classList.remove("hit");
+  void actBtn.offsetWidth; // restart the press animation
+  actBtn.classList.add("hit");
+  const c = focus;
+  if (!c) return squeak();
+  scanAt = 0; // look again next frame: a highway takes you away, a butterfly moves on
+  if (c.kind === "tree") return shakeTree(c.rec);
+  if (c.kind === "butterfly") { const b = world.insects.butterflies().find((q) => q.seed === c.seed); return b ? chirp(b.k) : squeak(); }
+  if (c.kind === "being") return hum(c.being, c.obj);
+  if (c.kind === "highway") return boardTapped(c.line);
+}
+
 // The way there, drawn as golden dots, and a ring where you're going.
 const ROUTE_MAX = 64;
 const routeGeo = new THREE.BufferGeometry();
@@ -716,6 +820,7 @@ function frame() {
   drawRoute(t);
   simT = t;
   bursts.update(dt);
+  updateReach(t, dt);
   // From far away: a sparkle on you, and the highways as thin lines.
   marker.visible = zoom > 700;
   marker.position.copy(view.pos);
@@ -777,7 +882,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null };
+window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);

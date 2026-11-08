@@ -58,7 +58,7 @@ export function linesNear(lat, lon, slackM = 0) {
     const q = norm([v[0] - s * line.n[0], v[1] - s * line.n[1], v[2] - s * line.n[2]]);
     const ta = angle(line.a, q), tb = angle(q, line.b);
     if (ta + tb - line.arc > 1e-7) continue; // on the circle but past a node
-    out.push({ line, t: ta / line.arc, meters });
+    out.push({ line, t: ta / line.arc, meters, at: q }); // at: the nearest point on the line (unit vector)
   }
   return out;
 }

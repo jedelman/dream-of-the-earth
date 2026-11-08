@@ -231,6 +231,19 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
     highways gold, sky lavender). It also tells you about boarding and leaving highways, arriving at nodes,
     and landmark trips. Lines vary by hash, so the same tree says the same thing to everyone, and shaking it
     again can say something new.
+  - **What's in reach glints, and E touches it (built 11-08, Jason: "lightly highlight interactibles within range
+    as well as a default interact button - think FF7 sparkle or Bloodborne's '(X) talk'"):** every 0.15 s the
+    game lists what's in reach by the same ranges a tap uses. Up to five things get a small four-point star (a
+    point shader drawn over everything, 5 to 9 pixels in the 224-line picture). The stars twinkle out of step and
+    now and then turn 45°. The likeliest thing gets a bigger, golder, steadier star and the prompt, bottom
+    right: "(E) Shake the baobab", "Hug the saguaro", "Greet the violet butterfly", "Hum to the sky being",
+    "Board the highway", and "Step off" while riding. Likeliest means close for its range, in front of you, and
+    small before big: the tree beside you comes before the highway overhead or a sky being 2 km off. The focus
+    holds unless something clearly better comes along, so it doesn't flicker between two trees. E (or tapping the
+    prompt; a ✦ stands in for the key on touch screens) does it; with nothing in reach, E squeaks. On a phone the
+    prompt sits above ▲▼, under the right thumb. It stays bottom right on a computer too: centred, it covered
+    the creature and collided with the log. Highway glints sit 30 m along each line the way you face, so at a
+    node they fan out along the roads instead of stacking on the node.
 
 ## The camera: a director (built 11-08, Jason: "let's make the camera a little more semantic and cinematic")
 `web/js/director.js`, with the maths in `web/js/camerawork.js` (tested).
