@@ -232,6 +232,25 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
     and landmark trips. Lines vary by hash, so the same tree says the same thing to everyone, and shaking it
     again can say something new.
 
+## The camera: a director (built 11-08, Jason: "let's make the camera a little more semantic and cinematic")
+`web/js/director.js`, with the maths in `web/js/camerawork.js` (tested).
+- **Relative to the creature:** the camera's offset and aim are kept relative to your creature, so a world
+  regrow or boarding a highway (both move your coordinates) never makes it jump.
+- **Semantic base framing:** on the ground, low and close, looking at head height; in the air, behind and above,
+  looking further ahead the faster you go, a wider field of view at speed (62° → 72°), and banking into turns
+  (up to 12°); in water, low by the surface; on a highway, wide (74-80°) with a slow sway. On the way to
+  something you tapped, it glances toward it. Moving fast, it trails a beat behind. Zoomed out, it frames
+  straight as the zoom asks.
+- **Idle:** after 10 s without input it drifts into a slow orbit (a little wider and higher, 55°), and slows
+  further while facing a low, golden sun.
+- **Event shots** blend over the base and back: a low angle on a shaken tree with you and its crown in frame
+  (4 s); a three-quarter close-up when you squeak; you and a butterfly from the side; looking up past you at a
+  sky being; a crane down from high and wide when you arrive anywhere (startup, a landmark, a node); and a lurch
+  of field of view (to 92°) when you step onto a highway.
+- **Movement:** critically damped springs (no overshoot, frame-rate independent): position ~0.3-0.5 s, aim
+  0.22 s, field of view 0.6 s, roll 0.45 s. The camera won't sink into hills between you and it: it rises
+  over them.
+
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
   each with scale, rotation, colour and a palette cycle. Any number of heads, wings, legs, eyes or tails. The

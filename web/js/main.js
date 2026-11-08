@@ -20,6 +20,7 @@ import { RANGE, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creat
 import { sound } from "./sound.js";
 import { logLine } from "./eventlog.js";
 import { buildBursts } from "./bursts.js";
+import { buildDirector, squeakShot, treeShot, butterflyShot, beingShot, arriveShot, boardShot } from "./director.js";
 import { buildSkyBeings } from "./skybeings.js";
 import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
 import { biomeFor, koppenCode } from "./biome.js";
@@ -96,6 +97,10 @@ const graph = generateCreature(seed);
 const creature = buildCreature(graph, stats);
 scene.add(creature.group);
 layerTransparent(creature.group);
+// The camera is run by a director (director.js): framing by what you're doing, and shots for what happens.
+const director = buildDirector(camera);
+let sunInfo = { dir: null, gold: 0 };
+const establishing = () => director.play("arrive", simT, arriveShot(state.heading, cameraRig(), 3.5), { dur: 3.5, blendIn: 0, blendOut: 1.4, start: true });
 // ?heading= (degrees clockwise from north) and ?alt= (metres above the ground
 // or sea) make a view reproducible.
 const headingParam = params.get("heading"), altParam = params.get("alt");
@@ -236,7 +241,7 @@ function input() {
 const GRAVITY = 18;
 function step(dt) {
   const manual = input();
-  if ((manual.turn || manual.thrust || manual.up) && state.target) clearTarget(); // your hands back on the controls
+  if (manual.turn || manual.thrust || manual.up) { director.input(simT); if (state.target) clearTarget(); } // your hands back on the controls
   const { turn, thrust, up } = (!manual.turn && !manual.thrust && !manual.up && autopilot()) || manual;
   const ground = world.terrain.heightAt(state.pos.x, state.pos.z);
   const p = state.pos;
@@ -308,6 +313,7 @@ function step(dt) {
 function boardRide(c) {
   clearTarget();
   state.ride = startRide(c);
+  director.play("board", simT, boardShot(), { dur: 1.2, blendIn: 0.15, blendOut: 0.9 });
   sound.whoosh();
   logLine(highwayLine(c.line.cls.name, remainingMeters(state.ride) / 1000), "highway");
   state.hopCooldown = 0.8;
@@ -344,7 +350,7 @@ function leaveRide(arrived) {
     state.captureCooldown = 3; // don't get snatched straight back onto the line
     world.group.visible = true;
     rideFx.group.visible = false;
-    camera.position.set(state.pos.x - -Math.sin(state.heading) * 85, state.pos.y + 28, state.pos.z - -Math.cos(state.heading) * 85);
+    establishing();
     setStatus(arrived ? `you're at a node: ${nodeName(ll)}` : "");
     logLine(arrived ? `You arrive at a node: ${nodeName(ll)}.` : "You step off the highway.", "highway");
     if (arrived) setTimeout(() => setStatus(""), 4000);
@@ -370,7 +376,7 @@ function teleport(l) {
   regrow(l.lat, l.lon, (w) => {
     const p = w.frame.toLocal(l.lat, l.lon);
     swapWorld(w, { lat: l.lat, lon: l.lon, y: Math.max(0, w.terrain.heightAt(p.x, p.z)) + (l.alt ?? 350) });
-    camera.position.set(state.pos.x + Math.sin(state.heading) * 85, state.pos.y + 28, state.pos.z + Math.cos(state.heading) * 85);
+    establishing();
     history.replaceState(null, "", `?${landmarkQuery(l, location.search)}`);
     setStatus("");
   });
@@ -453,6 +459,7 @@ function pick(clientX, clientY) {
 }
 function onTap(clientX, clientY) {
   if (!world || state.ride || zoom > GLOBE_AT || rebuilding) return;
+  director.input(simT);
   const hit = pick(clientX, clientY);
   if (!hit) return;
   const p = state.pos, flat = (x, z) => Math.hypot(x - p.x, z - p.z), v = new THREE.Vector3();
@@ -467,7 +474,7 @@ function onTap(clientX, clientY) {
   }
   if (hit.kind === "being") {
     hit.obj.getWorldPosition(v);
-    const act = () => humWith(hit.being);
+    const act = () => { hit.obj.getWorldPosition(v); director.play("being", simT, beingShot(state.pos.clone(), v.clone()), { dur: 4.5, blendIn: 0.9, blendOut: 1.2 }); humWith(hit.being); };
     if (v.distanceTo(p) < RANGE.being) return act();
     logLine("The sky being is too far off to hear you. You set off toward it.", "sky");
     return moveTo({ x: v.x, z: v.z, h: world.terrain.heightAt(v.x, v.z) }, { range: RANGE.being * 0.5, act, alt: v.y - 400 });
@@ -519,6 +526,7 @@ function autopilot() {
 function squeak() {
   sound.squeak(1.25 / graph.scale);
   hopAt = simT;
+  director.play("squeak", simT, squeakShot(state.heading, graph.scale, zoom), { dur: 2.4, blendIn: 0.4, blendOut: 0.8 });
   const at = state.pos.clone();
   at.y += 4 * graph.scale;
   bursts.emit({ at, colors: [new THREE.Color(0xff9ec7), new THREE.Color(0xfff3b0)], n: 14, spread: 2.5, up: 4, fall: 2, life: 1.2 });
@@ -528,6 +536,7 @@ function shakeTree(rec) {
   const n = shaken.get(rec.seed) || 0;
   shaken.set(rec.seed, n + 1);
   world.plants.shake(rec, simT, rec.species === "sequoiadendron" ? 0.008 : rec.species === "carnegiea" ? 0 : 0.06);
+  director.play("tree", simT, treeShot(state.pos.clone(), rec), { dur: 4, blendIn: 0.7, blendOut: 1.1 });
   logLine(treeLine(rec.species, rec.seed, rec.blossom, n), "tree");
   if (rec.species === "carnegiea") { sound.squeak(1.7); return; } // ouch
   sound.rustle();
@@ -544,6 +553,7 @@ function chirp(k) {
   const b = world.insects.butterflies().find((q) => q.k === k);
   if (!b) return;
   sound.chirp();
+  director.play("butterfly", simT, butterflyShot(state.pos.clone(), b), { dur: 2.6, blendIn: 0.5, blendOut: 0.9 });
   bursts.emit({ at: new THREE.Vector3(b.x, b.y, b.z), colors: [new THREE.Color().setHSL(b.hue, 0.95, 0.65), new THREE.Color(0xffffff)], n: 12, spread: 1.5, up: 2, fall: 0.8, life: 1.6 });
   logLine(butterflyLine(b.hue, Math.round(b.seed * 1e6), squeaks++), "creature");
 }
@@ -659,6 +669,7 @@ function frame() {
     lastSun = t;
   }
   const dir = sunDirection(sunState);
+  sunInfo = { dir, gold: sunState.altitude > -2 ? 1 - Math.min(1, Math.max(0, (sunState.altitude - 2) / 14)) : 0 };
   const horizon = skyColors(sunState.altitude).horizon;
   const day = Math.max(0, Math.min(1, (sunState.altitude + 6) / 16));
   const p = view.pos;
@@ -740,16 +751,10 @@ function worldView(dt, t) {
   creature.group.rotation.y = state.heading;
   creature.update(t, { mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / 60) });
 
-  // Camera: behind and above you, by the zoom (closer and lower under water).
-  const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-  const rig = cameraRig();
-  const back = state.mode === "water" && zoom <= 85 ? 45 : rig.back, upOff = state.mode === "water" && zoom <= 85 ? 10 : rig.up;
-  const want = new THREE.Vector3(p.x - fx * back, p.y + upOff, p.z - fz * back);
-  const camGround = world.terrain.heightAt(want.x, want.z);
-  if (camGround >= 0) want.y = Math.max(want.y, camGround + 6);
-  camera.position.lerp(want, Math.min(1, dt * (rig.near ? 4 : 8)));
-  const ahead = rig.near ? 20 : 0;
-  camera.lookAt(p.x + fx * ahead, p.y + (rig.near ? 6 : 0), p.z + fz * ahead);
+  // The camera: the director frames what you're doing.
+  let goal = null;
+  if (state.target) { const g = state.target.pts[state.target.pts.length - 1], q = world.frame.toLocal(g.lat, g.lon); goal = new THREE.Vector3(q.x, state.target.ground, q.z); }
+  director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: graph.scale });
   const underwater = camera.position.y < 0 && world.terrain.heightAt(camera.position.x, camera.position.z) < camera.position.y;
   return { ll: world.frame.toLatLon(p.x, p.z), pos: p, underwater };
 }
@@ -766,11 +771,7 @@ function rideView(dt, t) {
   creature.group.position.copy(rideOrigin);
   creature.group.rotation.y = state.heading;
   creature.update(t, { mode: "air", speed01: r.leaving ? 0.2 : 1 });
-  const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-  const rig = cameraRig();
-  const back = Math.max(140, rig.back), upOff = Math.max(45, rig.up);
-  camera.position.set(-fx * back, LEY_ALT + upOff, -fz * back);
-  camera.lookAt(fx * (rig.near ? 40 : 0), LEY_ALT + (rig.near ? 8 : 0), fz * (rig.near ? 40 : 0));
+  director.update({ t, dt, subject: rideOrigin, heading: state.heading, mode: "air", speed01: r.leaving ? 0.2 : 1, riding: true, rig: cameraRig(), heightAt: null, goal: null, sunDir: sunInfo.dir, gold: 0, scale: graph.scale });
   rideFx.update(r, makeFrame(ll.lat, ll.lon), t, state.heading, dt);
   return { ll, pos: rideOrigin, underwater: false };
 }
@@ -782,7 +783,7 @@ regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);
   const ground = w.terrain.heightAt(0, 0);
   state.pos.set(0, Math.max(0, ground) + (altParam !== null ? Math.max(5, Number(altParam)) : 350), 0);
-  camera.position.set(0, state.pos.y + 40, 120);
+  establishing(); // the opening shot: a crane down onto you
   setStatus(w.terrain.failed ? `${w.terrain.failed} elevation tiles didn't load; that ground is drawn at sea level` : "");
   // ?ride=N starts on highway N, halfway along (a shortcut for trying the ride).
   if (params.get("ride") !== null) {
