@@ -22,6 +22,7 @@ import { biomeFor, koppenCode } from "./biome.js";
 import { koppenAt } from "./koppen.js";
 import { buildPlants } from "./plants.js";
 import { buildInsects } from "./insects.js";
+import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
 
 // ---- Who and where (URL params make any spawn reproducible) ----
 const params = new URLSearchParams(location.search);
@@ -134,6 +135,19 @@ function regrow(lat, lon, onReady) {
     .then((w) => { if (token === worldToken) onReady(w); })
     .catch((e) => { setStatus(`the dream couldn't regrow here: ${e.message}`); console.error(e); })
     .finally(() => { if (token === worldToken) rebuilding = false; });
+}
+
+// ---- Detail: how far forests reach, found per device (or pinned with ?detail=) ----
+const detailParam = params.get("detail");
+const detail = { scale: detailParam ? Math.min(DETAIL_MAX, Math.max(DETAIL_MIN, Number(detailParam))) : DETAIL_MAX, pinned: !!detailParam, times: [], since: 0, fps: 0 };
+function meterFrame(dtMs, t, governing) {
+  detail.times.push(dtMs);
+  if (t - detail.since < 1.5) return;
+  const m = median(detail.times);
+  detail.fps = Math.round(1000 / Math.max(1, m));
+  if (governing && !detail.pinned) detail.scale = governDetail(detail.scale, m);
+  detail.times = [];
+  detail.since = t;
 }
 
 // ---- Zoom: from just behind you out to the whole planet ----
@@ -336,7 +350,7 @@ function updateHud() {
   const where = ground < 0 ? `sea, ${Math.round(-ground)} m deep` : `${biome.toUpperCase()}${k ? ` (${koppenCode(k)})` : ""}`;
   hud.textContent = [
     `${state.mode.toUpperCase()}  ${Math.round(state.pos.y)} M  ·  ${where}`,
-    `${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}`,
+    `${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}  ·  ${detail.fps} FPS${detail.scale < DETAIL_MAX ? `  ·  FORESTS ${Math.round(detail.scale * 100)}%` : ""}`,
     `LEY NODE ${(meters / 1000).toFixed(1)} KM  ${cls}`,
     STATS.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  "),
     zoomLine(),
@@ -357,6 +371,8 @@ let last = t0;
 function frame() {
   const nowMs = performance.now();
   const dt = Math.min(0.05, (nowMs - last) / 1000), t = (nowMs - t0) / 1000;
+  // Only frames that draw forests steer the governor.
+  meterFrame(nowMs - last, t, !!world && !state.ride && zoom < 6000);
   last = nowMs;
   // +/- (or PageUp/PageDown) zoom smoothly while held.
   if (keys.has("Equal") || keys.has("NumpadAdd") || keys.has("PageUp")) zoomBy(Math.exp(-2.4 * dt));
@@ -408,7 +424,7 @@ function frame() {
     const life = zoom < 6000;
     world.plants.group.visible = world.insects.group.visible = life;
     if (life) {
-      window.__dream.plants = world.plants.update(state.pos.x, state.pos.z, t);
+      window.__dream.plants = world.plants.update(state.pos.x, state.pos.z, t, camera.position, detail.scale);
       window.__dream.insects = world.insects.update(state.pos.x, state.pos.z, unix % 86400, sunState.altitude);
     }
   }
@@ -484,7 +500,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh, clouds: clouds.group, sky: sky.group }, world: () => world };
+window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh, clouds: clouds.group, sky: sky.group }, world: () => world, detail };
 setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);

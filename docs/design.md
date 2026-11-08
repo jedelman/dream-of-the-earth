@@ -425,8 +425,34 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
        or from ~34 to ~19 at the default 350 m. Cutting plant triangles by 38% didn't change it, so it's
        fragment overdraw in software rendering. A phone GPU at 400×224 should not notice **(unverified on a
        phone)**.
+   - **Distance tiers (11-08, Jason: "poly reduction at distance for the zoom"):**
+     - **Near:** within 250 m of the camera a plant is its full shape (up to 64 triangles). Grass and moss
+       draw within 400 m of the camera and have no far shape.
+     - **Far:** beyond that, trees and shrubs become one six-triangle spindle grown from the same shape
+       (crown ring at the crown's middle, top at its top, foot at the trunk's base, fading from leaves to
+       wood). They reach 2.5–3 km for the big trees.
+     - **Zoomed out:** tiers go by distance from the camera, so pulling back sheds detail smoothly. Past
+       6 km of zoom plants stop drawing, and the ground itself darkens by tree density (up to 22% in the
+       rainforest), so forests still read from orbit.
+     - **Cell cache:** each grid cell's plant is worked out once per world and kept while in range;
+       re-sorting tiers as the camera moves just copies precomputed matrices.
+   - **The detail governor (11-08):** every 1.5 s it reads the median frame time. Under 40 fps it shortens
+     the far reach (×0.8, or ×0.6 under 25 fps), down to 25%; over 55 fps it lengthens it again (×1.1). It
+     changes only what's drawn, never the world. `&detail=0.25–1` pins it. The HUD shows FPS, and
+     "FORESTS n%" when it has cut back.
+     - **Why:** in headless SwiftShader, forests to 2.5 km cost 20 → 6.6 fps; to 900 m, 16 fps. Neither a
+       reversed depth buffer nor front-to-back ordering helped (5–7 fps). The cost there scales with how
+       many far plants are drawn, and a phone's GPU is a different machine, so each device finds its own
+       reach. Headless settles at 25% and 19–25 fps, on par with the build before tiers.
+   - **Considered: a raytracing renderer (11-08, Jason asked).** Not adopted, Claude's recommendation:
+     raytracing costs more per pixel than rasterizing (each pixel walks a tree of the scene); plant sway,
+     butterfly flight and the Earth's curve all happen in vertex shaders, which a raytracer would need
+     rebuilt every frame; and it buys shadows and reflections rather than the SNES look. Ray-marching for
+     particular effects (volumetric clouds, sky-being glow, light under water) on top of the raster scene
+     could fit later.
    - **Later:** CHELSA for continuous temperature and precipitation, SoilGrids, canopy height; braided
-     interchange rings where networks cross.
+     interchange rings where networks cross; inland water (rivers and lakes are drawn as land today, sand
+     where under 12 m).
 3. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.
 
 **Multiplayer:**

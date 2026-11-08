@@ -36,7 +36,8 @@ pillar of light that lifts any creature up to the network, wings or not.
 
 URL parameters make any spawn reproducible: `?seed=42` (creature, stats and spawn), `&stats=6,2,2,2`
 (fly, swim, run, gleam; 12 points, 0–6 each), `&t=2026-11-07T15:00:00Z` (a fixed moment for the sun), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north), `&alt=` (metres up), `&zoom=` (camera distance in
-metres, up to 40,000,000), and `&ride=N` (start out riding highway N, 0–723).
+metres, up to 40,000,000), `&ride=N` (start out riding highway N, 0–723), and `&detail=` (0.25–1: pin how far
+forests reach; otherwise each device finds its own, and the HUD shows its FPS).
 
 ## Develop
 ```bash

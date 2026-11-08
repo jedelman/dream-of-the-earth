@@ -2,17 +2,17 @@
 // global cell grid by biome, swaying in the wind. Trees and shrubs on 40 m
 // cells out to ~1.2 km; grass and moss on 10 m cells close in.
 import * as THREE from "three";
-import { SPECIES, SPECIES_NAMES, VARIANTS, plantForm, cellsAround, choosePlant, unit } from "./plantforms.js";
+import { SPECIES, SPECIES_NAMES, VARIANTS, plantForm, midShape, lodFor, cellsAround, choosePlant, unit } from "./plantforms.js";
 import { biomeFor, BIOMES } from "./biome.js";
 import { koppenAt } from "./koppen.js";
 import { curved } from "./curvature.js";
 
 const LAYERS = [
-  { cell: 40, radius: 1000, salt: 101, pick: (b) => [b.density, b.plants] },
+  { cell: 40, radius: Math.max(...SPECIES_NAMES.map((n) => SPECIES[n].far)), salt: 101, pick: (b) => [b.density, b.plants] },
   { cell: 10, radius: 220, salt: 202, pick: (b) => [b.cover, b.ground] },
 ];
 const REGROW_M = 200; // replant once you've moved this far
-const CAPACITY = { grass: 2400, moss: 1200 }; // per shape; others 1400
+const RETIER_M = 60; // re-sort near and far once the camera has moved this far
 const SWAY = { broadleaf: 0.02, emergent: 0.012, palm: 0.05, acacia: 0.015, shrub: 0.04, cactus: 0, conifer: 0.015, cypress: 0.02, grass: 0.12, moss: 0 };
 const WOOD = { palm: 0x9a7350, default: 0x5a3550 };
 
@@ -103,6 +103,33 @@ export function formGeometry(form, woodHex) {
   return geo;
 }
 
+/** The far shape: six triangles, crown above and tapering to the trunk's foot. */
+export function midGeometry(form, woodHex) {
+  const { ringY, r, top, cx, cz } = midShape(form);
+  const out = { pos: [], col: [], wood: [] };
+  const wc = new THREE.Color(woodHex), hasWood = form.segments.some((s) => s.wood);
+  const ring = [0, 1, 2].map((k) => { const t = (k / 3) * Math.PI * 2 + 0.5; return [cx + Math.cos(t) * r, ringY, cz + Math.sin(t) * r]; });
+  const apex = [cx, top, cz], foot = [0, 0, 0], mid = [cx, ringY, cz];
+  for (let k = 0; k < 3; k++) {
+    const a = ring[k], b = ring[(k + 1) % 3];
+    pushTri(out, a, b, apex, mid, [1, 1, 1], 0);
+    pushTri(out, a, b, foot, mid, [0.85, 0.85, 0.85], 0);
+  }
+  // The foot takes the trunk colour, so the lower faces fade from leaves to wood.
+  for (let k = 0; k < out.pos.length / 3; k++) {
+    if (out.pos[k * 3] === 0 && out.pos[k * 3 + 1] === 0 && out.pos[k * 3 + 2] === 0 && hasWood) {
+      out.col.splice(k * 3, 3, wc.r, wc.g, wc.b);
+      out.wood[k] = 1;
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(out.pos, 3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(out.col, 3));
+  geo.setAttribute("aWood", new THREE.Float32BufferAttribute(out.wood, 1));
+  geo.computeVertexNormals();
+  return geo;
+}
+
 /** A plant material: Lambert, flat, curved with the Earth, swaying from the top. */
 function plantMaterial(species, form, time) {
   const twoSided = form.leaves.length > 0, grass = form.blades.length > 0;
@@ -138,11 +165,17 @@ export function plantKit() {
   if (kit) return kit;
   const time = { value: 0 };
   const shapes = [];
-  for (const species of SPECIES_NAMES)
+  for (const species of SPECIES_NAMES) {
+    const wood = WOOD[species] ?? WOOD.default;
     for (let v = 0; v < VARIANTS; v++) {
       const form = plantForm(species, v);
-      shapes.push({ species, v, form, geo: formGeometry(form, WOOD[species] ?? WOOD.default), mat: plantMaterial(species, form, time) });
+      shapes.push({ key: `${species}:${v}`, species, form, geo: formGeometry(form, wood), mat: plantMaterial(species, form, time) });
     }
+    const sp = SPECIES[species];
+    if (sp.blades || sp.mounds) continue; // grass and moss have no far shape
+    const form = plantForm(species, 0);
+    shapes.push({ key: `${species}:mid`, species, form, geo: midGeometry(form, wood), mat: plantMaterial(species, { blades: [], leaves: [] }, time) });
+  }
   kit = { time, shapes };
   return kit;
 }
@@ -159,66 +192,119 @@ function foliage(c, biome, species, h) {
 }
 
 /**
- * The plants of a world frame. update(x, z, t) replants around a local point
- * when it has moved far enough, and sways them.
+ * The plants of a world frame. update(x, z, t, camera) replants around the
+ * creature when it has moved far enough (remembering cells it has already
+ * worked out), re-sorts near and far shapes as the camera moves, and sways
+ * them all.
  */
 export function buildPlants(frame, terrain) {
   const { time, shapes } = plantKit();
   const group = new THREE.Group();
-  const meshes = new Map(); // "species:v" -> InstancedMesh
-  for (const s of shapes) {
-    const cap = CAPACITY[s.species] ?? 1400;
+  const meshes = new Map(); // "species:v" or "species:mid" -> InstancedMesh
+  const makeMesh = (s, cap) => {
     const m = new THREE.InstancedMesh(s.geo, s.mat, cap);
     m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
     m.count = 0;
     m.frustumCulled = false; // spread over kilometres, and curved after culling
     m.userData.sharedGeometry = true;
-    meshes.set(`${s.species}:${s.v}`, m);
-    group.add(m);
-  }
+    m.userData.shape = s;
+    return m;
+  };
+  for (const s of shapes) { const m = makeMesh(s, 256); meshes.set(s.key, m); group.add(m); }
+  // Room for n instances, doubling as needed.
+  const room = (key, n) => {
+    const m = meshes.get(key);
+    if (n <= m.instanceMatrix.count) return m;
+    let cap = m.instanceMatrix.count;
+    while (cap < n) cap *= 2;
+    const next = makeMesh(m.userData.shape, cap);
+    group.remove(m); m.dispose(); group.add(next); meshes.set(key, next);
+    return next;
+  };
+
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), col = new THREE.Color();
-  let centre = null, placed = 0;
+  let cells = new Map(); // "salt:i:j" -> a plant, or null
+  let live = []; // the plants in range: { x, y, z, species, variant, m: Float32Array(16), c: [r, g, b], d }
+  let centre = null, eye = null, placed = 0;
+
+  // What grows on one cell, worked out once per world.
+  function grow(cell, layer) {
+    const p = frame.toLocal(cell.lat, cell.lon);
+    const h = terrain.heightAt(p.x, p.z);
+    if (h < 3) return null; // the sea, and the tideline
+    const biome = biomeFor(koppenAt(cell.lat, cell.lon), terrain.reliefAt(p.x, p.z), cell.lat, h);
+    const [density, table] = layer.pick(BIOMES[biome]);
+    const c = choosePlant(cell.h, density, table);
+    if (!c) return null;
+    // Nothing grows on the bare-rock faces.
+    const slope = Math.max(Math.abs(terrain.heightAt(p.x + 6, p.z) - terrain.heightAt(p.x - 6, p.z)), Math.abs(terrain.heightAt(p.x, p.z + 6) - terrain.heightAt(p.x, p.z - 6))) / 12;
+    if (slope > 0.45) return null;
+    const y = h - c.height * 0.03;
+    pos.set(p.x, y, p.z);
+    q.setFromAxisAngle(up, c.yaw);
+    scl.set(c.height * c.squash, c.height, c.height * (2 - c.squash));
+    foliage(col, biome, c.species, cell.h);
+    return { x: p.x, y, z: p.z, species: c.species, variant: c.variant, m: Float32Array.from(m4.compose(pos, q, scl).elements), c: [col.r, col.g, col.b], d: 0 };
+  }
 
   function plant(x, z) {
     const ll = frame.toLatLon(x, z);
-    for (const m of meshes.values()) m.count = 0;
-    placed = 0;
+    const next = new Map();
+    live = [];
     for (const layer of LAYERS) {
       for (const cell of cellsAround(ll.lat, ll.lon, layer.radius, layer.cell, layer.salt)) {
-        const p = frame.toLocal(cell.lat, cell.lon);
-        const h = terrain.heightAt(p.x, p.z);
-        if (h < 3) continue; // the sea, and the tideline
-        const biome = biomeFor(koppenAt(cell.lat, cell.lon), terrain.reliefAt(p.x, p.z), cell.lat, h);
-        const [density, table] = layer.pick(BIOMES[biome]);
-        const c = choosePlant(cell.h, density, table);
-        if (!c) continue;
-        const dist = Math.hypot(p.x - x, p.z - z);
-        if (dist > SPECIES[c.species].reach) continue;
-        // Nothing grows on the bare-rock faces.
-        const slope = Math.max(Math.abs(terrain.heightAt(p.x + 6, p.z) - terrain.heightAt(p.x - 6, p.z)), Math.abs(terrain.heightAt(p.x, p.z + 6) - terrain.heightAt(p.x, p.z - 6))) / 12;
-        if (slope > 0.45) continue;
-        const m = meshes.get(`${c.species}:${c.variant}`);
-        if (m.count >= m.instanceMatrix.count) continue;
-        pos.set(p.x, h - c.height * 0.03, p.z);
-        q.setFromAxisAngle(up, c.yaw);
-        scl.set(c.height * c.squash, c.height, c.height * (2 - c.squash));
-        m.setMatrixAt(m.count, m4.compose(pos, q, scl));
-        m.setColorAt(m.count, foliage(col, biome, c.species, cell.h));
-        m.count++;
-        placed++;
+        const key = `${layer.salt}:${cell.i}:${cell.j}`;
+        let rec = cells.get(key);
+        if (rec === undefined) rec = grow(cell, layer);
+        next.set(key, rec);
+        if (!rec) continue;
+        rec.d = Math.hypot(rec.x - x, rec.z - z);
+        if (rec.d <= SPECIES[rec.species].far) live.push(rec);
       }
     }
-    for (const m of meshes.values()) { m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; }
+    cells = next; // forget what's out of range
     centre = { x, z };
+  }
+
+  // Sort the plants in range into near and far shapes by distance from the camera.
+  function tier(cam, scale) {
+    const lists = new Map();
+    for (const rec of live) {
+      const lod = lodFor(rec.species, rec.d, Math.hypot(rec.x - cam.x, rec.y - cam.y, rec.z - cam.z), scale);
+      if (!lod) continue;
+      const key = lod === "mid" ? `${rec.species}:mid` : `${rec.species}:${rec.variant}`;
+      if (!lists.has(key)) lists.set(key, []);
+      lists.get(key).push(rec);
+    }
+    placed = 0;
+    for (const key of [...meshes.keys()]) {
+      const list = lists.get(key) || [];
+      const m = room(key, list.length);
+      list.forEach((rec, k) => { m.instanceMatrix.array.set(rec.m, k * 16); m.instanceColor.array.set(rec.c, k * 3); });
+      m.count = list.length;
+      m.instanceMatrix.needsUpdate = true;
+      m.instanceColor.needsUpdate = true;
+      placed += list.length;
+    }
+    eye = { x: cam.x, y: cam.y, z: cam.z, scale };
   }
 
   return {
     group,
-    update(x, z, t) {
+    /** cam: the camera position; scale: the detail governor's reach (0..1). */
+    update(x, z, t, cam, scale = 1) {
       time.value = t;
-      if (!centre || Math.hypot(x - centre.x, z - centre.z) > REGROW_M) plant(x, z);
+      let moved = false;
+      if (!centre || Math.hypot(x - centre.x, z - centre.z) > REGROW_M) { plant(x, z); moved = true; }
+      if (moved || !eye || eye.scale !== scale || Math.hypot(cam.x - eye.x, cam.y - eye.y, cam.z - eye.z) > RETIER_M) tier(cam, scale);
       return placed;
     },
     get count() { return placed; },
+    /** Triangles drawn, near and far. */
+    triangles() {
+      let near = 0, far = 0;
+      for (const [key, m] of meshes) { const n = m.count * m.geometry.attributes.position.count / 3; if (key.endsWith(":mid")) far += n; else near += n; }
+      return { near, far };
+    },
   };
 }
