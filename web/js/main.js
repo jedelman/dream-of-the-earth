@@ -12,6 +12,7 @@ import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount } from "./ride.js";
 import { buildSky } from "./sky.js";
+import { curveUniform } from "./curvature.js";
 import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
 import { interimTemperature, biomeFor } from "./geo.js";
 
@@ -39,11 +40,13 @@ if (params.get("lat") && params.get("lon")) {
 
 // ---- Renderer: a small internal picture, scaled up with hard pixels ----
 const canvas = document.getElementById("view");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "low-power" });
+// Logarithmic depth: the scene runs from a creature a few metres away to land
+// hundreds of kilometres off at the horizon.
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "low-power", logarithmicDepthBuffer: true });
 renderer.setPixelRatio(1);
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xff9ec7, 2500, 22000);
-const camera = new THREE.PerspectiveCamera(62, 1, 1, 400000);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.5, 1500000);
 function resize() {
   const H = 224, W = Math.max(160, Math.round((H * innerWidth) / innerHeight));
   renderer.setSize(W, H, false);
@@ -58,7 +61,7 @@ const sunLight = new THREE.DirectionalLight(0xfff0d0, 2.2);
 scene.add(hemi, sunLight, sunLight.target);
 const sky = buildSky();
 scene.add(sky.group);
-const sea = buildSea(160000);
+const sea = buildSea(1200000); // to the horizon and past it
 scene.add(sea.mesh);
 const rideFx = buildRideFx();
 rideFx.group.visible = false;
@@ -309,17 +312,26 @@ function frame() {
   // Under the sea: a murky blue world. The sky and the highways ignore fog by
   // design, so they're hidden down here, and the surface reads as a ceiling.
   const underwater = view.underwater;
+  // Above water the fog is aerial perspective, not a wall: it thickens only
+  // toward the real horizon, which recedes as you climb.
   if (underwater) { scene.fog.color.setHex(0x0b3b6e); scene.fog.near = 5; scene.fog.far = 700; }
-  else { scene.fog.color.copy(horizon); scene.fog.near = 2500; scene.fog.far = 22000; }
+  else {
+    const h = Math.max(30, camera.position.y);
+    const horizonM = Math.sqrt(2 * 6371008.8 * h + h * h);
+    scene.fog.color.copy(horizon);
+    scene.fog.far = Math.min(700000, Math.max(40000, horizonM * 1.2));
+    scene.fog.near = scene.fog.far * 0.25;
+  }
   sky.group.visible = !underwater;
   if (world) world.highways.group.visible = !underwater;
   sea.mesh.material.opacity = underwater ? 0.92 : 0.55;
   scene.background = scene.fog.color;
 
-  sea.mesh.position.set(Math.round(p.x / 4000) * 4000, 0, Math.round(p.z / 4000) * 4000);
+  sea.mesh.position.set(camera.position.x, 0, camera.position.z); // its waves are keyed to world position
   sea.update(t);
   if (world) world.highways.update(t);
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
+  curveUniform.value.copy(camera.position); // the Earth curves away from the eye
   renderer.render(scene, camera);
   window.__dream.frames++;
   requestAnimationFrame(frame);

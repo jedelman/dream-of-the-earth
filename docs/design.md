@@ -335,6 +335,21 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
      for minor), which is why the speeds are absurd: a typical full ride takes 5–50 s.
    - Highways fade within ~700 m of the camera, so one you're inside, or a node where many meet, reads as light
      ahead. In ley-space there's no fade.
+   - **To the horizon (11-08, Jason: "reduce fog and render landscape to the horizon for real immersion"):**
+     - **Three terrain rings:** zoom 11 near (±29 km, ~900 m facets), zoom 9 (±117 km, ~5 km facets), zoom 7
+       (±470 km, ~20 km facets). Each outer ring skips the cells under the ring inside it and sinks 30 m near
+       the seam, so the inner ring wins where they overlap.
+     - **Real Earth curvature:** every world vertex drops by d²/2R from the camera, in the vertex shaders, so the
+       land meets the sky at the true horizon (~67 km from 350 m up, ~195 km from 3 km).
+     - **Logarithmic depth:** for a creature 3 m away and land 400 km off.
+     - **Fog as aerial perspective:** it starts at 25% of the horizon distance and ends just past it, receding
+       as you climb.
+     - **A 1,200 km sea** that waves on the GPU, and the sky pushed out to 900 km.
+     - **A decoded-tile cache** (160 tiles), so regrowing every 15 km doesn't redo the far rings.
+     - Highways draw out to 320 km.
+     - In ley-space the beam under you is now steady, with pulses streaming back past you. In the world, the
+       pulse made the stretch near you flash every ~2 s.
+     - Headless: 60 fps (the vsync cap) in both views, same as before.
 2. **Biomes and life:** the CHELSA/SoilGrids/canopy pipeline to world tiles (R2); lapse-rate downscaling;
    L-system plants; braided interchange rings where networks cross; sky whales.
 3. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.

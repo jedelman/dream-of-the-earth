@@ -23,7 +23,7 @@ export function buildSky() {
   const group = new THREE.Group();
   const uniforms = { zenith: { value: new THREE.Color() }, horizon: { value: new THREE.Color() } };
   const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(250000, 16, 8),
+    new THREE.SphereGeometry(900000, 16, 8),
     new THREE.ShaderMaterial({
       uniforms,
       side: THREE.BackSide,
@@ -48,7 +48,7 @@ export function buildSky() {
   const n = 900, starPos = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     const u = rand() * 2 - 1, th = rand() * Math.PI * 2, r = Math.sqrt(1 - u * u);
-    starPos.set([r * Math.cos(th) * 240000, Math.abs(u) * 240000, r * Math.sin(th) * 240000], i * 3);
+    starPos.set([r * Math.cos(th) * 880000, Math.abs(u) * 880000, r * Math.sin(th) * 880000], i * 3);
   }
   const starGeo = new THREE.BufferGeometry();
   starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
@@ -56,7 +56,7 @@ export function buildSky() {
   group.add(new THREE.Points(starGeo, starMat));
 
   // The sun: a low-poly disc that always faces the camera.
-  const sun = new THREE.Mesh(new THREE.CircleGeometry(9000, 8), new THREE.MeshBasicMaterial({ color: 0xfff1a8, fog: false, depthWrite: false }));
+  const sun = new THREE.Mesh(new THREE.CircleGeometry(38000, 8), new THREE.MeshBasicMaterial({ color: 0xfff1a8, fog: false, depthWrite: false }));
   group.add(sun);
 
   return {
@@ -68,7 +68,7 @@ export function buildSky() {
       uniforms.horizon.value.copy(horizon);
       starMat.opacity = Math.min(1, Math.max(0, (-alt - 4) / 8));
       group.position.copy(camera.position); // the sky travels with you
-      sun.position.set(dir.x * 200000, dir.y * 200000, dir.z * 200000);
+      sun.position.set(dir.x * 850000, dir.y * 850000, dir.z * 850000);
       sun.lookAt(camera.position);
       sun.visible = alt > -3;
       return horizon;

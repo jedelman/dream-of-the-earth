@@ -8,10 +8,11 @@ It runs peer to peer over [iroh](https://github.com/n0-computer/iroh) and leaves
 state on any server. The world is grown on each phone from real elevation, seafloor, climate, soil and canopy
 data, and creatures' movements pass directly between players.
 
-**Status:** step 0, single-player in the browser: **https://dream-of-the-earth.jason-edelman.org**.
-You spawn near a random ley node on the real Earth (faceted terrain and seafloor from real elevation data,
-that place's real sun, golden ley highways in the sky), as a random creature with random stats. Fly, run and
-swim with WASD/arrows, Space (up) and Shift (down); on touch, drag and use the ▲▼ buttons. The design is in
+**Status:** single-player in the browser: **https://dream-of-the-earth.jason-edelman.org**. You spawn near a
+random ley node on the real Earth as a random creature with random stats. Terrain and seafloor come from real
+elevation data and run out to the real, curved horizon, under that place's real sun, with golden ley highways
+in the sky. Fly, run and swim with WASD/arrows, Space (up) and Shift (down); on touch, drag and use the ▲▼
+buttons. The design is in
 [`docs/design.md`](docs/design.md).
 
 **Ley highways:** fly along a gold highway (inside its glow, heading roughly the same way) and it carries you

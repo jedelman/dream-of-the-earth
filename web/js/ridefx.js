@@ -19,7 +19,9 @@ export function buildRideFx() {
   geo.setAttribute("u", new THREE.BufferAttribute(us, 1).setUsage(THREE.DynamicDrawUsage));
   geo.setAttribute("side", new THREE.BufferAttribute(sides, 1));
   for (let i = 0; i < segs * 2; i++) sides.set([1, -1, 1, -1, -1, 1], i * 6);
-  const mats = [0, 1, 2, 3].map((r) => highwayMaterial(r, [0, 1])); // no near fade: the beam under you is the point
+  // No near fade (the beam under you is the point), a steady glow, and pulses
+  // that stream back past you, faster on rarer lines.
+  const mats = [0, 1, 2, 3].map((r) => highwayMaterial(r, { nearFade: [0, 1], pulseDepth: 0.18, speed: -12 * 2 ** r }));
   const ribbon = new THREE.Mesh(geo, mats[0]);
   ribbon.frustumCulled = false;
   ribbon.renderOrder = 2;
