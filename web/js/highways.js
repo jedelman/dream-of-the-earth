@@ -5,10 +5,14 @@ import * as THREE from "three";
 import { network, greatCircle, rankScale } from "./ley.js";
 import { latLonToVec, vecToLatLon, DEG } from "./geo.js";
 import { halfWidth, highwayAltitude } from "./ride.js";
+import { curveUniform, curved, CURVE_GLSL } from "./curvature.js";
 
-const RADIUS = 140000; // draw highways within 140 km
+const RADIUS = 320000; // draw highways within 320 km: past the horizon from 3 km up
 
 const vertexShader = /* glsl */ `
+  #include <common>
+  #include <logdepthbuf_pars_vertex>
+  ${CURVE_GLSL}
   attribute float u;
   attribute float side;
   varying float vU;
@@ -16,34 +20,43 @@ const vertexShader = /* glsl */ `
   varying float vDepth;
   void main() {
     vU = u; vSide = side;
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vec4 mv = viewMatrix * curveWorld(modelMatrix * vec4(position, 1.0));
     vDepth = -mv.z;
     gl_Position = projectionMatrix * mv;
+    #include <logdepthbuf_vertex>
   }`;
 const fragmentShader = /* glsl */ `
+  #include <logdepthbuf_pars_fragment>
   uniform float time;
   uniform float speed;
   uniform vec3 gold;
   uniform vec2 nearFade;
+  uniform float pulseDepth;
   varying float vU;
   varying float vSide;
   varying float vDepth;
   void main() {
+    #include <logdepthbuf_fragment>
     // Fade light that's right on top of the camera, so a highway you're inside
     // (or a node where many meet) reads as light ahead, not a wall of white.
     float near = smoothstep(nearFade.x, nearFade.y, vDepth);
     float edge = abs(vSide);                    // 0 at the centre, 1 at the edge
     float core = smoothstep(0.3, 0.0, edge);    // the bright line
     float glow = smoothstep(1.0, 0.0, edge) * 0.22;
-    float pulse = 0.55 + 0.45 * sin(vU * 0.004 - time * speed);
+    float pulse = 1.0 - pulseDepth + pulseDepth * sin(vU * 0.004 - time * speed);
     vec3 c = gold * (core * 0.75 + glow) * pulse + vec3(1.0, 0.9, 0.6) * core * 0.12;
     gl_FragColor = vec4(c * near, clamp((core + glow) * pulse * near, 0.0, 1.0));
   }`;
 
-/** The highway shader material for a rarity rank (shared with the ride ribbon). */
-export function highwayMaterial(rank, nearFade = [60, 700]) {
+/**
+ * The highway shader material for a rarity rank (shared with the ride ribbon).
+ * pulseDepth: how far the gold pulses dim (0.45 in the world; small while
+ * riding, so the beam under you doesn't flash). speed: how fast pulses travel
+ * along the line (negative streams them back toward you).
+ */
+export function highwayMaterial(rank, { nearFade = [60, 700], pulseDepth = 0.45, speed = 1.5 * rankScale(rank) } = {}) {
   return new THREE.ShaderMaterial({
-    uniforms: { time: { value: 0 }, speed: { value: 1.5 * rankScale(rank) }, gold: { value: new THREE.Color(0xffb52e) }, nearFade: { value: new THREE.Vector2(...nearFade) } },
+    uniforms: { time: { value: 0 }, speed: { value: speed }, pulseDepth: { value: pulseDepth }, gold: { value: new THREE.Color(0xffb52e) }, nearFade: { value: new THREE.Vector2(...nearFade) }, uCurve: curveUniform },
     vertexShader, fragmentShader,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
   });
@@ -65,7 +78,7 @@ export function buildHighways(frame, heightAt) {
       const p = coarse[i], q = coarse[i + 1];
       const near = (v) => Math.acos(Math.min(1, v[0] * origin[0] + v[1] * origin[1] + v[2] * origin[2])) < maxAngle + 0.25 * DEG;
       if (!near(p) && !near(q)) continue;
-      const fine = greatCircle(p, q, 0.01).map((v) => {
+      const fine = greatCircle(p, q, 0.02).map((v) => {
         const ll = vecToLatLon(v);
         const l = frame.toLocal(ll.lat, ll.lon);
         return { x: l.x, z: l.z, y: altAt(l.x, l.z) };
@@ -114,16 +127,16 @@ export function buildHighways(frame, heightAt) {
   // ground (or the sea) up to the ring, which lifts any creature onto the
   // network, wings or not.
   const pillars = [];
-  const pillarMat = new THREE.MeshBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
-  const ringMat = new THREE.MeshBasicMaterial({ color: 0xffc94a, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
+  const pillarMat = curved(new THREE.MeshBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide }), "-pillar");
+  const ringMat = curved(new THREE.MeshBasicMaterial({ color: 0xffc94a, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide }), "-ring");
   for (const node of network().nodes) {
     const v = node.vec;
     if (Math.acos(Math.min(1, v[0] * origin[0] + v[1] * origin[1] + v[2] * origin[2])) > maxAngle) continue;
     const l = frame.toLocal(node.lat, node.lon);
     const top = altAt(l.x, l.z);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(600, 40, 3, 10), ringMat);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(600, 40, 3, 10).rotateX(Math.PI / 2), ringMat);
     ring.position.set(l.x, top, l.z);
-    ring.rotation.x = Math.PI / 2;
+    ring.frustumCulled = false;
     ring.renderOrder = 2;
     group.add(ring);
     const ground = heightAt(l.x, l.z);
@@ -131,6 +144,7 @@ export function buildHighways(frame, heightAt) {
     const h = top + 250 - bottom;
     const pillar = new THREE.Mesh(new THREE.CylinderGeometry(60, 60, h, 6, 1, true), pillarMat);
     pillar.position.set(l.x, bottom + h / 2, l.z);
+    pillar.frustumCulled = false;
     pillar.renderOrder = 2;
     group.add(pillar);
     pillars.push({ x: l.x, z: l.z, top, node });
