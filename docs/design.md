@@ -379,6 +379,35 @@ postcards, echoes and sounds use the same record and discovery, and come next.
 - **Next kinds:** postcards (an image blob, so `blob:image/*` joins the scope), echoes (your avatar, parsed against
   the 256-triangle cap), sounds (an Operator Field patch).
 
+## Multiplayer over atproto: what fits (measured 11-08)
+Jason: "I'm wondering how much multiplayer we can do on atproto." Measured and read this session:
+- **Delivery is fast.** Jetstream (Bluesky's filtered firehose; public instances at `jetstreamN.us-{east,west}.bsky.network`)
+  takes `wantedCollections` (up to 100, prefixes allowed) and `wantedDids` (up to 10,000), per its original README
+  (`bluesky-social/jetstream-legacy`). Subscribed in a browser to `org.jason-edelman.dream.artifact` from Claude's DID,
+  an update Claude wrote arrived **183 ms after the write returned**, and nothing else came through the filter.
+  Constellation is the slow part (~100 s to index), so anything live should ride Jetstream, not the backlink index.
+- **Writes are budgeted.** Bluesky-hosted accounts get 5,000 points an hour and 35,000 a day (create 3, update 2,
+  delete 1), shared with everything else the person does on Bluesky (`bsky-docs`, rate-limits page, read 11-08). One
+  overwritten record every 5 s is 1,440 points an hour (about 29% of the hourly budget, sustainable all day); every
+  2 s is 3,600 an hour (about 10 hours a day). The relay limits a *new* self-hosted PDS to 2,600 events an hour across
+  all its accounts, so players on small PDSs can't beacon often.
+- **What that allows:**
+  1. **Asynchronous, a good fit:** artifacts (built); echoes (a recorded flight that mutuals can watch as a ghost);
+     visits (a record pointing at a cairn's at-uri, so its maker sees who stopped by, through backlinks); gatherings (a
+     place and a time on the globe); **calls** ("come find me": a record naming the mutual, seen at once over Jetstream
+     if they're online, matching Jason's "Calling only works if your moot is online", and deleted after).
+  2. **Live-ish presence, possible with costs:** one record per player, overwritten every few seconds and delivered
+     over Jetstream in well under a second, interpolated on the other side, would put every online mutual's creature
+     in the world and on the globe, from the browser, today. The costs: it's a public broadcast, not mutuals-only
+     (anyone can subscribe to the collection); Jetstream now describes itself as a full-network archive with replay,
+     so a trail of where your creature was and when you played may be kept, which cuts against leave-no-trace; it
+     spends the player's write budget; and small PDSs can't keep up. Deleting the record when you leave removes it from
+     your repo, not from anything that already saw it.
+  3. **Real time, not atproto:** 15 Hz positions in a flock, avatars, voice. That stays iroh (identity and the node
+     record on atproto, as designed).
+- **Not decided:** whether to build presence on atproto at all (it's Jason's call on leave-no-trace), and if so, as an
+  opt-in "show me to my mutuals" toggle.
+
 ## Identity, mutuals, calls
 - **Sign in with Bluesky** (atproto OAuth for a native client; metadata on jason-edelman.org, as Library does).
   The scope is `repo:` on one collection.
