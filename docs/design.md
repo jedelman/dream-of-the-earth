@@ -360,8 +360,10 @@ postcards, echoes and sounds use the same record and discovery, and come next.
   place, heading, zoom) and puts you back. **Just look** reads as any handle without signing in: everything it
   shows is public anyway.
   - **Checked 11-08:** in headless Chromium, Sign in loaded the client, bsky.social accepted the scope at PAR, and
-    the browser landed on Bluesky's authorize page. **Not yet checked:** the token exchange after you approve (it
-    needs a real password), so Jason's first sign-in is the test, as with Library.
+    the browser landed on Bluesky's authorize page. **The token exchange works:** Jason's phone screenshot (11-08)
+    shows him signed in (the button reads "@jason-edelman.org ▾", not "(LOOKING)"). **Not yet seen:** a cairn
+    written through the OAuth session (`createRecord` via its fetch handler); his first cairn is that test.
+  - "How do I add a Cairn?" (Jason, 11-08): the CAIRNS list now has "Leave one here" too, not only the Bluesky menu.
 - **What mutuals-only means:** what the game *shows*. atproto records are public, so anyone who looks can read
   every artifact; the sheet says so. The trust boundary is that a stranger can't put anything in your world.
 - **Trade-offs:** Constellation is a third-party dependency (if it's down, nobody sees new artifacts; nothing

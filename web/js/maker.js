@@ -111,7 +111,9 @@ export function buildMaker(hooks) {
     show("list",
       h("h2", {}, rows.length ? `Cairns to visit (${rows.length})` : "Cairns to visit"),
       rows.length ? h("ul", { class: "cairns" }, items) : h("p", {}, person.signedIn ? "None of your mutuals has left a cairn yet. Leave the first: Bluesky \u25be, then Leave a cairn here." : "None of your mutuals has left a cairn yet."),
-      h("div", { class: "row" }, h("button", { onclick: () => { close(); hooks.globe(); } }, "Show on the globe")),
+      h("div", { class: "row" },
+        h("button", { class: "go", onclick: () => (person.signedIn ? leaveSheet() : signInSheet(person.handle || "")) }, person.signedIn ? "Leave one here" : "Sign in to leave one"),
+        h("button", { onclick: () => { close(); hooks.globe(); } }, "Show on the globe")),
       h("p", { class: "small" }, "Your mutuals' cairns, anywhere in the dream, nearest first. On the globe, tap a dot to go there."));
     list.setAttribute("aria-expanded", "true");
   }
