@@ -281,6 +281,12 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
 - **Movement:** critically damped springs (no overshoot, frame-rate independent): position ~0.3-0.5 s, aim
   0.22 s, field of view 0.6 s, roll 0.45 s. The camera won't sink into hills between you and it: it rises
   over them.
+- **Through its eyes (11-08, Jason: "make Nyo translucent at a certain zoom level so we can look through her
+  eyes"):** as the zoom closes from 34 m to 17 m the camera glides to the creature's eyes (just in front of its
+  eye parts, or its head, from the creature graph) and looks where it's heading, with springs tight enough to
+  lock it to the head and a 72° field of view; the creature fades to 15% so you see past it. While translucent it
+  draws after the sky (otherwise the sky pass paints over it where there's sky behind), and its gleam sparkles
+  hide (from inside its head they'd fill the view). Back to solid on a highway.
 
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
@@ -360,6 +366,14 @@ postcards, echoes and sounds use the same record and discovery, and come next.
   every artifact; the sheet says so. The trust boundary is that a stranger can't put anything in your world.
 - **Trade-offs:** Constellation is a third-party dependency (if it's down, nobody sees new artifacts; nothing
   breaks). There's no cap on how many cairns a player leaves yet; the game shows at most 24 per maker.
+- **Cairns to visit (11-08, Jason: "Can we make a list of artifacts for you to travel to? Maybe even a map....")**:
+  every record also carries `world: "https://dream-of-the-earth.jason-edelman.org/"`, a second backlink target,
+  so one Constellation query lists every artifact in the dream; the same mutual check keeps your mutuals' (and
+  yours). The CAIRNS button opens them nearest first (colour, maker, note, distance, age) with Go: you arrive 30 m
+  south and 20 m west of the cairn, facing north, so it stands ahead and to the right. **The map is the globe:**
+  zoomed out past 400 km, each cairn is a dot of its maker's colour on the side of the planet facing you; tap one
+  to go there. Refreshed every 3 minutes and when the list opens. Claude's first cairn was updated (same record,
+  same age) to carry the world link; records without it still parse and still show by place.
 - **Next kinds:** postcards (an image blob, so `blob:image/*` joins the scope), echoes (your avatar, parsed against
   the 256-triangle cap), sounds (an Operator Field patch).
 

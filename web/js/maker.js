@@ -1,6 +1,6 @@
 // The Bluesky button and its sheets: sign in (or just look, by handle), leave a
 // cairn, tend one of yours. DOM only: main.js supplies the world through hooks.
-import { NOTE_MAX } from "./artifacts.js";
+import { NOTE_MAX, distanceText } from "./artifacts.js";
 
 const h = (tag, attrs = {}, ...kids) => {
   const el = document.createElement(tag);
@@ -15,10 +15,11 @@ const h = (tag, attrs = {}, ...kids) => {
 
 /**
  * hooks: { look(handle), signIn(handle), signOut(), stopLooking(), preview(spec | null), leave({ seed, hue, note }),
- *          renew(entry), takeDown(entry) }. Each may return a promise; errors are shown in the sheet.
+ *          renew(entry), takeDown(entry), cairns() -> [{ a, metres, age }] nearest first, travel(a), globe() }.
+ *          Each may return a promise; errors are shown in the sheet.
  */
 export function buildMaker(hooks) {
-  const button = document.getElementById("me"), sheet = document.getElementById("sheet");
+  const button = document.getElementById("me"), sheet = document.getElementById("sheet"), list = document.getElementById("cairns");
   let person = { did: null, handle: null, signedIn: false }, open = null;
 
   const close = () => {
@@ -27,6 +28,7 @@ export function buildMaker(hooks) {
     sheet.hidden = true;
     sheet.replaceChildren();
     button.setAttribute("aria-expanded", "false");
+    list.setAttribute("aria-expanded", "false");
   };
   const show = (name, ...kids) => {
     if (open === "leave" && name !== "leave") hooks.preview(null);
@@ -98,6 +100,23 @@ export function buildMaker(hooks) {
     paint();
   }
 
+  function listSheet() {
+    const rows = hooks.cairns();
+    const items = rows.map(({ a, metres, age }) => h("li", {},
+      h("span", { class: "swatch", style: `background:hsl(${a.hue} 85% 62%)` }),
+      h("span", { class: "who" }, a.own ? "yours" : a.handle ? `@${a.handle}` : "someone"),
+      h("span", { class: "where" }, `${distanceText(metres)} · ${age}`),
+      a.note ? h("span", { class: "what" }, `\u201c${a.note}\u201d`) : null,
+      h("button", { class: "go", "aria-label": `Travel to ${a.own ? "your" : a.handle ? "@" + a.handle + "'s" : "the"} cairn`, onclick: () => { close(); hooks.travel(a); } }, "Go")));
+    show("list",
+      h("h2", {}, rows.length ? `Cairns to visit (${rows.length})` : "Cairns to visit"),
+      rows.length ? h("ul", { class: "cairns" }, items) : h("p", {}, person.signedIn ? "None of your mutuals has left a cairn yet. Leave the first: Bluesky \u25be, then Leave a cairn here." : "None of your mutuals has left a cairn yet."),
+      h("div", { class: "row" }, h("button", { onclick: () => { close(); hooks.globe(); } }, "Show on the globe")),
+      h("p", { class: "small" }, "Your mutuals' cairns, anywhere in the dream, nearest first. On the globe, tap a dot to go there."));
+    list.setAttribute("aria-expanded", "true");
+  }
+  list.addEventListener("click", () => (open === "list" ? close() : listSheet()));
+
   button.addEventListener("click", () => {
     if (open) return close();
     if (!person.did) signInSheet();
@@ -111,7 +130,13 @@ export function buildMaker(hooks) {
       person = p;
       button.textContent = p.did ? `@${p.handle || "…"}${p.signedIn ? "" : " (LOOKING)"} ▾` : "BLUESKY ▾";
       button.classList.toggle("on", !!p.did);
+      list.hidden = !p.did;
       if (open === "menu") menuSheet();
+    },
+    /** How many cairns there are to visit (the button's count); refreshes the list if it's open. */
+    setCount(n) {
+      list.textContent = `CAIRNS${n ? ` (${n})` : ""} \u25be`;
+      if (open === "list") listSheet();
     },
     openLeave: () => (person.signedIn ? leaveSheet() : signInSheet(person.handle || "")),
     /** Your own cairn: renew it or take it down. info: { note, age, left } in words. */

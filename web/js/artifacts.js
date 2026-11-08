@@ -9,6 +9,8 @@ import { placeOf } from "./places.js";
 import { mulberry32 } from "./rng.js";
 
 export const NSID = "org.jason-edelman.dream.artifact";
+/** Every artifact also points here, so one backlink query lists all of them (to filter down to mutuals). */
+export const WORLD_URL = "https://dream-of-the-earth.jason-edelman.org/";
 export const KINDS = ["cairn", "postcard", "echo", "sound"]; // built so far: cairn
 export const NOTE_MAX = 140; // characters (code points)
 export const MOON_S = 29.530588 * 86400; // a synodic month
@@ -34,6 +36,7 @@ export function makeCairn({ lat, lon, seed, hue, note = "", now = new Date() }) 
     $type: NSID,
     kind: "cairn",
     place: placeOf(latE6 / 1e6, lonE6 / 1e6).url,
+    world: WORLD_URL,
     latE6, lonE6, // atproto records can't hold floats: microdegrees
     cairn: { seed: seed >>> 0, hue: ((Math.round(hue) % 360) + 360) % 360 },
     note: cleanNote(note),
@@ -57,6 +60,7 @@ export function parseArtifact(value, nowS = Date.now() / 1000, built = ["cairn"]
   // It must say it's where it is, so the index can't put it somewhere else (allowing for a cell edge).
   const e = 2e-6, cells = new Set([placeOf(lat, lon).url, placeOf(lat + e, lon + e).url, placeOf(lat - e, lon - e).url]);
   if (typeof value.place !== "string" || !cells.has(value.place)) return null;
+  if (value.world !== undefined && value.world !== WORLD_URL) return null;
   const made = when(value.createdAt), renewed = value.renewedAt === undefined ? made : when(value.renewedAt);
   if (!Number.isFinite(made) || !Number.isFinite(renewed)) return null;
   const since = Math.max(made, renewed);
@@ -101,3 +105,18 @@ export function cairnForm(seed) {
 
 /** Triangles a form will draw: each stone a pebble (2 per side), the crystal an octahedron (8). */
 export const cairnTriangles = (form) => form.stones.reduce((n, s) => n + 2 * s.sides, 0) + 8;
+
+// ---- Lists ----
+/** Great-circle distance in metres. */
+export function metresBetween(lat1, lon1, lat2, lon2) {
+  const r = Math.PI / 180, a = Math.sin(((lat2 - lat1) * r) / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(((lon2 - lon1) * r) / 2) ** 2;
+  return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+/** A distance in words: "40 m", "3.2 km", "8,421 km". */
+export function distanceText(m) {
+  if (m < 1000) return `${Math.round(m / 10) * 10} m`;
+  if (m < 10000) return `${(m / 1000).toFixed(1)} km`;
+  return `${Math.round(m / 1000).toLocaleString("en")} km`;
+}
+/** Nearest first, from (lat, lon): the list with { metres } added. */
+export const byDistance = (list, lat, lon) => list.map((a) => ({ ...a, metres: metresBetween(lat, lon, a.lat, a.lon) })).sort((a, b) => a.metres - b.metres);

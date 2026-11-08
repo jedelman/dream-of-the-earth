@@ -42,7 +42,8 @@ export function buildDirector(camera) {
 
     /**
      * ctx: { t, dt, subject (Vector3), heading, mode ("air" | "ground" | "water"), speed01, riding,
-     *        rig ({ back, up, near }), heightAt(x, z) | null, goal (Vector3 | null), sunDir, gold, scale }
+     *        rig ({ back, up, near }), heightAt(x, z) | null, goal (Vector3 | null), sunDir, gold, scale,
+     *        eyes (0..1: how far into the creature's own eyes), eye (Vector3: from the subject to its eyes) }
      */
     update(ctx) {
       const { t, dt, subject, heading, mode, speed01, riding, rig } = ctx;
@@ -94,7 +95,7 @@ export function buildDirector(camera) {
           if (d > 30) lookT.lerp(abs.multiplyScalar(Math.min(1, 600 / d)), 0.3);
         }
         // Sitting still: a slow orbit, lingering when it faces a low golden sun.
-        if (t - idleSince > 10 && speed01 < 0.05 && !ctx.goal) {
+        if (t - idleSince > 10 && speed01 < 0.05 && !ctx.goal && !(ctx.eyes > 0.5)) {
           const facing = ctx.sunDir ? -(offT.x * ctx.sunDir.x + offT.z * ctx.sunDir.z) / Math.max(1, Math.hypot(offT.x, offT.z)) : 0;
           orbit += dt * orbitRate(facing, ctx.gold || 0);
           offT.applyAxisAngle(UP, orbit).multiplyScalar(1.25);
@@ -102,6 +103,14 @@ export function buildDirector(camera) {
           lookT.set(0, 3 * (ctx.scale || 1), 0);
           fovT = 55;
         }
+      }
+
+      // ---- Through its eyes: zoomed all the way in, the camera sits at the creature's eyes, looking where it's going ----
+      const eyes = !riding && ctx.eye ? ctx.eyes || 0 : 0;
+      if (eyes > 0) {
+        offT.lerp(ctx.eye, eyes);
+        lookT.lerp(abs.copy(f).multiplyScalar(120).add(ctx.eye).add(UP.clone().multiplyScalar(-8)), eyes);
+        fovT += (72 - fovT) * eyes;
       }
 
       // ---- Event shots blend over the base ----
@@ -120,9 +129,10 @@ export function buildDirector(camera) {
       }
 
       // ---- Move like an operator: springs, faster when zoomed out ----
-      const st = !rig.near ? 0.15 : riding ? 0.5 : mode === "ground" ? 0.28 : 0.38;
+      const st0 = !rig.near ? 0.15 : riding ? 0.5 : mode === "ground" ? 0.28 : 0.38;
+      const st = st0 + (0.05 - st0) * eyes; // in its eyes the camera is locked to its head
       damp3(off, offV, offT, st, dt);
-      damp3(look, lookV, lookT, 0.22, dt);
+      damp3(look, lookV, lookT, 0.22 + (0.06 - 0.22) * eyes, dt);
       [fov, fovV] = smoothDamp(fov, fovT, fovV, 0.6, dt);
       [roll, rollV] = smoothDamp(roll, rollT, rollV, 0.45, dt);
 

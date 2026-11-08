@@ -107,6 +107,38 @@ export function buildGlobe() {
   scene.add(marker);
 
   // The Earth itself loads once (16 tiles) the first time you zoom out this far.
+  // Cairns your mutuals left: a dot of each one's colour, only on the side of the planet facing you.
+  const MARKS = 256, LIFT = R_EARTH * 1.02;
+  const markPos = new Float32Array(MARKS * 3), markCol = new Float32Array(MARKS * 4); // RGBA: alpha hides the far side
+  const markGeo = new THREE.BufferGeometry();
+  markGeo.setAttribute("position", new THREE.BufferAttribute(markPos, 3));
+  markGeo.setAttribute("color", new THREE.BufferAttribute(markCol, 4));
+  markGeo.setDrawRange(0, 0);
+  const marks = new THREE.Points(markGeo, new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, vertexColors: true, depthTest: false, transparent: true })); // its maker's colour, not washed out by the land
+  marks.renderOrder = 9;
+  marks.frustumCulled = false;
+  scene.add(marks);
+  let markList = []; // [{ a, v (unit vector), color }]
+  const facing = (v) => camera.position.dot(v) - LIFT > 0; // the camera is on v's side of the planet
+  function setMarks(list) {
+    markList = list.slice(0, MARKS).map((a) => ({ a, v: new THREE.Vector3(...latLonToVec(a.lat, a.lon)), color: new THREE.Color().setHSL(a.hue / 360, 0.95, 0.55) }));
+    markList.forEach((m, k) => markPos.set([m.v.x * LIFT, m.v.y * LIFT, m.v.z * LIFT], k * 3));
+    markGeo.setDrawRange(0, markList.length);
+    markGeo.attributes.position.needsUpdate = true;
+  }
+  /** The mark nearest a point on screen (x, y in 0..width, 0..height), within maxPx and on the near side: its artifact, or null. */
+  function pick(x, y, width, height, maxPx = 28) {
+    let best = null, bestD = maxPx;
+    const p = new THREE.Vector3();
+    for (const m of markList) {
+      if (!facing(m.v)) continue;
+      p.copy(m.v).multiplyScalar(LIFT).project(camera);
+      const d = Math.hypot(((p.x + 1) / 2) * width - x, ((1 - p.y) / 2) * height - y);
+      if (d < bestD) { best = m.a; bestD = d; }
+    }
+    return best;
+  }
+
   let earth = null, loading = null;
   function load() {
     if (loading) return loading;
@@ -162,6 +194,11 @@ export function buildGlobe() {
     marker.geometry.attributes.position.setXYZ(0, here.x * R_EARTH * 1.015, here.y * R_EARTH * 1.015, here.z * R_EARTH * 1.015);
     marker.geometry.attributes.position.needsUpdate = true;
     marker.material.size = 6 + 3 * Math.sin(t * 3);
+    markList.forEach((m, k) => {
+      const on = facing(m.v) ? 0.8 + 0.2 * Math.sin(t * 2 + k) : 0;
+      markCol.set([m.color.r, m.color.g, m.color.b, on], k * 4);
+    });
+    if (markList.length) markGeo.attributes.color.needsUpdate = true;
     // Fewer, fainter lines the further out you are.
     const out = THREE.MathUtils.smoothstep(altitude, 2.5e6, 9e6);
     for (const m of leyMeshes) {
@@ -185,5 +222,5 @@ export function buildGlobe() {
     camera.updateProjectionMatrix();
   }
 
-  return { scene, camera, update, load };
+  return { scene, camera, update, load, setMarks, pick };
 }
