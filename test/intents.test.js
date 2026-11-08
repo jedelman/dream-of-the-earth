@@ -84,3 +84,15 @@ test("speech bubbles and squeaks ride on the intent, briefly, cleaned and capped
   assert.ok(bad && !bad.say && !bad.act, "a bad moment is dropped; the creature still shows");
   assert.equal(parseIntent({ ...v, say: { text: "hi", at: "2026-11-08T21:00:00Z" } }, t0).say, undefined, "not from the future");
 });
+
+test("a creature's genes travel with it; bad genes are dropped, not the creature", () => {
+  const now = new Date(), t0 = now.getTime() / 1000;
+  const genes = { roll: { wings: 99 }, count: { eyes: 3 }, hue: 120, size: 140 };
+  const v = makeIntent({ kind: "rest", p: { lat: 1, lon: 2, alt: 10 }, creature: { ...creature, genes }, now });
+  assert.deepEqual(v.creature.genes, genes);
+  assert.deepEqual(parseIntent(v, t0).creature.genes, genes);
+  assert.equal(makeIntent({ kind: "rest", p: { lat: 1, lon: 2 }, creature, now }).creature.genes, undefined, "none, no field");
+  const odd = parseIntent({ ...v, creature: { ...v.creature, genes: { roll: { wings: -4 }, count: { eyes: 99 }, size: "huge" } } }, t0);
+  assert.ok(odd, "the creature still shows");
+  assert.equal(odd.creature.genes, null);
+});

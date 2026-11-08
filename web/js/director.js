@@ -186,6 +186,45 @@ export function cairnShot(subject, at, height) {
     return { off, look: mid, fov: 56 };
   };
 }
+/**
+ * Your creature, face on and swinging gently side to side, for the editor. size() is its radius in metres (it can
+ * change while you edit); angle: where round from its nose the camera stands (radians; portraitAngle picks a clear
+ * one). It sits on the left of the frame, beside the sheet; low: high in the frame, above a sheet along the bottom
+ * (a phone).
+ */
+export function portraitShot(size, low, angle = 0.55) {
+  return (ctx, age) => {
+    const r = Math.max(2, size());
+    const f = new THREE.Vector3(-Math.sin(ctx.heading), 0, -Math.cos(ctx.heading)).applyAxisAngle(UP, angle + 0.25 * Math.sin(age * 0.35));
+    const off = f.clone().multiplyScalar(portraitDistance(r)).add(new THREE.Vector3(0, r * 0.45, 0));
+    const right = new THREE.Vector3().crossVectors(f.clone().negate(), UP).normalize();
+    const look = low ? new THREE.Vector3(0, -r * 0.75, 0) : right.multiplyScalar(r * 1.05).add(new THREE.Vector3(0, r * 0.1, 0));
+    return { off, look, fov: 50 };
+  };
+}
+export const portraitDistance = (r) => r * 2.9 + 3;
+/**
+ * Where to stand for a portrait: of a few angles round from the creature's nose (three-quarters first), the one with
+ * the fewest trees in the way. subject: { x, y, z }; trees: [{ x, z, y (ground), height }] near it; heading: its yaw.
+ */
+export function portraitAngle(subject, heading, r, trees) {
+  const d = portraitDistance(r), up = r * 0.45;
+  let best = 0.55, worst = Infinity;
+  for (const a of [0.55, -0.55, 0.2, -0.2, 1.0, -1.0, 1.5, -1.5]) {
+    const f = new THREE.Vector3(-Math.sin(heading), 0, -Math.cos(heading)).applyAxisAngle(UP, a);
+    const cx = subject.x + f.x * d, cz = subject.z + f.z * d, cy = subject.y + up;
+    let blocked = 0;
+    for (const t of trees) {
+      const L2 = d * d;
+      const k = Math.max(0, Math.min(1, ((t.x - subject.x) * (cx - subject.x) + (t.z - subject.z) * (cz - subject.z)) / L2));
+      const px = subject.x + k * (cx - subject.x), pz = subject.z + k * (cz - subject.z);
+      const crown = Math.max(3, t.height * 0.25);
+      if (Math.hypot(t.x - px, t.z - pz) < crown && t.y + t.height > subject.y + k * (cy - subject.y) - 2) blocked += 0.5 + k; // nearer the camera, worse
+    }
+    if (blocked < worst - 1e-9) { worst = blocked; best = a; }
+  }
+  return best;
+}
 /** You and a butterfly, from the side. */
 export function butterflyShot(subject, b) {
   return () => {

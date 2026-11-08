@@ -8,6 +8,7 @@
 // show at all. Pure, so Node can test it.
 import { WORLD_URL, metresBetween, cleanNote } from "./artifacts.js";
 import { STATS, valid } from "./stats.js";
+import { parseGenes } from "./creature-graph.js";
 import { pointOn, rideSpeed, lineAt, lineCount } from "./ride.js";
 import { vecToLatLon } from "./geo.js";
 
@@ -26,7 +27,7 @@ const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 const E6 = (x) => Math.round(x * 1e6);
 
 /**
- * My intent now. p: { lat, lon, alt (m, above sea level) }; creature: { seed, stats }; plus one of
+ * My intent now. p: { lat, lon, alt (m, above sea level) }; creature: { seed, stats, genes? }; plus one of
  * goto: { pts: [{ lat, lon }], speed (m/s), fly, cruise (m) }, ride: { line, t (0..1), dir }, steer: { heading (rad), speed, climb }.
  */
 export function makeIntent({ kind, p, creature, goto, ride, steer, say, act, now = new Date() }) {
@@ -38,6 +39,8 @@ export function makeIntent({ kind, p, creature, goto, ride, steer, say, act, now
     latE6: E6(p.lat), lonE6: E6(p.lon), altDm: Math.round((p.alt ?? 0) * 10),
     creature: { seed: creature.seed >>> 0, stats: STATS.map((k) => creature.stats[k]) },
   };
+  const genes = parseGenes(creature.genes);
+  if (genes) v.creature.genes = genes;
   if (kind === "goto") v.goto = { pts: goto.pts.slice(0, MAX_POINTS).map((q) => [E6(q.lat), E6(q.lon)]), speedCm: Math.round(goto.speed * 100), fly: !!goto.fly, cruiseDm: Math.round((goto.cruise ?? 0) * 10) };
   if (kind === "ride") v.ride = { line: ride.line, tE6: Math.round(ride.t * 1e6), dir: ride.dir > 0 ? 1 : -1 };
   if (kind === "steer") v.steer = { headingMdeg: Math.round(((((steer.heading * 180) / Math.PI) % 360) + 360) % 360 * 1000), speedCm: Math.round(steer.speed * 100), climbCm: Math.round(steer.climb * 100) };
@@ -47,7 +50,10 @@ export function makeIntent({ kind, p, creature, goto, ride, steer, say, act, now
   return v;
 }
 
-/** Someone's intent, checked: { kind, at, lat, lon, alt, creature: { seed, stats }, goto?, ride?, steer? } or null (bad, or stale). */
+/**
+ * Someone's intent, checked: { kind, at, lat, lon, alt, creature: { seed, stats, genes }, goto?, ride?, steer? } or null
+ * (bad, or stale). Bad genes are dropped, not the creature: it shows as its seed made it.
+ */
 export function parseIntent(v, nowS = Date.now() / 1000) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   if (v.$type !== undefined && v.$type !== INTENT_NSID) return null;
@@ -59,7 +65,7 @@ export function parseIntent(v, nowS = Date.now() / 1000) {
   if (!c || !int(c.seed, 0, 0xffffffff) || !Array.isArray(c.stats) || c.stats.length !== 4) return null;
   const stats = Object.fromEntries(STATS.map((k, i) => [k, c.stats[i]]));
   if (!valid(stats)) return null;
-  const out = { kind: v.kind, at, lat: v.latE6 / 1e6, lon: v.lonE6 / 1e6, alt: v.altDm / 10, creature: { seed: c.seed, stats } };
+  const out = { kind: v.kind, at, lat: v.latE6 / 1e6, lon: v.lonE6 / 1e6, alt: v.altDm / 10, creature: { seed: c.seed, stats, genes: parseGenes(c.genes) } };
   if (v.kind === "goto") {
     const g = v.goto;
     if (!g || !Array.isArray(g.pts) || g.pts.length < 1 || g.pts.length > MAX_POINTS) return null;

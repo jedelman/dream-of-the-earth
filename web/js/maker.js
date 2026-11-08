@@ -2,7 +2,7 @@
 // cairn, tend one of yours. DOM only: main.js supplies the world through hooks.
 import { NOTE_MAX, distanceText } from "./artifacts.js";
 
-const h = (tag, attrs = {}, ...kids) => {
+export const h = (tag, attrs = {}, ...kids) => {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
@@ -22,10 +22,20 @@ const h = (tag, attrs = {}, ...kids) => {
 export function buildMaker(hooks) {
   const button = document.getElementById("me"), sheet = document.getElementById("sheet"), list = document.getElementById("cairns");
   let person = { did: null, handle: null, signedIn: false }, open = null, sharing = { on: true, can: false }, counts = [0, 0];
+  let custom = null; // another module's sheet in the same place: { trigger, onClose }
 
+  const endCustom = () => {
+    if (!custom) return;
+    const c = custom;
+    custom = null;
+    c.trigger?.setAttribute("aria-expanded", "false");
+    sheet.classList.remove(...c.classes);
+    c.onClose?.();
+  };
   const close = () => {
     if (open === "leave" || open === "tend") hooks.preview(null); // the camera comes back to you
     open = null;
+    endCustom();
     sheet.hidden = true;
     sheet.replaceChildren();
     button.setAttribute("aria-expanded", "false");
@@ -33,6 +43,7 @@ export function buildMaker(hooks) {
   };
   const show = (name, ...kids) => {
     if (open === "leave" && name !== "leave") hooks.preview(null);
+    if (custom && name !== open) endCustom();
     open = name;
     sheet.replaceChildren(h("button", { class: "x", "aria-label": "Close", onclick: close }, "×"), ...kids);
     sheet.hidden = false;
@@ -176,5 +187,13 @@ export function buildMaker(hooks) {
     },
     close,
     get open() { return open; },
+    /** Another module's sheet in the same place (one sheet at a time). trigger: its button; onClose: when it goes. */
+    custom(name, kids, { trigger = null, onClose = null, classes = [] } = {}) {
+      show(name, ...kids);
+      button.setAttribute("aria-expanded", "false");
+      custom = { trigger, onClose, classes };
+      trigger?.setAttribute("aria-expanded", "true");
+      sheet.classList.add(...classes);
+    },
   };
 }
