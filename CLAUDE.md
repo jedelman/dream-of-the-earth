@@ -22,6 +22,13 @@ the latest file in `conversations/`.
     unless renewed. Our Worker still stores nothing, and the computed world (terrain, plants, sky) never changes.
     Records from other players are untrusted input: parse them against hard caps (`parseArtifact`). See
     "Artifacts" in `docs/design.md`.
+  - **Presence by intents (Jason, 11-08):** "And we only keep current intent in the repo, just overwrite; and we only
+    ever show data from mutuals. Let's respect Bluesky mod and block norms. Should keep everything light." One
+    record per player (`org.jason-edelman.dream.intent/self`), overwritten, deleted when they leave or switch it
+    off; everyone computes where the creature is from it. Never accumulate intent records.
+  - **Whose things we show:** `allowed()` in `intents.js`, for cairns and creatures alike: mutuals only, no block
+    either way (direct or by list), accounts Bluesky still serves, nothing Bluesky's moderation hides
+    (`!hide`/`!takedown`/`!suspend`), nothing you've muted.
 - **The world is computed.** The same data plus the same seed gives the same world on every phone. Nothing
   random without a place-derived seed, and no `Math.random` in world generation.
 - **Untrusted peers.** Avatars, voices and datagrams from other players are parsed against hard caps (256

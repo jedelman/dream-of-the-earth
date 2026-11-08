@@ -19,8 +19,11 @@ import { planPath } from "./pathfind.js";
 import { RANGE, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
 import { buildGlints } from "./glints.js";
 import { buildCairns } from "./cairns.js";
-import { discover, discoverWorld, didOf, handlesOf, getRecord } from "./atproto.js";
-import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm, byDistance, metresBetween } from "./artifacts.js";
+import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted } from "./atproto.js";
+import { makeIntent, parseIntent, driftOf, whereAt, INTENT_NSID, HEARTBEAT_S, STALE_S } from "./intents.js";
+import { listen } from "./presence.js";
+import { buildFlock } from "./flock.js";
+import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm, byDistance, metresBetween, distanceText, NSID as ARTIFACT_NSID } from "./artifacts.js";
 import { account, isReturning, takeReturn } from "./account.js";
 import { buildMaker } from "./maker.js";
 import { sound } from "./sound.js";
@@ -437,7 +440,7 @@ function nodeName(ll) {
 const tapRay = new THREE.Raycaster();
 const myName = creatureName(seed);
 const bursts = buildBursts(scene);
-let simT = 0, hopAt = -10, squeaks = 0, hums = 0;
+let simT = 0, hopAt = -10, squeaks = 0, hums = 0, shareTickAt = 0;
 const shaken = new Map(); // how often each tree's been shaken, so it can say something new
 function aimTap(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
@@ -507,8 +510,9 @@ function pick(clientX, clientY) {
 function onTap(clientX, clientY) {
   if (zoom > GLOBE_AT && !state.ride && !rebuilding) {
     // The globe is a map: tap a cairn's dot to go there.
-    const r = canvas.getBoundingClientRect(), a = globe.pick(clientX - r.left, clientY - r.top, r.width, r.height);
-    if (a) travelTo(a);
+    const r = canvas.getBoundingClientRect(), hit = globe.pick(clientX - r.left, clientY - r.top, r.width, r.height);
+    if (hit?.cairn) travelTo(hit.cairn);
+    else if (hit?.mutual) travelToMutual(hit.mutual.did);
     return;
   }
   if (!world || state.ride || zoom > GLOBE_AT || rebuilding) return;
@@ -686,6 +690,9 @@ function inReach() {
     const d = o.getWorldPosition(v).distanceTo(p);
     if (d < RANGE.being) add({ kind: "being", key: `s${being.seed}`, d, range: RANGE.being, being, obj: o }, v.x, v.z);
   }
+  for (const m of flock.near(p.x, p.z, RANGE.artifact)) {
+    add({ kind: "mutual", key: `m${m.did}`, d: Math.hypot(m.x - p.x, m.z - p.z), range: RANGE.artifact, handle: m.handle, m }, m.x, m.z);
+  }
   for (const e of cairns.near(p.x, p.z, RANGE.artifact)) {
     add({ kind: "artifact", key: `a${e.a.uri}`, d: Math.hypot(e.x - p.x, e.z - p.z), range: RANGE.artifact, entry: e, handle: e.a.handle, own: e.a.own }, e.x, e.z);
   }
@@ -708,6 +715,7 @@ function glintSpot(c, v, bs) {
   if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
   if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
+  if (c.kind === "mutual") return v.set(c.m.x, c.m.y + 6 * c.m.entry.graph.scale, c.m.z);
   return v.set(c.x, c.alt, c.z);
 }
 function updateReach(t, dt) {
@@ -754,6 +762,7 @@ function interact() {
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "highway") return boardTapped(c.line);
   if (c.kind === "artifact") return touchCairn(c.entry);
+  if (c.kind === "mutual") return squeakAt(c.m);
 }
 
 // ---- Artifacts: what your mutuals left around here, and cairns of your own ----
@@ -805,7 +814,7 @@ async function refreshEverywhere() {
 function setEverywhere(list) {
   everywhere = list;
   globe.setMarks(everywhere);
-  maker.setCount(everywhere.length);
+  maker.setCount(everywhere.length, who.size);
 }
 /** Off to a cairn: arrive 30 m south and 20 m west of it, facing north, so it stands ahead and to the right. */
 function travelTo(a) {
@@ -819,11 +828,12 @@ function showArtifacts(list) {
   scanAt = 0;
 }
 function setViewer(did, handle) {
-  if (did !== people.viewer) { artifacts = []; cairns.set([], world || { frame: null }); setEverywhere([]); everywhereAt = -Infinity; }
+  if (did !== people.viewer) { artifacts = []; cairns.set([], world || { frame: null }); who.clear(); flock.set([]); setEverywhere([]); everywhereAt = -Infinity; intentsAt = -Infinity; }
   people.viewer = did;
   people.handle = handle;
   maker.setPerson({ did, handle, signedIn: !!did && account.did === did });
   artifactsAt = -Infinity;
+  hearMutuals(!!did);
 }
 async function lookAs(handle, persist = true) {
   const did = await didOf(handle);
@@ -860,7 +870,23 @@ const maker = buildMaker({
   globe: () => { zoom = 16e6; logLine("The whole Earth. Tap a cairn's dot to go there.", "note"); },
   look: (handle) => lookAs(handle),
   signIn: (handle) => account.signIn(handle, hereQuery()),
-  signOut: async () => { await account.signOut(); logLine("Signed out of Bluesky.", "note"); },
+  signOut: async () => { await stopSharing(); await account.signOut(); logLine("Signed out of Bluesky.", "note"); },
+  toggleShare: async () => {
+    share.on = !share.on;
+    try { localStorage.setItem("dream.share", share.on ? "on" : "off"); } catch { /* */ }
+    if (!share.on) await stopSharing();
+    maker.setSharing({ on: share.on, can: share.can });
+    logLine(share.on ? "Your mutuals can see your creature now." : "You're hidden from your mutuals now.", "note");
+  },
+  flock: () => {
+    const ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn, nowS = realNow();
+    return [...who.values()].map((w) => {
+      const at = whereAt(w.intent, nowS);
+      const doing = w.intent.kind === "ride" ? "on a highway" : at.moving ? (at.mode === "air" ? "flying" : "on the move") : "resting";
+      return { did: w.did, handle: w.handle, metres: metresBetween(ll.lat, ll.lon, at.lat, at.lon), doing };
+    }).sort((a, b) => a.metres - b.metres);
+  },
+  travelToMutual: (did) => travelToMutual(did),
   stopLooking: () => { try { localStorage.removeItem("dream.look"); } catch { /* */ } setViewer(null, null); },
   preview: (spec) => {
     if (!world) return;
@@ -903,9 +929,13 @@ const maker = buildMaker({
   },
 });
 account.onChange(async (did) => {
+  share.can = false;
   if (did) {
     const name = (await handlesOf([did])).get(did) || null;
     setViewer(did, name);
+    share.can = await account.canShare();
+    maker.setSharing({ on: share.on, can: share.can });
+    account.mutes().then((m) => { setMuted(m); refreshIntents(); refreshEverywhere(); artifactsAt = -Infinity; });
   } else if (people.viewer && people.viewer === account.did) setViewer(null, null);
   else maker.setPerson({ did: people.viewer, handle: people.handle, signedIn: false });
 });
@@ -928,6 +958,124 @@ function touchCairn(e) {
     return;
   }
   logLine(cairnLine(a, nowS, f), "artifact");
+}
+
+// ---- Mutuals in the dream: intents (intents.js) ----
+// Each player keeps one record, their current intent, overwritten when their plan changes; everyone else computes
+// where their creature is from it. We only ever show mutuals (and not anyone blocked, hidden by Bluesky's moderation,
+// deactivated, or muted by you).
+const flock = buildFlock(scene, document.getElementById("whos"));
+const who = new Map(); // did -> { did, handle, intent }
+let intentsAt = -Infinity, hearing = null, fetchingIntents = false;
+const share = { on: (() => { try { return localStorage.getItem("dream.share") !== "off"; } catch { return true; } })(), can: false, last: null, lastKind: "", lastKey: "", lastAt: -Infinity, writing: false };
+function setWho() {
+  flock.set([...who.values()]);
+  maker.setCount(everywhere.length, who.size);
+  globe.setFlock(flock.everyone(realNow()));
+}
+async function refreshIntents() {
+  if (!people.viewer || fetchingIntents) return;
+  fetchingIntents = true;
+  intentsAt = simT;
+  const viewer = people.viewer;
+  try {
+    const list = await currentIntents({ viewer });
+    if (viewer !== people.viewer) return;
+    for (const w of list) { const had = who.get(w.did); if (!had || had.intent.at <= w.intent.at) who.set(w.did, w); }
+    setWho();
+  } catch (e) {
+    console.warn("mutuals:", e.message);
+  } finally {
+    fetchingIntents = false;
+  }
+}
+/** One live connection for the game's records: mutuals' intents, and cairns as they're left (no index lag). */
+function hearMutuals(on) {
+  if (!on) { hearing?.close(); hearing = null; return; }
+  if (hearing) return;
+  hearing = listen({
+    collections: [INTENT_NSID, ARTIFACT_NSID],
+    onOpen: () => refreshIntents(),
+    onCommit: async (e) => {
+      const viewer = people.viewer, c = e.commit;
+      if (!viewer || e.did === viewer && c.collection === INTENT_NSID) return; // your own creature is you
+      if (c.operation === "delete") {
+        if (c.collection === INTENT_NSID) { who.delete(e.did); setWho(); }
+        else { const uri = `at://${e.did}/${ARTIFACT_NSID}/${c.rkey}`; showArtifacts(artifacts.filter((a) => a.uri !== uri)); setEverywhere(everywhere.filter((a) => a.uri !== uri)); }
+        return;
+      }
+      if (!(await visibleAmong(viewer, [e.did])).has(e.did) || viewer !== people.viewer) return;
+      const handle = (await handlesOf([e.did])).get(e.did) || null;
+      if (c.collection === INTENT_NSID) {
+        const intent = c.rkey === "self" ? parseIntent(c.record) : null;
+        if (intent) { who.set(e.did, { did: e.did, handle, intent }); setWho(); }
+        return;
+      }
+      const a = parseArtifact(c.record, realNow());
+      if (!a || fadeOf(a.since, realNow()) <= 0) return;
+      const art = { ...a, did: e.did, rkey: c.rkey, uri: `at://${e.did}/${ARTIFACT_NSID}/${c.rkey}`, handle, own: e.did === viewer };
+      setEverywhere([...everywhere.filter((x) => x.uri !== art.uri), art]);
+      if (world) { const o = world.frame.toLatLon(0, 0); if (metresBetween(o.lat, o.lon, a.lat, a.lon) < 16000) showArtifacts([...artifacts.filter((x) => x.uri !== art.uri), art]); }
+    },
+  });
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hearMutuals(false); stopSharing(); }
+  else if (people.viewer) { hearMutuals(true); refreshIntents(); }
+});
+addEventListener("pagehide", () => { stopSharing(); });
+/** Off to a mutual: arrive 40 m from where their creature is now. */
+function travelToMutual(did) {
+  const w = who.get(did);
+  if (!w) return;
+  const at = whereAt(w.intent, realNow()), dLat = -40 / 111320;
+  teleport({ name: w.handle ? `@${w.handle}` : "a mutual", lat: at.lat + dLat, lon: at.lon, alt: 10, heading: 0, zoom: 85 });
+}
+function squeakAt(m) {
+  sound.squeak(1.25 / m.entry.graph.scale);
+  hopAt = simT;
+  bursts.emit({ at: new THREE.Vector3(m.x, m.y + 4 * m.entry.graph.scale, m.z), colors: [new THREE.Color(0xff9ec7), new THREE.Color(0xfff3b0)], n: 14, spread: 2.5, up: 4, fall: 2, life: 1.2 });
+  logLine(`You squeak at @${m.handle || "them"}.`, "creature");
+}
+
+// ---- Sharing your own intent (signed in, sharing on) ----
+/** What I'm doing now, as an intent: a ride, a trip, steering, or resting. */
+function myIntent() {
+  const p = state.pos, ll = world.frame.toLatLon(p.x, p.z), base = { p: { lat: ll.lat, lon: ll.lon, alt: p.y }, creature: { seed, stats } };
+  if (state.ride) {
+    const r = state.ride, rl = rideLatLon(r);
+    return { ...base, p: { lat: rl.lat, lon: rl.lon, alt: p.y }, kind: "ride", key: `ride:${r.line.i}:${r.dir}`, ride: { line: r.line.i, t: r.t, dir: r.dir } };
+  }
+  if (state.target) {
+    const tg = state.target, pts = tg.pts.slice(tg.idx), end = pts[pts.length - 1];
+    return { ...base, kind: "goto", key: `goto:${end.lat.toFixed(4)},${end.lon.toFixed(4)}`, goto: { pts, speed: tg.fly ? sp.fly : sp.run, fly: tg.fly, cruise: tg.alt ?? p.y } };
+  }
+  if (Math.abs(state.speed) > 1.5 || Math.abs(state.vy) > 1.5) return { ...base, kind: "steer", key: "steer", steer: { heading: -state.heading, speed: state.speed, climb: state.vy } };
+  return { ...base, kind: "rest", key: "rest" };
+}
+/** Once a second: write a new intent if my plan changed, I've drifted from what mutuals compute, or it's heartbeat time. */
+function shareTick() {
+  if (!share.on || !share.can || !world || rebuilding || share.writing || people.viewer !== account.did || document.hidden) return;
+  const nowS = realNow(), want = myIntent(), since = nowS - share.lastAt;
+  const ll = want.p, drift = share.last ? driftOf(share.last, nowS, ll.lat, ll.lon) : Infinity;
+  const changed = want.key !== share.lastKey;
+  if (!((changed && since > 1.5) || (drift > 60 && since > 6) || since > HEARTBEAT_S)) return;
+  const record = makeIntent({ ...want, now: new Date(nowS * 1000) });
+  share.writing = true;
+  account.putIntent(record).then(() => {
+    share.last = parseIntent(record, nowS);
+    share.lastKey = want.key;
+    share.lastAt = nowS;
+  }).catch((e) => {
+    console.warn("intent:", e.message);
+    share.lastAt = nowS; // don't hammer
+    if (/scope|forbidden|403/i.test(e.message)) { share.can = false; maker.setSharing({ on: share.on, can: false }); }
+  }).finally(() => { share.writing = false; });
+}
+async function stopSharing() {
+  if (!share.last && share.lastAt === -Infinity) return;
+  share.last = null; share.lastKey = ""; share.lastAt = -Infinity;
+  await account.clearIntent();
 }
 
 // The way there, drawn as golden dots, and a ring where you're going.
@@ -1079,6 +1227,16 @@ function frame() {
   if (people.viewer && world && !rebuilding && simT - artifactsAt > 90) refreshArtifacts();
   if (people.viewer && simT - everywhereAt > 180) refreshEverywhere();
   cairns.update(t, realNow());
+  if (world && !state.ride) flock.update(t, dt, realNow(), world, camera, canvas);
+  if (t - shareTickAt > 1) {
+    shareTickAt = t;
+    shareTick();
+    const nowS = realNow();
+    let gone = false;
+    for (const [did, w] of who) if (nowS - w.intent.at > STALE_S) { who.delete(did); gone = true; } // stale: they've left
+    if (gone) setWho(); else if (who.size) globe.setFlock(flock.everyone(nowS));
+  }
+  if (people.viewer && simT - intentsAt > 180) refreshIntents();
   updateReach(t, dt);
   // From far away: a sparkle on you, and the highways as thin lines.
   marker.visible = zoom > 700;
@@ -1147,7 +1305,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(); return globe.pick(x - r.left, y - r.top, r.width, r.height)?.handle ?? null; }, everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);
