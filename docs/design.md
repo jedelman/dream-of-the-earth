@@ -29,6 +29,10 @@ not checked is marked **(unverified)**.
   **Near nodes!** 4. **Calling only works if your moot is online.** 5. **Subdomain.** Let's setup basic workers CI.
   If it makes sense we can build this **single player first in the browser, then move it to native** for the
   MMO."
+- **Artifacts (11-08):** "Next up, big lift. I know we said leave no trace but let's use **atproto back links to
+  host artifacts for mutuals to discover**." Asked what an artifact is, Jason picked **all four: a cairn with a
+  note, a postcard, an echo of your creature, and a sound**; **mutuals only** see them; and they **fade with the
+  moon** (gone from the game a lunar month after they're made or renewed). See "Artifacts" below.
 
 ## The shape
 Leave-no-trace means there's no world state to keep in sync. Everything a player sees is one of three things:
@@ -43,7 +47,8 @@ Two kinds of server are involved, and neither holds game state:
 - **The Worker** serves the same bytes to everyone: the game's code, grammars, ley network and world tiles.
   It knows nothing about who is playing with whom.
 - **Bluesky** supplies identity and the mutual graph. One record in each player's own repo says "I have the
-  app, here's how to reach me."
+  app, here's how to reach me." Artifacts (11-08) are more records in players' own repos, found through a public
+  backlink index; this game's server still holds none of them.
 
 ## Browser first, then native
 Jason: "build this single player first in the browser, then move it to native for the MMO." It fits the design
@@ -307,6 +312,56 @@ Jason: "creature stat customization. Fly/swim/run/gleam (the last one just makes
   only changes how it moves itself.
 - **With no stat, you're slow, not stuck:** zero fly still glides and hops, zero swim still paddles, zero run
   still walks.
+
+## Artifacts: things left for mutuals (built 11-08, PR #22)
+Jason: "let's use atproto back links to host artifacts for mutuals to discover." The first kind is the **cairn**;
+postcards, echoes and sounds use the same record and discovery, and come next.
+
+- **The record** (`docs/lexicons/org.jason-edelman.dream.artifact.json`) lives in its maker's own repo:
+  `{ kind, place, latE6, lonE6, cairn: { seed, hue }, note, createdAt, renewedAt? }`. atproto records can't hold
+  floats, so coordinates are integer microdegrees. A cairn is only a seed and a hue: no geometry travels, so a
+  stranger can't send triangles.
+- **Places** (`places.js`): a global grid of ~11 km cells (0.1° bands, longitude cells widened by 1/cos), each with
+  a URL, `https://dream-of-the-earth.jason-edelman.org/place/1/{band}/{cell}`. A record's `place` is the cell it
+  stands in. The URL is real: the Worker redirects it to the game at that cell.
+- **Discovery** (`atproto.js`), no sign-in needed:
+  1. Constellation (constellation.microcosm.blue, a public backlink index over the whole firehose; CORS `*`)
+     answers `getBacklinks?subject=<place URL>&source=org.jason-edelman.dream.artifact:place` for each cell
+     within 16 km, when the world grows and every 90 s.
+  2. Bluesky's public AppView answers `app.bsky.graph.getRelationships` (no sign-in, 30 at a time): only makers
+     who are mutuals of the viewer (or the viewer) are kept.
+  3. Each record is read from its maker's own PDS (DID document from plc.directory, or did:web's well-known file),
+     so a deleted record is gone here too. Replies are size-capped; ids are checked; `parseArtifact` checks every
+     field, and a record must say it stands in the cell it's indexed under.
+  - **Measured 11-08:** Claude's test cairn was indexed ~100 s after it was written (Library measured 0.5–9 s the
+    day before), so your own new cairn shows at once from local state. Discovery as Jason found it in 1.9 s; as a
+    non-mutual (bsky.app), nothing.
+- **Fading with the moon:** whole for most of a synodic month (29.53 d) after `createdAt`/`renewedAt`, thinning
+  over the last week, then gone from the game. Renewing (`putRecord` with `renewedAt`) starts another moon. Fading
+  runs on the real clock, not `?t=`.
+- **In the world** (`cairns.js`): 3–6 stacked stones and a crystal in the maker's hue, ≤ 96 triangles, about
+  4–15 m tall (beside 50 m kapoks and a creature Nyo's size). On land they stand; at sea they float. A dot of
+  their hue a few pixels across marks each one from kilometres away. In reach (30 m) they glint, and E reads one:
+  the log shows its note, its maker's handle and its age. Your own says "Tend your cairn" (renew, or take it down).
+  Reading or tending holds a side-on camera shot on you and the cairn.
+- **Leaving one** (Bluesky ▾ → Leave a cairn here): re-roll the shape, pick the crystal's colour, write up to 140
+  characters. A ghost of it stands 12 m ahead-left while you choose, and the camera holds on it. It goes in your
+  repo with `createRecord`.
+- **Sign-in** (`account.js`): atproto OAuth (PAR, PKCE, DPoP) with `@atproto/oauth-client-browser` 0.5.10, vendored
+  by `scripts/vendor-atproto` (esbuild; notices in `web/vendor/LICENSES.txt`), loaded only when someone signs in.
+  Scope: `atproto repo:org.jason-edelman.dream.artifact` (that one collection). Client metadata:
+  `web/client-metadata.json`. The redirect lands on the bare page, so the game saves where you were (seed, stats,
+  place, heading, zoom) and puts you back. **Just look** reads as any handle without signing in: everything it
+  shows is public anyway.
+  - **Checked 11-08:** in headless Chromium, Sign in loaded the client, bsky.social accepted the scope at PAR, and
+    the browser landed on Bluesky's authorize page. **Not yet checked:** the token exchange after you approve (it
+    needs a real password), so Jason's first sign-in is the test, as with Library.
+- **What mutuals-only means:** what the game *shows*. atproto records are public, so anyone who looks can read
+  every artifact; the sheet says so. The trust boundary is that a stranger can't put anything in your world.
+- **Trade-offs:** Constellation is a third-party dependency (if it's down, nobody sees new artifacts; nothing
+  breaks). There's no cap on how many cairns a player leaves yet; the game shows at most 24 per maker.
+- **Next kinds:** postcards (an image blob, so `blob:image/*` joins the scope), echoes (your avatar, parsed against
+  the 256-triangle cap), sounds (an Operator Field patch).
 
 ## Identity, mutuals, calls
 - **Sign in with Bluesky** (atproto OAuth for a native client; metadata on jason-edelman.org, as Library does).
@@ -660,6 +715,9 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 | leylines-solids (Joerg Roth) | ley geometry | Apache-2.0 (package.json) |
 | Becker & Hagens; Leland (judsyn.weebly.com); McCooey's Visual Polyhedra | grid origins | credit |
 | three.js | renderer | MIT |
+| @atproto/oauth-client-browser 0.5.10 and 18 dependencies (npm, bundled by scripts/vendor-atproto) | Bluesky sign-in | MIT (ISC for lru-cache, Apache-2.0 OR MIT for multiformats), per each package's own license file and package.json (`web/vendor/LICENSES.txt`) |
+| Constellation (microcosm, constellation.microcosm.blue) | finding artifacts: a public backlink index | a public service: "You're welcome to use this public instance!" (its home page, 11-08); credit it |
+| Bluesky public AppView, plc.directory | mutuals, handles, DID documents | public APIs |
 
 ## Questions for Jason
 Answered 11-07: depth (keep it real; swim decides), ley networks (both, interacting, rarer = faster and larger),

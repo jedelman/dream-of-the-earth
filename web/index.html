@@ -18,6 +18,7 @@
   #log { position: fixed; left: max(10px, env(safe-area-inset-left)); bottom: max(28px, calc(env(safe-area-inset-bottom) + 20px)); max-width: min(70vw, 520px); font: 11px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .02em; text-shadow: 1px 1px 0 #000, -1px 0 0 #000; pointer-events: none; }
   #log .line { color: var(--ink); transition: opacity 1.8s ease-out; }
   #log .line.old { opacity: 0; }
+  #log .artifact { color: #ffe3a3; }
   #log .tree { color: #b6f59a; } #log .creature { color: #ffb8de; } #log .highway { color: var(--gold); } #log .sky { color: #c9b6ff; }
   #places { position: fixed; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); max-width: 46vw; font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); border-radius: 0; padding: 3px 4px; }
   /* The interact prompt, bottom right (above ▲▼ on a phone, where a thumb is): a dark band, gold hairlines, a key in a ring */
@@ -30,6 +31,24 @@
   @keyframes press { from { background: var(--gold); color: #120a20; transform: scale(.8); } }
   @media (pointer: coarse) { #act { bottom: max(160px, calc(env(safe-area-inset-bottom) + 152px)); padding: 12px 34px 12px 28px; font-size: 13px; } #act .key { width: 24px; height: 24px; font-size: 14px; } }
   @media (prefers-reduced-motion: reduce) { #act { transition: none; } #act.hit .key { animation: none; } }
+  /* Bluesky: the button under LANDMARKS, and its sheet, dropping from it (the middle stays clear for the cairn you're choosing) */
+  #me { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 30px); font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); padding: 4px 8px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  #me.on { color: var(--gold); }
+  .sheet { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 62px); max-height: calc(100vh - 140px); overflow-y: auto; width: min(calc(100vw - 20px), 380px); box-sizing: border-box; padding: 14px 16px 12px; color: var(--ink); background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 10px 30px rgba(0, 0, 0, .45); font: 12px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; z-index: 5; }
+  .sheet h2 { margin: 0 0 8px; font-size: 13px; color: var(--gold); letter-spacing: .05em; font-weight: normal; }
+  .sheet p { margin: 6px 0; } .sheet .small { opacity: .72; font-size: 11px; } .sheet .msg { color: #ffb0b0; min-height: 0; } .sheet .msg:empty { display: none; }
+  .sheet .quote { color: #ffe3a3; }
+  .sheet .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; } .sheet .col { display: flex; flex-direction: column; gap: 8px; }
+  .sheet button { font: inherit; color: var(--ink); background: rgba(255, 211, 77, .06); border: 1px solid rgba(255, 211, 77, .55); padding: 7px 12px; cursor: pointer; min-height: 34px; }
+  .sheet button.go { color: #120a20; background: var(--gold); border-color: var(--gold); }
+  .sheet button:disabled { opacity: .6; cursor: default; }
+  .sheet button.x { position: absolute; right: 6px; top: 4px; border: 0; background: none; color: var(--ink); font-size: 18px; padding: 2px 8px; min-height: 0; }
+  .sheet input[type=text], .sheet textarea { font: inherit; width: 100%; box-sizing: border-box; color: var(--ink); background: rgba(0, 0, 0, .35); border: 1px solid rgba(255, 211, 77, .45); padding: 7px 8px; }
+  .sheet textarea { resize: none; margin-top: 10px; display: block; }
+  .sheet label { display: block; position: relative; } .sheet .count { position: absolute; right: 6px; bottom: 4px; font-size: 10px; opacity: .6; }
+  .sheet input[type=range] { flex: 1; min-width: 120px; accent-color: var(--gold); }
+  .sheet .swatch { width: 18px; height: 18px; border: 1px solid rgba(255, 255, 255, .5); display: inline-block; }
+  .sheet input:focus-visible, .sheet textarea:focus-visible, .sheet button:focus-visible, #me:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   @media (hover: hover) and (pointer: fine) { .btn { display: none; } }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
@@ -38,9 +57,11 @@
 <canvas id="view" aria-label="Dream of the Earth: a low-poly view of a real place on Earth, with your creature"></canvas>
 <div id="hud" aria-live="off"></div>
 <select id="places" aria-label="Go to a landmark"><option value="" selected disabled>LANDMARKS ▾</option></select>
+<button id="me" aria-haspopup="dialog" aria-expanded="false">BLUESKY ▾</button>
+<div id="sheet" class="sheet" role="dialog" aria-label="Bluesky" hidden></div>
 <div id="status" role="status" hidden></div>
 <div id="log" aria-live="polite"></div>
-<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
+<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
 <button id="act" aria-hidden="true"><span class="key" aria-hidden="true">E</span><span class="what"></span></button>
 <button class="btn" id="up" aria-label="Up">▲</button>
 <button class="btn" id="down" aria-label="Down">▼</button>

@@ -1,0 +1,15 @@
+{
+  "name": "dream-vendor-atproto",
+  "private": true,
+  "description": "Builds web/vendor/oauth-client-browser.js (Bluesky sign-in) from exact npm versions. Run by hand; the deploy only serves the output.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@atproto/oauth-client-browser": "0.5.10"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

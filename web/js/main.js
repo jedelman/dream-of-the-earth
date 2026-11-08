@@ -13,15 +13,20 @@ import { buildGlobe } from "./globe.js";
 import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount, linesNear } from "./ride.js";
-import { buildSkyShader, skyColors, layerTransparent } from "./skyshader.js";
+import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
-import { RANGE, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting } from "./interactions.js";
+import { RANGE, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
 import { buildGlints } from "./glints.js";
+import { buildCairns } from "./cairns.js";
+import { discover, didOf, handlesOf, getRecord } from "./atproto.js";
+import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm } from "./artifacts.js";
+import { account, isReturning, takeReturn } from "./account.js";
+import { buildMaker } from "./maker.js";
 import { sound } from "./sound.js";
 import { logLine } from "./eventlog.js";
 import { buildBursts } from "./bursts.js";
-import { buildDirector, squeakShot, treeShot, butterflyShot, beingShot, arriveShot, boardShot } from "./director.js";
+import { buildDirector, squeakShot, treeShot, butterflyShot, beingShot, arriveShot, boardShot, cairnShot } from "./director.js";
 import { buildSkyBeings } from "./skybeings.js";
 import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
 import { biomeFor, koppenCode } from "./biome.js";
@@ -33,6 +38,8 @@ import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
 
 // ---- Who and where (URL params make any spawn reproducible) ----
 const params = new URLSearchParams(location.search);
+// Back from signing in with Bluesky: the page reloaded at its bare address, so put back where you were.
+if (isReturning()) { const back = takeReturn(); if (back) for (const [k, v] of new URLSearchParams(back)) params.set(k, v); }
 const seedParam = params.get("seed");
 const seed = seedParam ? (/^\d+$/.test(seedParam) ? Number(seedParam) >>> 0 : hashString(seedParam)) : (Math.random() * 2 ** 32) >>> 0;
 // Separate streams, so choosing your stats doesn't move your spawn.
@@ -75,6 +82,8 @@ resize();
 const hemi = new THREE.HemisphereLight(0xb9a8ff, 0x3a2a55, 1.2);
 const sunLight = new THREE.DirectionalLight(0xfff0d0, 2.2);
 scene.add(hemi, sunLight, sunLight.target);
+// Lit things that fade (cairns) draw in the transparent pass, after the sky, so the light reaches there too.
+for (const l of [hemi, sunLight]) l.layers.enable(TRANSPARENT_LAYER);
 // The sky and its clouds are one shader pass over the opaque world (skyshader.js).
 const skyPass = buildSkyShader();
 const sea = buildSea(); // rings around the camera, out past the horizon
@@ -176,7 +185,9 @@ const globe = buildGlobe();
 
 // ---- Input: keyboard, plus a touch stick and up/down buttons ----
 const keys = new Set();
+const typing = (e) => e.target instanceof Element && e.target.closest("input, textarea");
 addEventListener("keydown", (e) => {
+  if (typing(e)) return; // writing a note, not flying
   keys.add(e.code);
   sound.unlock();
   if (["Space", "ArrowUp", "ArrowDown"].includes(e.code)) e.preventDefault();
@@ -461,6 +472,8 @@ function pick(clientX, clientY) {
   }
   const bh = tapRay.intersectObject(world.beings.group, true)[0];
   if (bh) { let o = bh.object; while (o && !o.userData.being) o = o.parent; if (o) found.push({ kind: "being", d: bh.distance, being: o.userData.being, obj: o }); }
+  const ch = tapRay.intersectObject(cairns.group, true)[0], ce = ch && cairns.entryOf(ch.object);
+  if (ce) found.push({ kind: "artifact", d: ch.distance, entry: ce });
   const tree = world.plants.pick(tapRay);
   if (tree) found.push({ kind: "tree", d: tree.distance, rec: tree.rec });
   const hw = highwayAt();
@@ -493,6 +506,10 @@ function onTap(clientX, clientY) {
     // Sky beings drift along their lines (25 m/s), so the trip follows the being, not the spot it was in.
     const follow = () => { const o = beingObj(seed); if (!o) return null; o.getWorldPosition(v); return { x: v.x, z: v.z, h: world.terrain.heightAt(v.x, v.z), alt: v.y - 400 }; };
     return moveTo({ x: v.x, z: v.z, h: world.terrain.heightAt(v.x, v.z) }, { range: RANGE.being * 0.5, act, alt: v.y - 400, follow });
+  }
+  if (hit.kind === "artifact") {
+    const e = hit.entry, act = () => touchCairn(e);
+    return flat(e.x, e.z) < RANGE.artifact ? act() : moveTo({ x: e.x, z: e.z, h: e.y }, { range: RANGE.artifact * 0.6, act });
   }
   if (hit.kind === "highway") {
     const act = () => boardTapped(hit.line);
@@ -642,6 +659,9 @@ function inReach() {
     const d = o.getWorldPosition(v).distanceTo(p);
     if (d < RANGE.being) add({ kind: "being", key: `s${being.seed}`, d, range: RANGE.being, being, obj: o }, v.x, v.z);
   }
+  for (const e of cairns.near(p.x, p.z, RANGE.artifact)) {
+    add({ kind: "artifact", key: `a${e.a.uri}`, d: Math.hypot(e.x - p.x, e.z - p.z), range: RANGE.artifact, entry: e, handle: e.a.handle, own: e.a.own }, e.x, e.z);
+  }
   const ll = world.frame.toLatLon(p.x, p.z);
   for (const c of linesNear(ll.lat, ll.lon, RANGE.highway)) {
     const q = vecToLatLon(c.at), l = world.frame.toLocal(q.lat, q.lon);
@@ -660,6 +680,7 @@ function glintSpot(c, v, bs) {
   }
   if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
+  if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
   return v.set(c.x, c.alt, c.z);
 }
 function updateReach(t, dt) {
@@ -705,6 +726,141 @@ function interact() {
   if (c.kind === "butterfly") { const b = world.insects.butterflies().find((q) => q.seed === c.seed); return b ? chirp(b.k) : squeak(); }
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "highway") return boardTapped(c.line);
+  if (c.kind === "artifact") return touchCairn(c.entry);
+}
+
+// ---- Artifacts: what your mutuals left around here, and cairns of your own ----
+// Records in players' own Bluesky repos, found through a backlink index (atproto.js), checked (artifacts.js),
+// and shown only from mutuals. Nothing about them is stored by this game's server.
+const cairns = buildCairns(scene);
+const people = { viewer: null, handle: null }; // whose mutuals' cairns to show (a DID); signed in, or just looking
+const mine = new Map(); // uri -> artifact you made or renewed this session (the index can lag a minute or two)
+const gone = new Set(); // uris you took down this session
+let artifacts = [], artifactsAt = -Infinity, discovering = false, cairnsWorld = null;
+const realNow = () => Date.now() / 1000; // artifacts fade on the real clock, whatever ?t= says
+async function refreshArtifacts() {
+  if (!people.viewer || !world || discovering) return;
+  discovering = true;
+  artifactsAt = simT;
+  const w = world, viewer = people.viewer, o = w.frame.toLatLon(0, 0);
+  try {
+    const found = await discover({ viewer, lat: o.lat, lon: o.lon, radiusM: 16000 });
+    if (w !== world || viewer !== people.viewer) return; // the world regrew, or someone else is looking: next time
+    const byUri = new Map(found.filter((a) => !gone.has(a.uri)).map((a) => [a.uri, a]));
+    for (const [uri, a] of mine) if (a.did === viewer && (!byUri.has(uri) || byUri.get(uri).since < a.since)) byUri.set(uri, a);
+    showArtifacts([...byUri.values()]);
+  } catch (e) {
+    console.warn("artifacts:", e.message);
+  } finally {
+    discovering = false;
+  }
+}
+function showArtifacts(list) {
+  artifacts = list;
+  cairns.set(artifacts, world);
+  cairnsWorld = world;
+  scanAt = 0;
+}
+function setViewer(did, handle) {
+  if (did !== people.viewer) { artifacts = []; cairns.set([], world || { frame: null }); }
+  people.viewer = did;
+  people.handle = handle;
+  maker.setPerson({ did, handle, signedIn: !!did && account.did === did });
+  artifactsAt = -Infinity;
+}
+async function lookAs(handle, persist = true) {
+  const did = await didOf(handle);
+  if (!did) throw new Error("Couldn't find that handle on Bluesky.");
+  const name = (await handlesOf([did])).get(did) || String(handle).replace(/^@/, "");
+  if (persist) try { localStorage.setItem("dream.look", name); } catch { /* private mode */ }
+  setViewer(did, name);
+  logLine(`Looking for cairns left by @${name}'s mutuals.`, "note");
+}
+/** The game's URL parameters for right here, to come back to after signing in. */
+function hereQuery() {
+  const q = new URLSearchParams(location.search), ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn;
+  q.set("seed", String(seed));
+  q.set("stats", STATS.map((k) => stats[k]).join(","));
+  q.set("lat", ll.lat.toFixed(6)); q.set("lon", ll.lon.toFixed(6));
+  if (world) q.set("alt", String(Math.max(2, Math.round(state.pos.y - Math.max(0, world.terrain.heightAt(state.pos.x, state.pos.z))))));
+  q.set("heading", String(Math.round((((-state.heading * 180) / Math.PI) % 360 + 360) % 360)));
+  q.set("zoom", String(Math.round(zoom)));
+  return q.toString();
+}
+/** Where a new cairn goes: 12 m ahead and to the left, where the camera behind you can see it (the sheet is on the right). */
+function cairnSpot() {
+  const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading), rx = Math.cos(state.heading), rz = -Math.sin(state.heading);
+  const a = -0.7, d = 12;
+  return { x: state.pos.x + (fx * Math.cos(a) + rx * Math.sin(a)) * d, z: state.pos.z + (fz * Math.cos(a) + rz * Math.sin(a)) * d };
+}
+const maker = buildMaker({
+  look: (handle) => lookAs(handle),
+  signIn: (handle) => account.signIn(handle, hereQuery()),
+  signOut: async () => { await account.signOut(); logLine("Signed out of Bluesky.", "note"); },
+  stopLooking: () => { try { localStorage.removeItem("dream.look"); } catch { /* */ } setViewer(null, null); },
+  preview: (spec) => {
+    if (!world) return;
+    if (!spec) { cairns.preview(null); if (director.shot === "cairn") director.release(simT); return; }
+    const at = cairnSpot(), g = Math.max(0, world.terrain.heightAt(at.x, at.z));
+    cairns.preview(spec, at, world);
+    // Hold a low side angle on you and the cairn while you choose it (the follow camera would hide it behind you).
+    if (director.shot !== "cairn") director.play("cairn", simT, cairnShot(state.pos.clone(), { x: at.x, y: g, z: at.z }, cairnForm(spec.seed).height), { dur: 600, blendIn: 0.8, blendOut: 1 });
+  },
+  leave: async ({ seed: cs, hue, note }) => {
+    if (!world || !account.did) throw new Error("Sign in first.");
+    const at = cairnSpot(), ll = world.frame.toLatLon(at.x, at.z);
+    const record = makeCairn({ lat: ll.lat, lon: ll.lon, seed: cs, hue, note });
+    const r = await account.create(record);
+    const a = parseArtifact(record, realNow()), rkey = String(r.uri).split("/").pop();
+    mine.set(r.uri, { ...a, did: account.did, rkey, uri: r.uri, handle: people.handle, own: true });
+    showArtifacts([...artifacts.filter((x) => x.uri !== r.uri), mine.get(r.uri)]);
+    sound.chime();
+    logLine("You stack a cairn. It will stand here for a moon.", "artifact");
+  },
+  renew: async (e) => {
+    const value = await getRecord(e.a.did, e.a.rkey);
+    const next = renew(value);
+    await account.put(e.a.rkey, next);
+    const a = { ...e.a, ...parseArtifact(next, realNow()) };
+    mine.set(a.uri, a);
+    showArtifacts(artifacts.map((x) => (x.uri === a.uri ? a : x)));
+    sound.chime();
+    logLine("You restack your cairn. It will stand another moon.", "artifact");
+  },
+  takeDown: async (e) => {
+    await account.remove(e.a.rkey);
+    gone.add(e.a.uri);
+    mine.delete(e.a.uri);
+    showArtifacts(artifacts.filter((x) => x.uri !== e.a.uri));
+    logLine("You unstack your cairn, stone by stone.", "artifact");
+  },
+});
+account.onChange(async (did) => {
+  if (did) {
+    const name = (await handlesOf([did])).get(did) || null;
+    setViewer(did, name);
+  } else if (people.viewer && people.viewer === account.did) setViewer(null, null);
+  else maker.setPerson({ did: people.viewer, handle: people.handle, signedIn: false });
+});
+// Pick up a session (or finish signing in), else keep looking as whoever you looked as last time.
+account.resume().then((did) => {
+  if (did) return;
+  let look = null;
+  try { look = localStorage.getItem("dream.look"); } catch { /* */ }
+  if (look) lookAs(look, false).catch(() => {});
+});
+/** Reading someone's cairn, or tending your own. */
+function touchCairn(e) {
+  const a = e.a, nowS = realNow(), f = fadeOf(a.since, nowS);
+  sound.chime();
+  director.play("cairn", simT, cairnShot(state.pos.clone(), { x: e.x, y: e.y, z: e.z }, e.top), { dur: a.own ? 600 : 4.5, blendIn: 0.7, blendOut: 1.1 });
+  bursts.emit({ at: new THREE.Vector3(e.x, e.root.position.y + e.top, e.z), colors: [e.crystal.material.color.clone(), new THREE.Color(0xffffff)], n: 16, spread: 1.5, up: 2, fall: 0.6, life: 2 });
+  if (a.own) {
+    const left = Math.max(0, Math.ceil((a.since + MOON_S - nowS) / 86400));
+    maker.openTend(e, { note: a.note, age: ago(a.since, nowS), left: left <= 1 ? "It fades within a day." : `It fades in ${left} days.` });
+    return;
+  }
+  logLine(cairnLine(a, nowS, f), "artifact");
 }
 
 // The way there, drawn as golden dots, and a ring where you're going.
@@ -852,6 +1008,9 @@ function frame() {
   drawRoute(t);
   simT = t;
   bursts.update(dt);
+  if (world && cairnsWorld !== world) { cairns.place(world); cairnsWorld = world; artifactsAt = -Infinity; } // regrown: re-place, then look again
+  if (people.viewer && world && !rebuilding && simT - artifactsAt > 90) refreshArtifacts();
+  cairns.update(t, realNow());
   updateReach(t, dt);
   // From far away: a sparkle on you, and the highways as thin lines.
   marker.visible = zoom > 700;
@@ -914,7 +1073,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);

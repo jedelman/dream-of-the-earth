@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, TREE_NAMES, TREE_LINES, RANGE, promptFor, focusScore, chooseFocus, glinting } from "../web/js/interactions.js";
+import { treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, TREE_NAMES, TREE_LINES, RANGE, promptFor, focusScore, chooseFocus, glinting, cairnLine, ago } from "../web/js/interactions.js";
 import { SPECIES_NAMES } from "../web/js/plantforms.js";
 
 test("every species has a name and something to say when shaken", () => {
@@ -74,4 +74,17 @@ test("a few things glint, the focus first", () => {
   assert.equal(g[0], cands[5]);
   assert.deepEqual(g.slice(1).map((c) => c.key), ["0", "1", "2", "3"]);
   assert.equal(glinting([], null).length, 0);
+});
+
+test("cairns: the prompt, and the line when you read one", () => {
+  assert.equal(promptFor({ kind: "artifact", handle: "nyo.bsky.social" }), "Read @nyo.bsky.social's cairn");
+  assert.equal(promptFor({ kind: "artifact", own: true }), "Tend your cairn");
+  assert.equal(promptFor({ kind: "artifact" }), "Read the cairn");
+  assert.equal(ago(0, 3600), "today");
+  assert.equal(ago(0, 86400 * 1.5), "yesterday");
+  assert.equal(ago(0, 86400 * 4.2), "4 days ago");
+  assert.equal(cairnLine({ handle: "a.b", note: "hello", since: 0 }, 10), "\u201chello\u201d \u2014 @a.b, today.");
+  assert.equal(cairnLine({ handle: null, note: "", since: 0 }, 10, 0.5), "someone left a cairn here today. It's fading with the moon.");
+  const cairn = { key: "a", kind: "artifact", d: 10, range: 25, facing: 1 }, tree = { key: "t", kind: "tree", species: "quercus", d: 10, range: 28, facing: 1 };
+  assert.equal(chooseFocus([tree, cairn]), cairn, "a cairn beside a tree gets the prompt");
 });
