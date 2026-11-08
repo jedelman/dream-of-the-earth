@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { biomeFor, BIOMES, KOPPEN, RUNG_M, koppenCode } from "../web/js/biome.js";
-import { SPECIES, SPECIES_NAMES, VARIANTS, PLANT_TRIANGLES, plantForm, cellsAround, choosePlant, pickSpecies, lodFor, midShape, NEAR_M, GROUND_COVER_M } from "../web/js/plantforms.js";
+import { SPECIES, SPECIES_NAMES, TREES, VARIANTS, PLANT_TRIANGLES, plantForm, cellsAround, choosePlant, pickSpecies, lodFor, midShape, NEAR_M, GROUND_COVER_M } from "../web/js/plantforms.js";
 import { butterflyHomes, fireflyHomes, BUTTERFLY_TRIANGLES } from "../web/js/insecthomes.js";
 import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "../web/js/detail.js";
 
@@ -49,7 +49,9 @@ test("every plant shape stays within its triangle budget, deterministically", ()
       for (const s of f.segments) for (const y of [s.a[1], s.b[1]]) assert.ok(y <= 1.0001, `${sp} taller than 1`);
     }
   // Trees have foliage, not just a trunk.
-  for (const sp of ["broadleaf", "emergent", "acacia", "shrub"]) assert.ok(plantForm(sp, 0).bulbs.length >= 3, sp);
+  for (const sp of ["ficus", "ceiba", "vachellia", "quercus", "shrub"]) assert.ok(plantForm(sp, 0).bulbs.length >= 3, sp);
+  // Every part of every design fits: nothing is silently cut.
+  for (const sp of SPECIES_NAMES) for (let v = 0; v < VARIANTS; v++) assert.equal(plantForm(sp, v).dropped, 0, `${sp}/${v}`);
 });
 
 test("a plant stands in the same spot whoever asks, from wherever", () => {
@@ -76,7 +78,7 @@ test("density and the plant table set what grows", () => {
   const r = grown(rf), d = grown(desert);
   assert.ok(Math.abs(r.length / cells.length - rf.density) < 0.03, `rainforest ${r.length / cells.length}`);
   assert.ok(Math.abs(d.length / cells.length - desert.density) < 0.02, `desert ${d.length / cells.length}`);
-  assert.ok(d.every((p) => p.species === "cactus" || p.species === "shrub"));
+  assert.ok(d.every((p) => p.species === "carnegiea" || p.species === "shrub"));
   assert.equal(choosePlant(cells[0].h, 0, []), null);
   for (const p of r) {
     const [lo, hi] = SPECIES[p.species].height;
@@ -99,9 +101,10 @@ test("insects: butterflies by biome, fireflies only where they live", () => {
 });
 
 test("distance tiers: full shapes near the camera, spindles beyond, nothing past far", () => {
-  assert.equal(lodFor("broadleaf", 100, NEAR_M - 1), "near");
-  assert.equal(lodFor("broadleaf", 100, NEAR_M + 1), "mid");
-  assert.equal(lodFor("broadleaf", SPECIES.broadleaf.far + 1, 10), null);
+  assert.equal(lodFor("quercus", 100, NEAR_M - 1, 1, 20), "near");
+  assert.equal(lodFor("quercus", 100, NEAR_M + 1, 1, 20), "mid");
+  assert.equal(lodFor("quercus", SPECIES.quercus.far + 1, 10), null);
+  assert.equal(lodFor("sequoiadendron", 100, 400, 1, 80), "near"); // giants stay whole further out
   assert.equal(lodFor("grass", 100, GROUND_COVER_M - 1), "near");
   assert.equal(lodFor("grass", 100, GROUND_COVER_M + 1), null); // grass has no far shape
   // Zoomed out, the camera is far from everything: no full shapes at all.
@@ -117,8 +120,12 @@ test("each far spindle sits where its full shape does", () => {
     assert.ok(m.ringY > 0 && m.ringY < m.top, `${sp} ring ${m.ringY}`);
     assert.ok(m.r > 0.05 && m.r < 1.5, `${sp} radius ${m.r}`);
   }
-  assert.ok(midShape(plantForm("acacia", 0)).ringY > 0.7); // a flat crown up top
-  assert.ok(midShape(plantForm("conifer", 0)).ringY < 0.2); // skirts nearly to the ground
+  assert.ok(midShape(plantForm("vachellia", 0)).ringY > 0.7); // a flat crown up top
+  assert.ok(midShape(plantForm("picea", 0)).ringY < 0.2); // skirts nearly to the ground
+  assert.ok(midShape(plantForm("sequoiadendron", 0)).ringY > 0.5); // crown high on the column
+  const dome = midShape(plantForm("ficus", 0));
+  assert.ok(dome.sides === 5 && dome.bottom > 0.2 && dome.bottom < dome.ringY, "far away a banyan is a dome in the air");
+  assert.equal(midShape(plantForm("picea", 0)).bottom, 0); // a spruce still reaches the ground
 });
 
 test("the detail governor: slow frames shorten the forests, headroom grows them back", () => {
@@ -132,7 +139,32 @@ test("the detail governor: slow frames shorten the forests, headroom grows them 
   assert.equal(s, DETAIL_MAX);
   assert.equal(median([16, 17, 300, 16, 18]), 17); // one hitch doesn't count
   // A shorter reach drops far trees, never the ones near the camera.
-  assert.equal(lodFor("broadleaf", 2000, 2000, 0.5), null);
-  assert.equal(lodFor("broadleaf", 1000, 1000, 0.5), "mid");
-  assert.equal(lodFor("broadleaf", 200, 200, DETAIL_MIN), "near");
+  assert.equal(lodFor("quercus", 2000, 2000, 0.5), null);
+  assert.equal(lodFor("quercus", 1000, 1000, 0.5), "mid");
+  assert.equal(lodFor("quercus", 200, 200, DETAIL_MIN), "near");
+});
+
+test("ten trees, ten genera, ten silhouettes", () => {
+  assert.equal(TREES.length, 10);
+  // Width over height of each tree's shape, from the widest reach of crown, cone, frond or limb.
+  const aspect = (sp) => {
+    const f = plantForm(sp, 0);
+    let w = 0;
+    for (const b of f.bulbs) w = Math.max(w, Math.hypot(b.p[0], b.p[2]) + b.r);
+    for (const c of f.cones) w = Math.max(w, c.r);
+    for (const l of f.leaves) w = Math.max(w, Math.hypot(l.b[0], l.b[2]));
+    for (const g of f.segments) w = Math.max(w, Math.hypot(g.b[0], g.b[2]) + g.r1, g.r0);
+    return 2 * w;
+  };
+  assert.ok(aspect("ficus") > 1.6, "a banyan is far wider than tall");
+  assert.ok(aspect("quercus") > 1.4, "a spreading oak too");
+  assert.ok(aspect("vachellia") > 1.3, "the umbrella thorn's flat crown");
+  assert.ok(aspect("cupressus") < 0.25, "a cypress is a flame");
+  assert.ok(aspect("sequoiadendron") < 0.4 && SPECIES.sequoiadendron.height[0] >= 50, "a sequoia is a tall column");
+  assert.ok(plantForm("adansonia", 0).segments[0].r0 > 0.12, "a baobab's trunk is a bottle");
+  assert.ok(plantForm("ficus", 0).segments.filter((s) => Math.abs(s.a[0] - s.b[0]) < 1e-9 && Math.abs(s.a[2] - s.b[2]) < 1e-9 && s.b[1] === 0).length >= 3, "a banyan stands on prop roots");
+  assert.ok(plantForm("ceiba", 0).fins.length >= 4, "a kapok stands on buttresses");
+  assert.ok(plantForm("carnegiea", 0).segments.every((s) => !s.wood), "a saguaro is green all through");
+  // Heights put the emergents over the canopy.
+  assert.ok(SPECIES.ceiba.height[0] > SPECIES.ficus.height[1]);
 });

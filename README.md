@@ -22,8 +22,9 @@ ranges, coastlines, then a low-poly globe wrapped in the golden ley grid, with y
 drift with real-ish prevailing winds on the real clock, so everyone shares the same sky.
 
 **Biomes:** the land is coloured by its real climate (the Köppen-Geiger map), and ground that rises above its
-surroundings turns colder, one step per 900 m. Low-poly L-system forests, palms, acacias, cacti, conifers,
-grass and moss grow where they should, the same on every phone. Butterflies of four triangles fly by day, and
+surroundings turns colder, one step per 900 m. Ten charismatic trees, each its own genus and body plan, grow
+where they belong, the same on every phone: kapok and banyan over the rainforest, baobab and umbrella thorn on
+the savanna, saguaro in the desert, spreading oaks, cypress flames, giant sequoias and spruce spires. Butterflies of four triangles fly by day, and
 fireflies blink at night.
 
 **Sky beings:** sparkling eldritch things grown from L-systems drift slowly along every ley line, and everyone
