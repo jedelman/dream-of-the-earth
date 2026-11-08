@@ -73,7 +73,7 @@ test("whose things we show: mutuals, no blocks, no takedowns, not muted", () => 
 
 import { SAY_MAX, MOMENT_S, fresh } from "../web/js/intents.js";
 test("speech bubbles and squeaks ride on the intent, briefly, cleaned and capped", () => {
-  const v = makeIntent({ kind: "rest", p: { lat: 1, lon: 2, alt: 3 }, creature, say: { text: "hello‮ there\n friend", at: t0 }, act: { kind: "squeak", at: t0 }, now });
+  const v = makeIntent({ kind: "rest", p: { lat: 1, lon: 2, alt: 3 }, creature, say: { text: "hello\u202e there\n friend", at: t0 }, act: { kind: "squeak", at: t0 }, now });
   const it = parseIntent(v, t0);
   assert.equal(it.say.text, "hello there friend", "no direction overrides or newlines");
   assert.equal(it.act.kind, "squeak");
