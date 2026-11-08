@@ -2,7 +2,8 @@
 // full-screen pass draws the sky behind it and marches each pixel's ray through
 // volumetric clouds on the curved Earth, up to whatever the world put in the way:
 // cumulus that tower into storms, rain shafts beneath them, cirrus streaks high
-// above, the sun with a banded halo, and stars. The weather is weather.js's,
+// above, cloud shadows on the ground, sólstafir (shafts of sunlight through the
+// gaps, in a second pass), the sun with a banded halo, and stars. The weather is weather.js's,
 // riding the prevailing winds on the real clock, so everyone shares one sky.
 // Then the transparent things (sea, highways, sparkles) are drawn on top,
 // depth-tested against the clouds.
@@ -50,11 +51,13 @@ const fragmentShader = /* glsl */ `
   uniform float uLat0, uLon0, uKx, uKz, uWindKm;
   uniform vec3 uSunDir, uSunCol, uAmbTop, uAmbBot, uZenith, uHorizon, uHalo, uSunDisc, uFogCol;
   uniform float uFogNear, uFogFar, uStars, uSunUp, uClouds, uUnder, uSteps, uTime;
+  uniform float uShadow;
   varying vec2 vUv;
 
   #define TWO_R ${(2 * R_EARTH).toFixed(1)}
-  #define BASE ${CLOUD_BASE.toFixed(1)}
-  #define TOP_MAX 10000.0
+  uniform float uBase; // the cloud base: 1.5 km above the smoothed ground around you
+  #define BASE uBase
+  #define TOP_MAX (uBase + 8500.0)
   #define SIGMA 0.03
   #define SIGMA_RAIN 0.0004
   #define PI 3.14159265
@@ -181,6 +184,17 @@ const fragmentShader = /* glsl */ `
     }
   }
 
+  // How much cloud stands between a point and the sun, 0 (clear) to 1: where the sun's ray
+  // crosses the middle of the cloud layer. Cheap, so the ground and the air can both ask.
+  float cloudShadow(vec3 pos, float alt) {
+    float h = BASE + 900.0;
+    if (uSunDir.y < 0.02 || alt > h) return 0.0;
+    vec3 p = pos + uSunDir * ((h - alt) / uSunDir.y);
+    float lat; vec2 q = airKm(p, lat);
+    float cover, storm; weather(q, lat, cover, storm);
+    return smoothstep(0.0, 0.3, cloud(q, h, cover, storm, 1.0));
+  }
+
   vec3 skyColor(vec3 d) {
     float h = clamp(d.y, 0.0, 1.0);
     float band = floor(pow(h, 0.45) * 7.0) / 7.0; // banded, like an old palette
@@ -210,6 +224,15 @@ const fragmentShader = /* glsl */ `
     bool open = depth >= 0.9999999;
     float tScene = open ? 1e12 : (exp2(depth * uLogFar) - 1.0) / cosF;
     vec3 bg = open ? skyColor(rd) : toDisplay(scene.rgb);
+    // Where open sky shows close around the sun: the source the sólstafir pass streaks outward.
+    float cs0 = dot(rd, uSunDir);
+    float sunMask = open ? uSunUp * (0.55 * smoothstep(0.95, 0.999, cs0) + 0.45 * step(0.99897, cs0)) : 0.0;
+    // Cloud shadows on the ground.
+    if (!open && uClouds > 0.5 && uShadow > 0.0 && fogAt(tScene) < 0.95) {
+      vec3 sp = uCam + rd * tScene;
+      vec2 sxz = sp.xz - uCam.xz;
+      bg *= 1.0 - 0.42 * uShadow * cloudShadow(sp, sp.y + dot(sxz, sxz) / TWO_R);
+    }
 
     if (uClouds > 0.5) {
       float t0, t1;
@@ -232,10 +255,40 @@ const fragmentShader = /* glsl */ `
       if (hasR && (!hasC || r0 < c0)) { march(r0, r1, 10, true, C, T, tHalf); if (hasC) march(c0, c1, steps, false, C, T, tHalf); }
       else { if (hasC) march(c0, c1, steps, false, C, T, tHalf); if (hasR) march(r0, r1, 10, true, C, T, tHalf); }
       bg = C + T * bg;
+      sunMask *= T; // clouds hide the sun from the rays pass
       // Where a cloud hides what's behind it, the transparent things drawn next should be hidden too.
       if (tHalf > 0.0) gl_FragDepth = min(depth, log2(1.0 + tHalf * cosF) / uLogFar);
     }
-    gl_FragColor = vec4(bg, 1.0);
+    gl_FragColor = vec4(bg, sunMask);
+  }`;
+
+// Sólstafir: shafts of sunlight through every gap the clouds and the land leave.
+// The classic screen-space way (light scattering as a post-process): march from
+// each pixel toward the sun's place on screen, gathering the open-sky mask,
+// fading with each step, and add what's gathered as golden light.
+const raysShader = /* glsl */ `
+  uniform sampler2D tColor;
+  uniform sampler2D tDepth;
+  uniform vec2 uSunUV;
+  uniform vec3 uSunCol;
+  uniform float uRays;
+  varying vec2 vUv;
+  void main() {
+    vec4 c = texture(tColor, vUv);
+    gl_FragDepth = texture(tDepth, vUv).r;
+    vec3 col = c.rgb;
+    if (uRays > 0.0) {
+      vec2 step = (vUv - uSunUV) * (0.92 / 32.0);
+      vec2 uv = vUv;
+      float fall = 1.0, sum = 0.0;
+      for (int i = 0; i < 32; i++) {
+        uv -= step;
+        sum += texture(tColor, clamp(uv, 0.0, 1.0)).a * fall;
+        fall *= 0.962;
+      }
+      col += uSunCol * uRays * sum / 12.0;
+    }
+    gl_FragColor = vec4(col, 1.0);
   }`;
 
 /** The sky pass. update() once a frame, then render() in place of renderer.render(scene, camera). */
@@ -262,13 +315,21 @@ export function buildSkyShader() {
     uLat0: U(0), uLon0: U(0), uKx: U(1), uKz: U(1), uWindKm: U(0),
     uSunDir: U(new THREE.Vector3(0, 1, 0)), uSunCol: U(new THREE.Color()), uAmbTop: U(new THREE.Color()), uAmbBot: U(new THREE.Color()),
     uZenith: U(new THREE.Color()), uHorizon: U(new THREE.Color()), uHalo: U(new THREE.Color(1, 0.86, 0.62)), uSunDisc: U(new THREE.Color(1, 0.945, 0.659)), uFogCol: U(new THREE.Color()),
-    uFogNear: U(1), uFogFar: U(2), uStars: U(0), uSunUp: U(1), uClouds: U(1), uUnder: U(0), uSteps: U(48), uTime: U(0),
+    uFogNear: U(1), uFogFar: U(2), uStars: U(0), uSunUp: U(1), uClouds: U(1), uUnder: U(0), uSteps: U(48), uTime: U(0), uShadow: U(0), uBase: U(CLOUD_BASE),
   };
   const mat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
   quad.frustumCulled = false;
   const pass = new THREE.Scene();
   pass.add(quad);
+  // The sky pass draws here (its alpha is the open-sky mask), then the rays pass draws it to the screen.
+  const rt2 = new THREE.WebGLRenderTarget(1, 1, { depthTexture: new THREE.DepthTexture(1, 1), minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+  const raysUniforms = { tColor: U(rt2.texture), tDepth: U(rt2.depthTexture), uSunUV: U(new THREE.Vector2(0.5, 2)), uSunCol: uniforms.uSunCol, uRays: U(0) };
+  const raysQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ uniforms: raysUniforms, vertexShader, fragmentShader: raysShader, depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth }));
+  raysQuad.frustumCulled = false;
+  const raysPass = new THREE.Scene();
+  raysPass.add(raysQuad);
+  const sunPoint = new THREE.Vector3();
   const passCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const size = new THREE.Vector2();
   const DEG = Math.PI / 180;
@@ -276,9 +337,12 @@ export function buildSkyShader() {
   return {
     /**
      * frame: the world frame; sun: { altitude, dir }; day 0..1; fog: { near, far, color (linear) };
-     * clouds: whether to draw them; steps: march steps (the detail governor's).
+     * clouds: whether to draw them; steps: march steps (the detail governor's); ground: the smoothed
+     * terrain height around you (m), which lifts the cloud base.
      */
-    update({ frame, camera, unix, sun, day, fog, clouds, underwater, steps }) {
+    update({ frame, camera, unix, sun, day, fog, clouds, underwater, steps, ground = 0 }) {
+      // Clouds form over the land, not at a fixed height: over a high plateau they float above it.
+      uniforms.uBase.value = CLOUD_BASE + Math.max(0, ground);
       const { zenith, horizon } = skyColors(sun.altitude);
       uniforms.uZenith.value.copy(zenith); // the dream's palette, shown as-is
       uniforms.uHorizon.value.copy(horizon);
@@ -291,6 +355,16 @@ export function buildSkyShader() {
       // Cloud light: white by day, gold at the ends of it, dim violet at night.
       const gold = 1 - Math.min(1, Math.max(0, (sun.altitude - 2) / 14));
       uniforms.uSunCol.value.setRGB(1, 0.97 - 0.35 * gold, 0.95 - 0.55 * gold).multiplyScalar(0.12 + 0.95 * day);
+      // Sólstafir are strongest when the sun is low and golden; shadows only while it's up.
+      const up = Math.min(1, Math.max(0, (sun.altitude + 1) / 4));
+      uniforms.uShadow.value = up * day;
+      // Where the sun sits on screen; the rays fade as it leaves the frame or goes behind you.
+      camera.updateMatrixWorld();
+      sunPoint.copy(sun.dir).multiplyScalar(1e5).add(camera.position).project(camera);
+      const behind = sunPoint.z > 1 || sunPoint.z < -1;
+      const off = Math.max(0, Math.abs(sunPoint.x) - 1, Math.abs(sunPoint.y) - 1);
+      raysUniforms.uSunUV.value.set(sunPoint.x * 0.5 + 0.5, sunPoint.y * 0.5 + 0.5);
+      raysUniforms.uRays.value = behind || underwater ? 0 : up * (0.5 + 0.55 * gold) * (1 - Math.min(1, off / 0.8));
       // Skylight on the clouds, in the dream's colours: lavender tops, pink-violet undersides.
       const fogDisp = fog.color.clone().convertLinearToSRGB();
       uniforms.uAmbTop.value.setRGB(0.86, 0.84, 1).lerp(zenith, 0.2).multiplyScalar(0.3 + 0.6 * day);
@@ -314,12 +388,14 @@ export function buildSkyShader() {
     /** Opaque world into the texture; sky and clouds to the screen; then the transparent things. */
     render(renderer, scene, camera) {
       renderer.getDrawingBufferSize(size);
-      if (rt.width !== size.x || rt.height !== size.y) rt.setSize(size.x, size.y);
+      if (rt.width !== size.x || rt.height !== size.y) { rt.setSize(size.x, size.y); rt2.setSize(size.x, size.y); }
       camera.layers.set(0);
       renderer.setRenderTarget(rt);
       renderer.render(scene, camera);
-      renderer.setRenderTarget(null);
+      renderer.setRenderTarget(rt2);
       renderer.render(pass, passCam);
+      renderer.setRenderTarget(null);
+      renderer.render(raysPass, passCam);
       // three.js clears for a colour background even with autoClear off, so lift it for this pass.
       camera.layers.set(TRANSPARENT_LAYER);
       const ac = renderer.autoClear, bg = scene.background;

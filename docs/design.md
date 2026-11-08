@@ -414,6 +414,25 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
        used with credit.
      - **Seen, not fixed:** storm tops from above are a little flat; the farthest clouds still stipple slightly
        near the horizon; storms are only in the tropics and the mid-latitude storm tracks, not monsoons.
+   - **Sólstafir and cloud shadows (11-08, Jason: "can we add Solstafir next?"):**
+     - **Sólstafir,** shafts of sunlight through the gaps: the sky pass now draws into a second texture whose
+       alpha marks open sky close around the sun (clouds, land and trees all hide it). A last full-screen
+       pass marches 32 steps from each pixel toward the sun's place on screen, gathering that mask with a
+       falloff, and adds it as sunlight: the classic light-scattering-as-a-post-process technique (Mitchell,
+       GPU Gems 3, 2007, **from memory, unverified**). Beams radiate through cloud gaps and through the canopy,
+       strongest when the sun is low and golden, and fade as the sun leaves the frame.
+     - **Tried first and dropped:** a volumetric version (marching the air under the clouds and testing each
+       point's view of the sun). Looking toward the sun the shadow samples line up with the view ray, so
+       shafts only showed off to the side, and with a phone's sample budget they came out as noise.
+     - **Cloud shadows on the ground:** for each pixel of land, follow the sun's ray up to the middle of the
+       cloud layer and darken by what's there (up to 42%).
+     - **The cloud base follows the ground:** 1.5 km above the smoothed terrain around you (it was 1.5 km above
+       sea level, which left the 2.4 km Ethiopian plateau permanently inside the clouds).
+   - **Landmarks menu (11-08, Jason: "drop down menu in HUD with the landmarks you gave me for the biome
+     check"):** a select at the top right lists the biome check places plus a few sky views
+     (`web/js/landmarks.js`). Choosing one regrows the world there, at that landmark's altitude, heading,
+     zoom and moment, and rewrites the URL so the view can be shared. The clock now runs on from `?t=`
+     (or a landmark's moment) instead of freezing the sun there.
      - **Headless (CPU-rendered) frame rate fell from 60 to ~30–34 fps,** mostly the sea shader. Real GPUs should
        be well above that at 400×224 internal pixels **(unverified on a phone)**.
    - **Zoom for scale (11-08, Jason: "zoom way out of your creature to get a sense of scale"):**

@@ -21,6 +21,7 @@ import { biomeFor, koppenCode } from "./biome.js";
 import { koppenAt } from "./koppen.js";
 import { buildPlants } from "./plants.js";
 import { buildInsects } from "./insects.js";
+import { LANDMARKS, landmarkQuery } from "./landmarks.js";
 import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
 
 // ---- Who and where (URL params make any spawn reproducible) ----
@@ -31,8 +32,9 @@ const seed = seedParam ? (/^\d+$/.test(seedParam) ? Number(seedParam) >>> 0 : ha
 const spawnRand = mulberry32(hashString(`spawn:${seed}`));
 const stats = parseStats(params.get("stats")) || randomStats(mulberry32(hashString(`stats:${seed}`)));
 const sp = speeds(stats);
-const fixedTime = params.get("t") ? new Date(params.get("t")) : null;
-const now = () => fixedTime || new Date();
+// The clock: the real one, or from ?t= (or a landmark) onward. Sun, clouds and sky beings all follow it.
+const clock = { base: params.get("t") ? Date.parse(params.get("t")) / 1000 : Date.now() / 1000, at: 0 };
+const unixAt = (sessionSeconds) => clock.base + (sessionSeconds - clock.at);
 
 let spawn;
 if (params.get("lat") && params.get("lon")) {
@@ -320,6 +322,30 @@ function leaveRide(arrived) {
     if (arrived) setTimeout(() => setStatus(""), 4000);
   });
 }
+// ---- Landmarks: the HUD's menu carries you anywhere in the list ----
+const places = document.getElementById("places");
+for (const [i, l] of LANDMARKS.entries()) places.add(new Option(l.name, String(i)));
+places.addEventListener("change", () => {
+  const l = LANDMARKS[Number(places.value)];
+  places.blur(); // give the keys back to flying
+  if (l) teleport(l);
+});
+function teleport(l) {
+  if (state.ride) { state.ride = null; rideFx.group.visible = false; if (world) world.group.visible = true; }
+  if (l.t) { clock.base = Date.parse(l.t) / 1000; clock.at = (performance.now() - t0) / 1000; lastSun = -Infinity; }
+  zoom = l.zoom ?? 85;
+  if (l.heading !== undefined) state.heading = (-l.heading * Math.PI) / 180;
+  state.speed = 0; state.vy = 0; state.captureCooldown = 3;
+  setStatus(`the dream carries you to ${l.name.split(" · ")[0]}…`);
+  regrow(l.lat, l.lon, (w) => {
+    const p = w.frame.toLocal(l.lat, l.lon);
+    swapWorld(w, { lat: l.lat, lon: l.lon, y: Math.max(0, w.terrain.heightAt(p.x, p.z)) + (l.alt ?? 350) });
+    camera.position.set(state.pos.x + Math.sin(state.heading) * 85, state.pos.y + 28, state.pos.z + Math.cos(state.heading) * 85);
+    history.replaceState(null, "", `?${landmarkQuery(l, location.search)}`);
+    setStatus("");
+  });
+}
+
 function nodeName(ll) {
   const { node } = nearestNode(ll.lat, ll.lon);
   return CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
@@ -368,7 +394,6 @@ function zoomLine() {
 // ---- Loop ----
 let sunState = null, lastSun = -Infinity, lastHud = -Infinity;
 const t0 = performance.now();
-const t0Unix = Date.now() / 1000;
 let last = t0;
 function frame() {
   const nowMs = performance.now();
@@ -383,7 +408,7 @@ function frame() {
 
   // The real sun for this place and moment (refreshed every 10 s).
   if (t - lastSun > 10 || !sunState) {
-    sunState = sunPosition(now(), view.ll.lat, view.ll.lon);
+    sunState = sunPosition(new Date(unixAt(t) * 1000), view.ll.lat, view.ll.lon);
     lastSun = t;
   }
   const dir = sunDirection(sunState);
@@ -417,7 +442,7 @@ function frame() {
   sea.update(t, dir, day, horizon);
   // The shared clock: the real one, or ?t= when it's fixed. Sky beings and
   // clouds follow it, so every player sees the same sky.
-  const unix = (fixedTime ? fixedTime.getTime() / 1000 : t0Unix) + t;
+  const unix = unixAt(t);
   if (world) world.highways.update(t);
   if (world) { window.__dream.beings = world.beings.update(unix, t); layerTransparent(world.beings.group); }
   // Plants and insects around you; too small to matter from far up.
@@ -438,11 +463,11 @@ function frame() {
   if (zoom > GLOBE_AT) {
     // The whole planet.
     const fxg = -Math.sin(state.heading), fzg = -Math.cos(state.heading);
-    globe.update(view.ll, { e: fxg, n: -fzg }, zoom, new Date((fixedTime ? fixedTime.getTime() : t0Unix * 1000) + t * 1000), camera.aspect, t);
+    globe.update(view.ll, { e: fxg, n: -fzg }, zoom, new Date(unixAt(t) * 1000), camera.aspect, t);
     renderer.render(globe.scene, globe.camera);
   } else {
     curveUniform.value.copy(camera.position); // the Earth curves away from the eye
-    skyPass.update({ frame: world ? world.frame : makeFrame(view.ll.lat, view.ll.lon), camera, unix, sun: { altitude: sunState.altitude, dir }, day, fog: scene.fog, clouds: !underwater && !state.ride && !!world, underwater, steps: 20 + 44 * detail.scale });
+    skyPass.update({ frame: world ? world.frame : makeFrame(view.ll.lat, view.ll.lon), camera, unix, sun: { altitude: sunState.altitude, dir }, day, fog: scene.fog, clouds: !underwater && !state.ride && !!world, underwater, steps: 20 + 44 * detail.scale, ground: world ? world.terrain.heightAt(state.pos.x, state.pos.z) - world.terrain.reliefAt(state.pos.x, state.pos.z) : 0 });
     skyPass.render(renderer, scene, camera);
   }
   window.__dream.frames++;

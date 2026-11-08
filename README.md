@@ -20,7 +20,11 @@ ranges, coastlines, then a low-poly globe wrapped in the golden ley grid, with y
 
 **Sky and sea:** shader waves with foam and a sparkling sun glint. The sky is one shader: volumetric cumulus that
 tower into storms with rain shafts beneath them, cirrus streaks, a banded sun and stars, ray-marched over the
-curved Earth. The weather rides real-ish prevailing winds on the real clock, so everyone shares the same sky.
+curved Earth, with sólstafir (shafts of sunlight through the gaps) and cloud shadows on the land. The weather
+rides real-ish prevailing winds on the real clock, so everyone shares the same sky.
+
+**Landmarks:** the menu at the top right carries you to a place in every biome (and a few sky views), at a
+moment with good light.
 
 **Biomes:** the land is coloured by its real climate (the Köppen-Geiger map), and ground that rises above its
 surroundings turns colder, one step per 900 m. Ten charismatic trees, each its own genus and body plan, grow
@@ -37,7 +41,7 @@ its end. Shift or S steps off anywhere. Where two highways cross, A/D hops onto 
 pillar of light that lifts any creature up to the network, wings or not.
 
 URL parameters make any spawn reproducible: `?seed=42` (creature, stats and spawn), `&stats=6,2,2,2`
-(fly, swim, run, gleam; 12 points, 0–6 each), `&t=2026-11-07T15:00:00Z` (a fixed moment for the sun), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north), `&alt=` (metres up), `&zoom=` (camera distance in
+(fly, swim, run, gleam; 12 points, 0–6 each), `&t=2026-11-07T15:00:00Z` (start the clock at a moment), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north), `&alt=` (metres up), `&zoom=` (camera distance in
 metres, up to 40,000,000), `&ride=N` (start out riding highway N, 0–723), and `&detail=` (0.25–1: pin how far
 forests reach; otherwise each device finds its own, and the HUD shows its FPS).
 
