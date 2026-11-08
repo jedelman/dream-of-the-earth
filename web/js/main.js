@@ -774,7 +774,7 @@ const mine = new Map(); // uri -> artifact you made or renewed this session (the
 const gone = new Set(); // uris you took down this session
 let artifacts = [], artifactsAt = -Infinity, discovering = false, cairnsWorld = null;
 let everywhere = [], everywhereAt = -Infinity, listing = false; // every mutual's cairn, anywhere (the list and the globe)
-const realNow = () => Date.now() / 1000; // artifacts fade on the real clock, whatever ?t= says
+const realNow = () => (film?.manual ? film.base + film.ms : Date.now()) / 1000; // artifacts fade on the real clock, whatever ?t= says
 async function refreshArtifacts() {
   if (!people.viewer || !world || discovering) return;
   discovering = true;
@@ -1159,8 +1159,11 @@ function zoomLine() {
 let sunState = null, lastSun = -Infinity, lastHud = -Infinity;
 const t0 = performance.now();
 let last = t0;
+// ?film: for recording. After __dream.filmStart(), the loop stops and __dream.filmStep(n) renders n frames exactly
+// 1/fps apart in game time (and on the real clock that intents and cairns use), however slowly they render.
+const film = params.get("film") !== null ? { fps: Number(params.get("film")) || 30, manual: false, ms: 0, base: 0 } : null;
 function frame() {
-  const nowMs = performance.now();
+  const nowMs = film?.manual ? film.ms : performance.now();
   const dt = Math.min(0.05, (nowMs - last) / 1000), t = (nowMs - t0) / 1000;
   // Only frames that draw forests steer the governor.
   meterFrame(nowMs - last, t, !!world && !state.ride && zoom < 6000);
@@ -1254,7 +1257,7 @@ function frame() {
     skyPass.render(renderer, scene, camera);
   }
   window.__dream.frames++;
-  requestAnimationFrame(frame);
+  if (!film?.manual) requestAnimationFrame(frame);
 }
 
 /** Camera distance and pitch from the zoom: low and close behind you, then pulling back and tilting down. */
@@ -1306,6 +1309,10 @@ function rideView(dt, t) {
 
 // ---- Boot ----
 window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+if (film) {
+  window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
+  window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };
+}
 setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);
