@@ -14,20 +14,27 @@ export const CURVE_GLSL = /* glsl */ `
 `;
 
 /**
- * Patch a built-in material (Lambert, Basic, Phong...) so its vertices curve.
- * Assumes the mesh has no rotation or scale (geometry is rotated instead), so
- * a world-space drop equals a local-space drop.
+ * Patch a built-in material (Lambert, Basic, Phong, Points...) so its vertices
+ * curve. The drop is applied in world space at the projection step, after any
+ * instancing, so rotated, scaled and instanced meshes all curve correctly.
  */
 export function curved(material, extraKey = "") {
   const prev = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
     shader.uniforms.uCurve = curveUniform;
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nuniform vec3 uCurve;")
+      .replace("#include <common>", `#include <common>\n${CURVE_GLSL}`)
       .replace(
-        "#include <begin_vertex>",
-        `#include <begin_vertex>
-        { vec4 cw = modelMatrix * vec4(transformed, 1.0); vec2 cd = cw.xz - uCurve.xz; transformed.y -= dot(cd, cd) / ${TWO_R.toFixed(1)}; }`,
+        "#include <project_vertex>",
+        `vec4 mvPosition = vec4( transformed, 1.0 );
+        #ifdef USE_BATCHING
+          mvPosition = batchingMatrix * mvPosition;
+        #endif
+        #ifdef USE_INSTANCING
+          mvPosition = instanceMatrix * mvPosition;
+        #endif
+        mvPosition = viewMatrix * curveWorld( modelMatrix * mvPosition );
+        gl_Position = projectionMatrix * mvPosition;`,
       );
     if (prev) prev(shader, renderer);
   };

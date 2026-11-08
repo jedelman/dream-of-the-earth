@@ -363,6 +363,26 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
        with no network and no stored state. Each one floats 500–1,600 m above its highway, and they're drawn
        within 220 km.
      - `&heading=` and `&alt=` make views reproducible (used to photograph them).
+   - **Clouds and waves (11-08, Jason: "clouds and waves going as shaders (we can use l systems for them too) -
+     need a sense of depth and distance"):**
+     - **The sea:** a camera-centred mesh of rings (15 m apart near you, growing ×1.16 out to 700 km) carrying six
+       directional waves (4.6–420 m wavelengths, deep-water speeds). Each pixel re-evaluates the waves for
+       lighting: posterized diffuse bands, banded crests and foam near you, a sparkling sun glint, sky
+       reflection at grazing angles, and fog. Waves smaller than a pixel fade out and are skipped, so the pattern
+       shrinks cleanly into the distance, which is the depth cue. From below the sea is a fogged, rippling
+       ceiling.
+     - **A high deck** at 8 km: fbm noise stretched along the wind, posterized into a lit and a shaded tone,
+       tinted by the real sun and the sky.
+     - **Cumulus** at ~1.2–1.9 km, raised over high ground: flat-shaded instanced puffs arranged by a small
+       L-system. They share a base altitude, so they form a floor receding to the horizon. Distant clouds keep 8
+       or 4 puffs.
+     - **The sky is shared:** cells fixed in drifting air. Prevailing winds by band (trades blowing west under
+       30°, westerlies to 60°, polar easterlies) at 8 m/s on the real clock. Cloudiness follows the circulation
+       cells: 0.55 in the doldrums, 0.18 under the subtropical highs, 0.45 in the mid-latitudes. Same sky for
+       everyone, nothing stored.
+     - **Curvature moved to the projection step,** so instanced and rotated meshes curve correctly.
+     - **Headless (CPU-rendered) frame rate fell from 60 to ~30–34 fps,** mostly the sea shader. Real GPUs should
+       be well above that at 400×224 internal pixels **(unverified on a phone)**.
 2. **Biomes and life:** the CHELSA/SoilGrids/canopy pipeline to world tiles (R2); lapse-rate downscaling;
    L-system plants; braided interchange rings where networks cross.
 3. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.
