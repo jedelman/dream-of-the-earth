@@ -14,7 +14,8 @@ import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount } from "./ride.js";
 import { buildSkyShader, skyColors, layerTransparent } from "./skyshader.js";
-import { curveUniform } from "./curvature.js";
+import { curveUniform, curved, TWO_R } from "./curvature.js";
+import { planPath } from "./pathfind.js";
 import { buildSkyBeings } from "./skybeings.js";
 import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
 import { biomeFor, koppenCode } from "./biome.js";
@@ -171,9 +172,12 @@ const touch = { turn: 0, thrust: 0, up: 0, id: null, x: 0, y: 0 };
 const pointers = new Map();
 let pinchFrom = 0;
 const pinchDistance = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+// A quick tap (or click) that doesn't drag: go there.
+let tapStart = null;
 canvas.addEventListener("pointerdown", (e) => {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   canvas.setPointerCapture(e.pointerId);
+  tapStart = pointers.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() } : null;
   if (pointers.size === 2) { pinchFrom = pinchDistance(); touch.id = null; touch.turn = touch.thrust = 0; return; }
   touch.id = e.pointerId; touch.x = e.clientX; touch.y = e.clientY;
 });
@@ -186,6 +190,8 @@ canvas.addEventListener("pointermove", (e) => {
     return;
   }
   if (e.pointerId !== touch.id) return;
+  if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > 12) tapStart = null;
+  if (tapStart) return; // not steering until it's a drag
   touch.turn = Math.max(-1, Math.min(1, (e.clientX - touch.x) / 70));
   touch.thrust = Math.max(-1, Math.min(1, -(e.clientY - touch.y) / 70));
 });
@@ -194,7 +200,12 @@ const endTouch = (e) => {
   if (pointers.size < 2) pinchFrom = 0;
   if (e.pointerId === touch.id) { touch.id = null; touch.turn = touch.thrust = 0; }
 };
-canvas.addEventListener("pointerup", endTouch);
+canvas.addEventListener("pointerup", (e) => {
+  const tap = tapStart && tapStart.id === e.pointerId && performance.now() - tapStart.t < 400;
+  tapStart = null;
+  endTouch(e);
+  if (tap) goTo(e.clientX, e.clientY);
+});
 canvas.addEventListener("pointercancel", endTouch);
 for (const [id, v] of [["up", 1], ["down", -1]]) {
   const b = document.getElementById(id);
@@ -213,7 +224,9 @@ function input() {
 // ---- Movement: fly, run, swim; the stats set the numbers ----
 const GRAVITY = 18;
 function step(dt) {
-  const { turn, thrust, up } = input();
+  const manual = input();
+  if ((manual.turn || manual.thrust || manual.up) && state.target) clearTarget(); // your hands back on the controls
+  const { turn, thrust, up } = (!manual.turn && !manual.thrust && !manual.up && autopilot()) || manual;
   const ground = world.terrain.heightAt(state.pos.x, state.pos.z);
   const p = state.pos;
   state.heading -= turn * 1.7 * dt;
@@ -282,6 +295,7 @@ function step(dt) {
 
 // ---- Riding the highways (ley-space) ----
 function boardRide(c) {
+  clearTarget();
   state.ride = startRide(c);
   state.hopCooldown = 0.8;
   world.group.visible = false;
@@ -331,6 +345,7 @@ places.addEventListener("change", () => {
   if (l) teleport(l);
 });
 function teleport(l) {
+  clearTarget();
   if (state.ride) { state.ride = null; rideFx.group.visible = false; if (world) world.group.visible = true; }
   if (l.t) { clock.base = Date.parse(l.t) / 1000; clock.at = (performance.now() - t0) / 1000; lastSun = -Infinity; }
   zoom = l.zoom ?? 85;
@@ -349,6 +364,99 @@ function teleport(l) {
 function nodeName(ll) {
   const { node } = nearestNode(ll.lat, ll.lon);
   return CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
+}
+
+// ---- Tap to move: find the ground under a tap, plan a way there, and steer ----
+const tapRay = new THREE.Raycaster();
+/** The ground (or sea surface) under a screen point, on the curved Earth: { x, z, h } or null. */
+function groundAt(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  tapRay.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), camera);
+  const o = tapRay.ray.origin, d = tapRay.ray.direction;
+  // The surface as drawn: real height, dropped by d²/2R from the eye.
+  const below = (t) => {
+    const x = o.x + d.x * t, z = o.z + d.z * t, dx = x - camera.position.x, dz = z - camera.position.z;
+    return o.y + d.y * t <= Math.max(0, world.terrain.heightAt(x, z)) - (dx * dx + dz * dz) / TWO_R;
+  };
+  let t0 = 0, t = 2;
+  for (let i = 0; i < 600 && t < 60000; i++) {
+    if (below(t)) {
+      for (let k = 0; k < 12; k++) { const m = (t0 + t) / 2; if (below(m)) t = m; else t0 = m; }
+      const x = o.x + d.x * t, z = o.z + d.z * t;
+      return { x, z, h: world.terrain.heightAt(x, z) };
+    }
+    t0 = t;
+    t += Math.max(3, t * 0.02);
+  }
+  return null;
+}
+function goTo(clientX, clientY) {
+  if (!world || state.ride || zoom > GLOBE_AT || rebuilding) return;
+  const hit = groundAt(clientX, clientY);
+  if (!hit) return;
+  const p = state.pos;
+  // Anything with wings flies straight there; the rest find a way on foot and by water.
+  const fly = stats.fly > 0;
+  const pts = fly ? [{ x: hit.x, z: hit.z }] : planPath({ x: p.x, z: p.z }, hit, world.terrain.heightAt, sp);
+  if (!pts) { setStatus("no way there on foot"); setTimeout(() => setStatus(""), 2500); return; }
+  state.target = { fly, ground: Math.max(0, hit.h), pts: pts.map((q) => world.frame.toLatLon(q.x, q.z)), idx: 0 };
+  routeDots.visible = true;
+}
+function clearTarget() { state.target = null; routeDots.visible = false; }
+/** Steering toward the next waypoint, as if from the controls: { turn, thrust, up } or null. */
+function autopilot() {
+  const tg = state.target;
+  if (!tg || !world) return null;
+  const p = state.pos, last = tg.idx === tg.pts.length - 1;
+  const wp = world.frame.toLocal(tg.pts[tg.idx].lat, tg.pts[tg.idx].lon);
+  const dx = wp.x - p.x, dz = wp.z - p.z, dist = Math.hypot(dx, dz);
+  if (!last && dist < 18) { tg.idx++; return autopilot(); }
+  if (last && dist < 6) {
+    // There. A flyer settles down onto it; then the controls are yours again.
+    if (!tg.fly || p.y - tg.ground < 3 || state.mode !== "air") { clearTarget(); return null; }
+    return { turn: 0, thrust: 0, up: -1 };
+  }
+  let diff = Math.atan2(-dx, -dz) - state.heading;
+  diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+  const turn = Math.max(-1, Math.min(1, -diff * 2.5));
+  const thrust = Math.abs(diff) > 1.3 ? 0.15 : Math.min(1, Math.max(0.25, (last ? dist : 300) / 60));
+  let up = 0;
+  if (tg.fly) {
+    const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
+    const ahead = Math.max(0, world.terrain.heightAt(p.x, p.z), world.terrain.heightAt(p.x + fx * 120, p.z + fz * 120));
+    const cruise = last && dist < 220 ? tg.ground + 2 : Math.max(ahead + 70, Math.min(p.y, ahead + 400));
+    up = Math.max(-1, Math.min(1, (cruise - p.y) / 25));
+  }
+  return { turn, thrust, up };
+}
+// The way there, drawn as golden dots, and a ring where you're going.
+const ROUTE_MAX = 64;
+const routeGeo = new THREE.BufferGeometry();
+routeGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(ROUTE_MAX * 3), 3));
+const routeDots = new THREE.Points(routeGeo, curved(new THREE.PointsMaterial({ color: 0xffd34d, size: 3, sizeAttenuation: false, transparent: true, opacity: 0.9, depthWrite: false }), "-route"));
+routeDots.frustumCulled = false;
+routeDots.visible = false;
+scene.add(routeDots);
+layerTransparent(routeDots);
+function drawRoute(t) {
+  const tg = state.target;
+  if (!tg || !world) return;
+  const pos = routeGeo.attributes.position.array, H = (x, z) => Math.max(0, world.terrain.heightAt(x, z)) + 1.5;
+  const legs = [{ x: state.pos.x, z: state.pos.z }, ...tg.pts.slice(tg.idx).map((q) => world.frame.toLocal(q.lat, q.lon))];
+  const end = legs[legs.length - 1];
+  let n = 0;
+  // A ring at the goal, turning slowly.
+  for (let k = 0; k < 16; k++) { const a = (k / 16) * Math.PI * 2 + t * 0.8; pos.set([end.x + Math.cos(a) * 6, H(end.x, end.z), end.z + Math.sin(a) * 6], n++ * 3); }
+  // Dots along the legs, spaced to fit.
+  let total = 0;
+  for (let k = 1; k < legs.length; k++) total += Math.hypot(legs[k].x - legs[k - 1].x, legs[k].z - legs[k - 1].z);
+  const spacing = Math.max(15, total / (ROUTE_MAX - 17)), phase = (t * 12) % spacing;
+  for (let k = 1; k < legs.length && n < ROUTE_MAX; k++) {
+    const a = legs[k - 1], b = legs[k], L = Math.hypot(b.x - a.x, b.z - a.z);
+    for (let s = k === 1 ? phase : 0; s < L && n < ROUTE_MAX; s += spacing) { const x = a.x + ((b.x - a.x) * s) / L, z = a.z + ((b.z - a.z) * s) / L; pos.set([x, H(x, z), z], n++ * 3); }
+  }
+  routeGeo.setDrawRange(0, n);
+  routeGeo.attributes.position.needsUpdate = true;
 }
 
 // ---- HUD ----
@@ -382,7 +490,14 @@ function updateHud() {
     `LEY NODE ${(meters / 1000).toFixed(1)} KM  ${cls}`,
     STATS.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  "),
     zoomLine(),
-  ].join("\n");
+    targetLine(),
+  ].join("\n").replace(/\n+$/, "");
+}
+function targetLine() {
+  if (!state.target || !world) return "";
+  const last = state.target.pts[state.target.pts.length - 1], q = world.frame.toLocal(last.lat, last.lon);
+  const m = Math.hypot(q.x - state.pos.x, q.z - state.pos.z);
+  return `GOING THERE  ${m < 1000 ? `${Math.round(m)} M` : `${(m / 1000).toFixed(1)} KM`}${state.target.fly ? "  BY AIR" : ""}  ·  ANY KEY OR DRAG: TAKE OVER`;
 }
 function zoomLine() {
   if (zoom < 300) return "";
@@ -455,6 +570,7 @@ function frame() {
     }
   }
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
+  drawRoute(t);
   // From far away: a sparkle on you, and the highways as thin lines.
   marker.visible = zoom > 700;
   marker.position.copy(view.pos);

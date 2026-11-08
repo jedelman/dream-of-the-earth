@@ -199,6 +199,18 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
   Each phone places others on its own terrain, so differing tile detail never shows a creature floating or
   buried.
 - **Scale:** walk for wandering; flight, ley lines and calls cover distance.
+- **Tap to move (built 11-08, Jason: "pathfinding and tap-to-move-to would be a huge control upgrade"):** a quick
+  tap or click that doesn't drag finds the ground (or sea surface) under it by marching the ray against the
+  terrain as drawn, curvature included, and sets a target, marked with a turning gold ring and a dotted route.
+  - **Anything with wings** (fly > 0) flies straight there, cruising 70 m over the ground ahead, then settles
+    onto the spot.
+  - **Anything without** finds a way: A* over a grid (up to ~140 cells a side, cells of 12 m or more) of travel
+    times, where land costs 1/run (more on slopes), water costs 1/swim, and slopes steeper than 0.85 rise over
+    run can't be climbed; the path is then simplified to straight legs (`web/js/pathfind.js`). So a poor swimmer
+    walks round a lake and a strong one crosses it. No way there: it says so.
+  - **Any key, drag or ▲▼ takes the controls back.** Boarding a highway or picking a landmark clears the target.
+    Waypoints are kept as lat/lon, so a world regrow mid-trip doesn't lose them.
+  - **Not yet:** tapping a highway or another creature does nothing special; flyers don't path around storms.
 
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
