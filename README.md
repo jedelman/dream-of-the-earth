@@ -15,13 +15,17 @@ in the sky. Fly, run and swim with WASD/arrows, Space (up) and Shift (down); on 
 buttons. The design is in
 [`docs/design.md`](docs/design.md).
 
+**Sky beings:** sparkling eldritch things grown from L-systems drift slowly along every ley line, and everyone
+sees the same one in the same place at the same moment.
+
 **Ley highways:** fly along a gold highway (inside its glow, heading roughly the same way) and it carries you
 into ley-space at absurd speed, 200 km/s on the commonest lines up to 1,600 km/s on the rarest, to the node at
 its end. Shift or S steps off anywhere. Where two highways cross, A/D hops onto the other one. Every node has a
 pillar of light that lifts any creature up to the network, wings or not.
 
 URL parameters make any spawn reproducible: `?seed=42` (creature, stats and spawn), `&stats=6,2,2,2`
-(fly, swim, run, gleam; 12 points, 0–6 each), `&t=2026-11-07T15:00:00Z` (a fixed moment for the sun), `&lat=…&lon=…` (spawn somewhere specific), and `&ride=N` (start out riding highway N, 0–723).
+(fly, swim, run, gleam; 12 points, 0–6 each), `&t=2026-11-07T15:00:00Z` (a fixed moment for the sun), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north) and `&alt=` (metres up), and
+`&ride=N` (start out riding highway N, 0–723).
 
 ## Develop
 ```bash

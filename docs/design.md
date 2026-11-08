@@ -350,8 +350,21 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
      - In ley-space the beam under you is now steady, with pulses streaming back past you. In the world, the
        pulse made the stretch near you flash every ~2 s.
      - Headless: 60 fps (the vsync cap) in both views, same as before.
+   - **Sky beings (11-08, Jason: "Eldritch monstrosities made of l-systems are cute as long as they sparkle and
+     move slowly and gently"):**
+     - **Bodies:** each grows from a seeded stochastic L-system (`lsystem.js`: a string-rewriting grammar and a 3D
+       turtle) in one of four plans: hanging lanterns (jellyfish-like), floating coral crowns, phyllotaxis
+       spirals of eyes, and many-armed blooms. Limbs are three-sided prisms, eyes and lanterns octahedra, ≤ 1,600
+       triangles, 350–1,100 m in radius.
+     - **Motion:** tips sway slowly in the vertex shader; glow pulses travel outward along the limbs; sparkles
+       twinkle around the bulbs; the whole body bobs and turns gently.
+     - **The schedule:** they drift along every ley line at 25 m/s, 240 km apart, flowing alternately one way or
+       the other. Position is a pure function of unix time, so every player sees the same being in the same place
+       with no network and no stored state. Each one floats 500–1,600 m above its highway, and they're drawn
+       within 220 km.
+     - `&heading=` and `&alt=` make views reproducible (used to photograph them).
 2. **Biomes and life:** the CHELSA/SoilGrids/canopy pipeline to world tiles (R2); lapse-rate downscaling;
-   L-system plants; braided interchange rings where networks cross; sky whales.
+   L-system plants; braided interchange rings where networks cross.
 3. **Avatars:** the editor (randomize, mutate, edit), stats, Operator Field voices.
 
 **Multiplayer:**

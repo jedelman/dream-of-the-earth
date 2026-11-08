@@ -13,6 +13,7 @@ import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount } from "./ride.js";
 import { buildSky } from "./sky.js";
 import { curveUniform } from "./curvature.js";
+import { buildSkyBeings } from "./skybeings.js";
 import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
 import { interimTemperature, biomeFor } from "./geo.js";
 
@@ -71,7 +72,10 @@ scene.add(rideFx.group);
 const graph = generateCreature(seed);
 const creature = buildCreature(graph, stats);
 scene.add(creature.group);
-const state = { pos: new THREE.Vector3(), heading: spawnRand() * Math.PI * 2, speed: 0, vy: 0, mode: "air", ride: null, captureCooldown: 0, hopCooldown: 0 };
+// ?heading= (degrees clockwise from north) and ?alt= (metres above the ground
+// or sea) make a view reproducible.
+const headingParam = params.get("heading"), altParam = params.get("alt");
+const state = { pos: new THREE.Vector3(), heading: headingParam !== null ? (-Number(headingParam) * Math.PI) / 180 : spawnRand() * Math.PI * 2, speed: 0, vy: 0, mode: "air", ride: null, captureCooldown: 0, hopCooldown: 0 };
 
 // ---- The world around us (rebuilt as we travel) ----
 // Only the newest request may swap in, so a slow regrow can't land after a
@@ -81,9 +85,10 @@ async function buildWorld(lat, lon) {
   const frame = makeFrame(lat, lon);
   const terrain = await buildTerrain(frame, lat, lon);
   const highways = buildHighways(frame, terrain.heightAt);
+  const beings = buildSkyBeings(frame, terrain.heightAt);
   const group = new THREE.Group();
-  group.add(terrain.mesh, highways.group);
-  return { frame, terrain, highways, group };
+  group.add(terrain.mesh, highways.group, beings.group);
+  return { frame, terrain, highways, beings, group };
 }
 function swapWorld(next, place) {
   if (place) {
@@ -288,6 +293,7 @@ function updateHud() {
 // ---- Loop ----
 let sunState = null, lastSun = -Infinity, lastHud = -Infinity;
 const t0 = performance.now();
+const t0Unix = Date.now() / 1000;
 let last = t0;
 function frame() {
   const nowMs = performance.now();
@@ -330,6 +336,9 @@ function frame() {
   sea.mesh.position.set(camera.position.x, 0, camera.position.z); // its waves are keyed to world position
   sea.update(t);
   if (world) world.highways.update(t);
+  // Sky beings drift on the real clock (or from ?t= when it's fixed), so every
+  // player sees the same one in the same place.
+  if (world) window.__dream.beings = world.beings.update((fixedTime ? fixedTime.getTime() / 1000 : t0Unix) + t, t);
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
   curveUniform.value.copy(camera.position); // the Earth curves away from the eye
   renderer.render(scene, camera);
@@ -382,7 +391,7 @@ setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);
   const ground = w.terrain.heightAt(0, 0);
-  state.pos.set(0, Math.max(0, ground) + 350, 0);
+  state.pos.set(0, Math.max(0, ground) + (altParam !== null ? Math.max(5, Number(altParam)) : 350), 0);
   camera.position.set(0, state.pos.y + 40, 120);
   setStatus(w.terrain.failed ? `${w.terrain.failed} elevation tiles didn't load; that ground is drawn at sea level` : "");
   // ?ride=N starts on highway N, halfway along (a shortcut for trying the ride).
