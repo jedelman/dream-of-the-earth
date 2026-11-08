@@ -425,6 +425,32 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
        or from ~34 to ~19 at the default 350 m. Cutting plant triangles by 38% didn't change it, so it's
        fragment overdraw in software rendering. A phone GPU at 400×224 should not notice **(unverified on a
        phone)**.
+   - **Ten trees, ten genera (11-08, Jason: "more radical body form differentiation on trees and more of a
+     complete canopy ... spread the 10 across genera and choose charismatic species for each biome - mega
+     conifers, ficus, spreading oaks, baobab"):** each a seeded procedure with its own body plan, up to 128
+     triangles up close:
+     - **Ceiba** (kapok): a 45–60 m rainforest emergent on buttress fins, with near-level limbs and a crown of clumps.
+     - **Ficus** (banyan): a short massive trunk, limbs flung wide, prop roots dropping like pillars, a broccoli
+       dome twice as wide as it is tall.
+     - **Cocos** (coconut palm): a leaning curved trunk and ten drooping fronds.
+     - **Adansonia** (baobab): a swollen bottle of a trunk and stubby root-like limbs, mostly bare.
+     - **Vachellia** (umbrella thorn): a thin forked trunk under a flat pancake crown.
+     - **Carnegiea** (saguaro): a ribbed green column with one to three arms.
+     - **Quercus** (spreading oak): a short thick trunk, great low limbs, a lumpy crown 1.7× as wide as tall.
+     - **Cupressus** (Italian cypress): a dark green flame.
+     - **Sequoiadendron** (giant sequoia): the mega conifer, 55–85 m, a flared cinnamon column bare for half
+       its height under a lumpy spire.
+     - **Picea** (spruce): a narrow spire of drooping tiers.
+     - Shrubs, grass and moss grow underneath. **By biome:** rainforest banyan, kapok and palm (density 0.95,
+       for a closed canopy); savanna umbrella thorn and baobab; desert saguaro; mediterranean oak and cypress;
+       subtropical banyan, oak and palm; highland sequoia, spruce and oak; oceanic oak; continental oak and
+       spruce; taiga spruce. Bark is pushed toward the dream: pink baobab, cinnamon sequoia, grey-green kapok.
+     - **After Jason's references (two photos of the Amazon canopy, 11-08):** crowns are rounder heaps of
+       clumps, sunlit yellow-green on top and dark beneath; every tree gets its own shade of green; blossoms
+       are rarer (3%); far away a broadleaf crown is a five-sided dome in the air (10 triangles), while
+       conifers and cacti stay spindles to the ground.
+     - **Cost at full detail, rainforest:** ~16k near + ~110k far plant triangles. The governor cuts back on
+       devices that can't hold 40 fps.
    - **Distance tiers (11-08, Jason: "poly reduction at distance for the zoom"):**
      - **Near:** within 250 m of the camera a plant is its full shape (up to 64 triangles). Grass and moss
        draw within 400 m of the camera and have no far shape.

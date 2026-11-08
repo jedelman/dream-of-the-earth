@@ -31,23 +31,25 @@ const LADDERS = {
 
 /**
  * What grows, and how much. color: the land. density: the chance a 40 m cell
- * holds a tree or shrub, picked from plants ([species, weight]). cover: the
+ * holds a tree or shrub, picked from plants ([species, weight]): each biome's
+ * charismatic trees (kapok and banyan in the rainforest, baobab and umbrella
+ * thorn on the savanna, giant sequoia in the highlands...). cover: the
  * chance a 10 m cell holds grass or moss, picked from ground. butterflies:
  * 0..1 by day. fireflies: whether they come out at night.
  */
 export const BIOMES = {
-  rainforest:    { color: 0x10b870, density: 0.85, plants: [["emergent", 1.5], ["broadleaf", 5], ["palm", 2], ["shrub", 1.5]], cover: 0.25, ground: [["grass", 1]], butterflies: 1.0, fireflies: true },
-  savanna:       { color: 0xd2c24a, density: 0.1, plants: [["acacia", 4], ["shrub", 1.5]], cover: 0.6, ground: [["grass", 1]], butterflies: 0.6, fireflies: true },
-  desert:        { color: 0xffbf6a, density: 0.04, plants: [["cactus", 5], ["shrub", 3]], cover: 0.03, ground: [["grass", 1]], butterflies: 0.05, fireflies: false },
+  rainforest:    { color: 0x10b870, density: 0.95, plants: [["ficus", 4], ["ceiba", 1.5], ["cocos", 1.5], ["shrub", 0.5]], cover: 0.25, ground: [["grass", 1]], butterflies: 1.0, fireflies: true },
+  savanna:       { color: 0xd2c24a, density: 0.1, plants: [["vachellia", 4], ["adansonia", 2], ["shrub", 1.5]], cover: 0.6, ground: [["grass", 1]], butterflies: 0.6, fireflies: true },
+  desert:        { color: 0xffbf6a, density: 0.04, plants: [["carnegiea", 5], ["shrub", 3]], cover: 0.03, ground: [["grass", 1]], butterflies: 0.05, fireflies: false },
   colddesert:    { color: 0xd8b590, density: 0.04, plants: [["shrub", 1]], cover: 0.06, ground: [["grass", 1]], butterflies: 0.05, fireflies: false },
   steppe:        { color: 0xd6cf6a, density: 0.05, plants: [["shrub", 1]], cover: 0.6, ground: [["grass", 1]], butterflies: 0.3, fireflies: false },
   coldsteppe:    { color: 0xbcc68a, density: 0.07, plants: [["shrub", 1]], cover: 0.5, ground: [["grass", 1]], butterflies: 0.25, fireflies: false },
-  mediterranean: { color: 0x9ec85a, density: 0.4, plants: [["cypress", 2.5], ["broadleaf", 3], ["shrub", 4.5]], cover: 0.3, ground: [["grass", 1]], butterflies: 0.7, fireflies: true },
-  subtropical:   { color: 0x48d070, density: 0.6, plants: [["broadleaf", 6], ["palm", 1.5], ["shrub", 2.5]], cover: 0.3, ground: [["grass", 1]], butterflies: 0.8, fireflies: true },
-  highland:      { color: 0x80d08c, density: 0.3, plants: [["conifer", 3], ["broadleaf", 3], ["shrub", 1]], cover: 0.45, ground: [["grass", 1]], butterflies: 0.5, fireflies: false },
-  oceanic:       { color: 0x5fd16a, density: 0.3, plants: [["broadleaf", 4.5], ["shrub", 2]], cover: 0.5, ground: [["grass", 1]], butterflies: 0.5, fireflies: true },
-  continental:   { color: 0x36b48a, density: 0.6, plants: [["broadleaf", 4.5], ["conifer", 4.5], ["shrub", 1]], cover: 0.3, ground: [["grass", 1]], butterflies: 0.5, fireflies: true },
-  taiga:         { color: 0x1f8a78, density: 0.6, plants: [["conifer", 8.5], ["shrub", 1.5]], cover: 0.25, ground: [["moss", 1], ["grass", 1]], butterflies: 0.2, fireflies: false },
+  mediterranean: { color: 0x9ec85a, density: 0.4, plants: [["cupressus", 2.5], ["quercus", 3.5], ["shrub", 3]], cover: 0.3, ground: [["grass", 1]], butterflies: 0.7, fireflies: true },
+  subtropical:   { color: 0x48d070, density: 0.65, plants: [["ficus", 2.5], ["quercus", 3], ["cocos", 2], ["shrub", 1]], cover: 0.3, ground: [["grass", 1]], butterflies: 0.8, fireflies: true },
+  highland:      { color: 0x80d08c, density: 0.35, plants: [["sequoiadendron", 2], ["picea", 2.5], ["quercus", 2], ["shrub", 1]], cover: 0.45, ground: [["grass", 1]], butterflies: 0.5, fireflies: false },
+  oceanic:       { color: 0x5fd16a, density: 0.35, plants: [["quercus", 5], ["picea", 0.8], ["shrub", 2]], cover: 0.5, ground: [["grass", 1]], butterflies: 0.5, fireflies: true },
+  continental:   { color: 0x36b48a, density: 0.7, plants: [["quercus", 4], ["picea", 4.5], ["shrub", 1]], cover: 0.3, ground: [["grass", 1]], butterflies: 0.5, fireflies: true },
+  taiga:         { color: 0x1f8a78, density: 0.6, plants: [["picea", 8.5], ["shrub", 1.5]], cover: 0.25, ground: [["moss", 1], ["grass", 1]], butterflies: 0.2, fireflies: false },
   tundra:        { color: 0xb6a6d9, density: 0.04, plants: [["shrub", 1]], cover: 0.5, ground: [["moss", 3], ["grass", 2]], butterflies: 0.15, fireflies: false },
   ice:           { color: 0xf2f0ff, density: 0, plants: [], cover: 0, ground: [], butterflies: 0, fireflies: false },
 };
