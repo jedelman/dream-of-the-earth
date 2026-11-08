@@ -67,3 +67,11 @@ test("stats: random spends exactly the budget; parse rejects over-budget", () =>
   assert.equal(parseStats("6,6,6,6"), null);
   assert.equal(parseStats("7,0,0,0"), null);
 });
+
+import { subsolarPoint } from "../web/js/sun.js";
+test("the subsolar point: the equator at the equinox noon, the Tropic of Cancer at the June solstice", () => {
+  const eq = subsolarPoint(new Date("2026-03-20T12:07:00Z"));
+  assert.ok(Math.abs(eq.lat) < 0.5 && Math.abs(eq.lon) < 2, JSON.stringify(eq));
+  const jun = subsolarPoint(new Date("2026-06-21T00:00:00Z"));
+  assert.ok(Math.abs(jun.lat - 23.44) < 0.1 && Math.abs(Math.abs(jun.lon) - 180) < 2, JSON.stringify(jun));
+});

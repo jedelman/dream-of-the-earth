@@ -23,7 +23,7 @@ const RINGS = [
 const tileCache = new Map();
 const CACHE_MAX = 160;
 
-async function fetchDecoded(z, x, y) {
+export async function fetchDecoded(z, x, y) {
   const n = 2 ** z;
   const xx = ((x % n) + n) % n;
   if (y < 0 || y >= n) return null;
@@ -60,6 +60,14 @@ const LAND = {
 };
 const SAND = 0xffd98a, ROCK = 0xb05fa8;
 const seafloorColor = (c, depth) => c.setHSL(0.62 + Math.min(depth / 6000, 1) * 0.15, 0.75, 0.42 - Math.min(depth / 6000, 1) * 0.3);
+
+/** The ground's colour for a height (and steepness), shared with the globe. */
+export function groundColor(c, lat, h, steep = false) {
+  if (h < 0) return seafloorColor(c, -h);
+  if (h < 12) return c.setHex(SAND);
+  if (steep) return c.setHex(ROCK);
+  return c.setHex(LAND[biomeFor(interimTemperature(lat, h))]);
+}
 
 /** One ring: its height grid, its mesh (minus a hole for the ring inside it), and a heightAt. */
 async function buildRing(frame, lat, lon, { zoom, cells }, hole) {

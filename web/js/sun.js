@@ -26,3 +26,20 @@ export function sunDirection({ altitude, azimuth }) {
   const a = altitude * DEG, z = azimuth * DEG;
   return { x: Math.cos(a) * Math.sin(z), y: Math.sin(a), z: -Math.cos(a) * Math.cos(z) };
 }
+
+/** Where the sun is directly overhead (degrees): its declination and the longitude where it's local noon. */
+export function subsolarPoint(date) {
+  const jd = date.getTime() / 86400000 + 2440587.5;
+  const d = jd - 2451545.0;
+  const g = (357.529 + 0.98560028 * d) * DEG;
+  const q = 280.459 + 0.98564736 * d;
+  const L = (q + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * DEG;
+  const e = (23.439 - 0.00000036 * d) * DEG;
+  const ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L));
+  const dec = Math.asin(Math.sin(e) * Math.sin(L));
+  const gmst = (18.697374558 + 24.06570982441908 * d) % 24;
+  let lon = (ra / DEG - gmst * 15) % 360;
+  if (lon > 180) lon -= 360;
+  if (lon < -180) lon += 360;
+  return { lat: dec / DEG, lon };
+}

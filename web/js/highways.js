@@ -88,6 +88,27 @@ export function buildHighways(frame, heightAt) {
     }
   }
 
+  // Overview lines: from high up the ribbons go sub-pixel, so the same paths are
+  // also drawn as thin lines that always show.
+  const linePos = [], lineCol = [];
+  const lc = new THREE.Color();
+  for (const { cls, strips } of byClass.values()) {
+    lc.setHSL(0.11, 1, 0.38 + 0.08 * cls.rank);
+    for (const pts of strips)
+      for (let i = 0; i < pts.length - 1; i++) {
+        linePos.push(pts[i].x, pts[i].y, pts[i].z, pts[i + 1].x, pts[i + 1].y, pts[i + 1].z);
+        lineCol.push(lc.r, lc.g, lc.b, lc.r, lc.g, lc.b);
+      }
+  }
+  const lgeo = new THREE.BufferGeometry();
+  lgeo.setAttribute("position", new THREE.Float32BufferAttribute(linePos, 3));
+  lgeo.setAttribute("color", new THREE.Float32BufferAttribute(lineCol, 3));
+  const overview = new THREE.LineSegments(lgeo, curved(new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }), "-overview"));
+  overview.frustumCulled = false;
+  overview.visible = false;
+  overview.renderOrder = 2;
+  group.add(overview);
+
   for (const { cls, strips } of byClass.values()) {
     const w = halfWidth(cls.rank);
     const pos = [], us = [], sides = [];
@@ -155,6 +176,8 @@ export function buildHighways(frame, heightAt) {
   return {
     group,
     pillars,
+    /** Show the thin overview lines (when the camera is high). */
+    overview(on) { overview.visible = on; },
     update(t) { for (const m of materials) m.uniforms.time.value = t; },
   };
 }

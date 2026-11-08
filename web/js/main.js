@@ -10,6 +10,7 @@ import { buildCreature } from "./creature.js";
 import { buildTerrain } from "./terrain.js";
 import { buildSea } from "./water.js";
 import { buildClouds } from "./clouds.js";
+import { buildGlobe } from "./globe.js";
 import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount } from "./ride.js";
@@ -68,6 +69,13 @@ const sea = buildSea(); // rings around the camera, out past the horizon
 scene.add(sea.mesh);
 const clouds = buildClouds();
 scene.add(clouds.group);
+// A sparkle on you, for when the camera is far away.
+const markerGeo = new THREE.BufferGeometry();
+markerGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
+const marker = new THREE.Points(markerGeo, new THREE.PointsMaterial({ color: 0xfff3b0, size: 6, sizeAttenuation: false, depthTest: false, transparent: true, fog: false }));
+marker.renderOrder = 10;
+marker.frustumCulled = false;
+scene.add(marker);
 const rideFx = buildRideFx();
 rideFx.group.visible = false;
 scene.add(rideFx.group);
@@ -119,18 +127,46 @@ function regrow(lat, lon, onReady) {
     .finally(() => { if (token === worldToken) rebuilding = false; });
 }
 
+// ---- Zoom: from just behind you out to the whole planet ----
+// Below GLOBE_AT the camera orbits in the world; beyond it, the globe.
+const ZOOM_MIN = 15, ZOOM_MAX = 4e7, GLOBE_AT = 400000;
+let zoom = params.get("zoom") ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(params.get("zoom")))) : 85;
+const zoomBy = (factor) => { zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * factor)); };
+canvas.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0018)); }, { passive: false });
+const globe = buildGlobe();
+
 // ---- Input: keyboard, plus a touch stick and up/down buttons ----
 const keys = new Set();
 addEventListener("keydown", (e) => { keys.add(e.code); if (["Space", "ArrowUp", "ArrowDown"].includes(e.code)) e.preventDefault(); });
 addEventListener("keyup", (e) => keys.delete(e.code));
 const touch = { turn: 0, thrust: 0, up: 0, id: null, x: 0, y: 0 };
-canvas.addEventListener("pointerdown", (e) => { touch.id = e.pointerId; touch.x = e.clientX; touch.y = e.clientY; canvas.setPointerCapture(e.pointerId); });
+// Two fingers pinch to zoom; one finger steers.
+const pointers = new Map();
+let pinchFrom = 0;
+const pinchDistance = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+canvas.addEventListener("pointerdown", (e) => {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  canvas.setPointerCapture(e.pointerId);
+  if (pointers.size === 2) { pinchFrom = pinchDistance(); touch.id = null; touch.turn = touch.thrust = 0; return; }
+  touch.id = e.pointerId; touch.x = e.clientX; touch.y = e.clientY;
+});
 canvas.addEventListener("pointermove", (e) => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {
+    const d = pinchDistance();
+    if (pinchFrom > 0 && d > 0) zoomBy(Math.pow(pinchFrom / d, 1.6));
+    pinchFrom = d;
+    return;
+  }
   if (e.pointerId !== touch.id) return;
   touch.turn = Math.max(-1, Math.min(1, (e.clientX - touch.x) / 70));
   touch.thrust = Math.max(-1, Math.min(1, -(e.clientY - touch.y) / 70));
 });
-const endTouch = (e) => { if (e.pointerId === touch.id) { touch.id = null; touch.turn = touch.thrust = 0; } };
+const endTouch = (e) => {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchFrom = 0;
+  if (e.pointerId === touch.id) { touch.id = null; touch.turn = touch.thrust = 0; }
+};
 canvas.addEventListener("pointerup", endTouch);
 canvas.addEventListener("pointercancel", endTouch);
 for (const [id, v] of [["up", 1], ["down", -1]]) {
@@ -278,6 +314,7 @@ function updateHud() {
       `${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}  ·  NEXT NODE ${Math.round(remainingMeters(r) / 1000).toLocaleString("en")} KM`,
       near.length ? `CROSSING ${near[0].line.cls.name.toUpperCase()} · A/D TO HOP` : "SHIFT OR S: STEP OFF",
       STATS.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  "),
+      zoomLine(),
     ].join("\n");
     return;
   }
@@ -291,7 +328,14 @@ function updateHud() {
     `${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}`,
     `LEY NODE ${(meters / 1000).toFixed(1)} KM  ${cls}`,
     STATS.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  "),
+    zoomLine(),
   ].join("\n");
+}
+function zoomLine() {
+  if (zoom < 300) return "";
+  const km = zoom / 1000;
+  const d = km < 10 ? km.toFixed(1) : Math.round(km).toLocaleString("en");
+  return zoom > GLOBE_AT ? `ORBIT ${d} KM UP` : `CAMERA ${d} KM AWAY`;
 }
 
 // ---- Loop ----
@@ -303,6 +347,9 @@ function frame() {
   const nowMs = performance.now();
   const dt = Math.min(0.05, (nowMs - last) / 1000), t = (nowMs - t0) / 1000;
   last = nowMs;
+  // +/- (or PageUp/PageDown) zoom smoothly while held.
+  if (keys.has("Equal") || keys.has("NumpadAdd") || keys.has("PageUp")) zoomBy(Math.exp(-2.4 * dt));
+  if (keys.has("Minus") || keys.has("NumpadSubtract") || keys.has("PageDown")) zoomBy(Math.exp(2.4 * dt));
   const view = state.ride ? rideView(dt, t) : worldView(dt, t);
 
   // The real sun for this place and moment (refreshed every 10 s).
@@ -329,7 +376,8 @@ function frame() {
     const h = Math.max(30, camera.position.y);
     const horizonM = Math.sqrt(2 * 6371008.8 * h + h * h);
     scene.fog.color.copy(horizon);
-    scene.fog.far = Math.min(700000, Math.max(40000, horizonM * 1.2));
+    // Capped inside the outer terrain ring, so from high up its edge melts into haze.
+    scene.fog.far = Math.min(440000, Math.max(40000, horizonM * 1.2));
     scene.fog.near = scene.fog.far * 0.25;
   }
   sky.group.visible = !underwater;
@@ -347,10 +395,29 @@ function frame() {
   clouds.group.visible = !underwater && !state.ride && !!world;
   if (clouds.group.visible) window.__dream.puffs = clouds.update(world.frame, view.ll, camera, unix, sunState.altitude, day, horizon, world.terrain.heightAt);
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
-  curveUniform.value.copy(camera.position); // the Earth curves away from the eye
-  renderer.render(scene, camera);
+  // From far away: a sparkle on you, and the highways as thin lines.
+  marker.visible = zoom > 700;
+  marker.position.copy(view.pos);
+  marker.material.size = 5 + 2 * Math.sin(t * 3);
+  if (world) world.highways.overview(camera.position.y > 6000);
+  if (zoom > GLOBE_AT) {
+    // The whole planet.
+    const fxg = -Math.sin(state.heading), fzg = -Math.cos(state.heading);
+    globe.update(view.ll, { e: fxg, n: -fzg }, zoom, new Date((fixedTime ? fixedTime.getTime() : t0Unix * 1000) + t * 1000), camera.aspect, t);
+    renderer.render(globe.scene, globe.camera);
+  } else {
+    curveUniform.value.copy(camera.position); // the Earth curves away from the eye
+    renderer.render(scene, camera);
+  }
   window.__dream.frames++;
   requestAnimationFrame(frame);
+}
+
+/** Camera distance and pitch from the zoom: low and close behind you, then pulling back and tilting down. */
+function cameraRig() {
+  const k = THREE.MathUtils.smoothstep(Math.log(zoom), Math.log(85), Math.log(150000));
+  const pitch = THREE.MathUtils.degToRad(18 + 52 * k);
+  return { back: zoom * Math.cos(pitch), up: zoom * Math.sin(pitch), near: zoom < 400 };
 }
 
 function worldView(dt, t) {
@@ -361,14 +428,16 @@ function worldView(dt, t) {
   creature.group.rotation.y = state.heading;
   creature.update(t, { mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / 60) });
 
-  // Camera: behind and above, lower under water.
+  // Camera: behind and above you, by the zoom (closer and lower under water).
   const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-  const back = state.mode === "water" ? 45 : 85, upOff = state.mode === "water" ? 10 : 28;
+  const rig = cameraRig();
+  const back = state.mode === "water" && zoom <= 85 ? 45 : rig.back, upOff = state.mode === "water" && zoom <= 85 ? 10 : rig.up;
   const want = new THREE.Vector3(p.x - fx * back, p.y + upOff, p.z - fz * back);
   const camGround = world.terrain.heightAt(want.x, want.z);
   if (camGround >= 0) want.y = Math.max(want.y, camGround + 6);
-  camera.position.lerp(want, Math.min(1, dt * 4));
-  camera.lookAt(p.x + fx * 20, p.y + 6, p.z + fz * 20);
+  camera.position.lerp(want, Math.min(1, dt * (rig.near ? 4 : 8)));
+  const ahead = rig.near ? 20 : 0;
+  camera.lookAt(p.x + fx * ahead, p.y + (rig.near ? 6 : 0), p.z + fz * ahead);
   const underwater = camera.position.y < 0 && world.terrain.heightAt(camera.position.x, camera.position.z) < camera.position.y;
   return { ll: world.frame.toLatLon(p.x, p.z), pos: p, underwater };
 }
@@ -386,8 +455,10 @@ function rideView(dt, t) {
   creature.group.rotation.y = state.heading;
   creature.update(t, { mode: "air", speed01: r.leaving ? 0.2 : 1 });
   const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-  camera.position.set(-fx * 140, LEY_ALT + 45, -fz * 140);
-  camera.lookAt(fx * 40, LEY_ALT + 8, fz * 40);
+  const rig = cameraRig();
+  const back = Math.max(140, rig.back), upOff = Math.max(45, rig.up);
+  camera.position.set(-fx * back, LEY_ALT + upOff, -fz * back);
+  camera.lookAt(fx * (rig.near ? 40 : 0), LEY_ALT + (rig.near ? 8 : 0), fz * (rig.near ? 40 : 0));
   rideFx.update(r, makeFrame(ll.lat, ll.lon), t, state.heading, dt);
   return { ll, pos: rideOrigin, underwater: false };
 }
