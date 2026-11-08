@@ -74,7 +74,8 @@ export function buildCreature(graph, stats) {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    sparkles = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xfff3b0, size: 0.6 + gleam * 0.9, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    // A few pixels at any distance: sized in metres they swelled into white blocks when the camera came close.
+    sparkles = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xfff3b0, size: 2 + gleam * 2, sizeAttenuation: false, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
     group.add(sparkles);
   }
 
