@@ -15,6 +15,7 @@
   #status { left: 50%; top: 42%; transform: translateX(-50%); color: var(--gold); font-size: 14px; text-align: center; white-space: normal; max-width: 80vw; }
   .btn { position: fixed; right: max(14px, env(safe-area-inset-right)); width: 52px; height: 52px; border: 2px solid var(--gold); background: rgba(20, 12, 40, .55); color: var(--gold); font: 20px/1 ui-monospace, monospace; touch-action: none; user-select: none; }
   #up { bottom: 96px; } #down { bottom: 34px; }
+  #places { position: fixed; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); max-width: 46vw; font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); border-radius: 0; padding: 3px 4px; }
   @media (hover: hover) and (pointer: fine) { .btn { display: none; } }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
@@ -22,6 +23,7 @@
 <body>
 <canvas id="view" aria-label="Dream of the Earth: a low-poly view of a real place on Earth, with your creature"></canvas>
 <div id="hud" aria-live="off"></div>
+<select id="places" aria-label="Go to a landmark"><option value="" selected disabled>LANDMARKS ▾</option></select>
 <div id="status" role="status" hidden></div>
 <div id="help">WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
 <button class="btn" id="up" aria-label="Up">▲</button>
