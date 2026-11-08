@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { biomeFor, BIOMES, KOPPEN, RUNG_M, koppenCode } from "../web/js/biome.js";
-import { SPECIES, SPECIES_NAMES, TREES, VARIANTS, PLANT_TRIANGLES, plantForm, cellsAround, choosePlant, pickSpecies, lodFor, midShape, NEAR_M, GROUND_COVER_M } from "../web/js/plantforms.js";
+import { SPECIES, SPECIES_NAMES, TREES, VARIANTS, PLANT_TRIANGLES, plantForm, cellsAround, choosePlant, pickSpecies, lodFor, midShape, NEAR_M, GROUND_COVER_M, lowReach } from "../web/js/plantforms.js";
 import { butterflyHomes, fireflyHomes, BUTTERFLY_TRIANGLES } from "../web/js/insecthomes.js";
 import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "../web/js/detail.js";
 
@@ -167,4 +167,14 @@ test("ten trees, ten genera, ten silhouettes", () => {
   assert.ok(plantForm("carnegiea", 0).segments.every((s) => !s.wood), "a saguaro is green all through");
   // Heights put the emergents over the canopy.
   assert.ok(SPECIES.ceiba.height[0] > SPECIES.ficus.height[1]);
+});
+
+test("a low camera draws the far forest only so far; giants and height bring it back", () => {
+  assert.equal(lodFor("quercus", 1500, 1500, 1, 20, 15), null, "an oak 1.5 km off, seen from 15 m up: a speck in a stack");
+  assert.equal(lodFor("quercus", 1500, 1500, 1, 20, 200), "mid", "from 200 m up it's back");
+  assert.equal(lodFor("quercus", 1500, 1500, 1, 20), "mid", "no camera height given: the full reach");
+  assert.equal(lodFor("ceiba", 2000, 2000, 1, 50, 15), "mid", "an emergent kapok still breaks the skyline");
+  assert.equal(lodFor("quercus", 200, 200, 1, 20, 0), "near", "close by, always drawn");
+  assert.ok(lowReach(15) > 900 && lowReach(15) < 1100);
+  assert.ok(lowReach(150) >= 2500, "by 150 m up the oaks reach their usual 2.5 km");
 });

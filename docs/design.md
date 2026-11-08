@@ -211,6 +211,19 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
   - **Any key, drag or ▲▼ takes the controls back.** Boarding a highway or picking a landmark clears the target.
     Waypoints are kept as lat/lon, so a world regrow mid-trip doesn't lose them.
   - **Not yet:** flyers don't path around storms.
+- **Flying keeps clear of the land (11-08, Jason: "Nyo seems to be getting tired and sitting down on long
+  flights"):** height used to be held above sea level, so flying toward rising land brought the ground up to meet
+  you; the clamp then put you in ground mode, wings folded, trudging uphill. Now, with hands off the climb, a flyer
+  keeps the clearance it let go at (4 to 30 m) over the land up to 1.2 s ahead, climbing as fast as its climb plus
+  0.3 × its speed. Above 30 m it keeps its altitude until the land comes within 30 m. Landing is on purpose: hold
+  down. A slope too steep to out-climb is skimmed, still flying. Tap-to-move flyers settle all the way down at the
+  end of a trip (giving up after 6 s, say over a pillar of light that holds them up).
+- **Trips follow what moves (11-08, Jason: "I'm trying to get to the sky being! Nyo keeps stopping
+  unexpectedly"):** sky beings drift along their lines at 25 m/s, so a 25 km trip used to arrive where the being
+  had been ~10 km earlier, hum at nothing, and stop. A trip to a sky being now steers for where it is (through
+  world regrows too); a walker who arrives and finds it gone sets off again. Highways don't snatch you while
+  you're on a tap-to-move trip (tapping a highway still boards it): chasing a being along its line put you above
+  that line, in line with it and sometimes within capture height.
 - **Touching things (built 11-08, Jason: "Tap to move, but also when within range, maybe trees shake, creatures
   squeak, and you get on the highway? Maybe also a little text to describe the results - a light on screen log a
   la world of warcraft or minecraft"):** a tap now finds the nearest thing along its ray: your own creature, a
@@ -607,6 +620,17 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
        reversed depth buffer nor front-to-back ordering helped (5–7 fps). The cost there scales with how
        many far plants are drawn, and a phone's GPU is a different machine, so each device finds its own
        reach. Headless settles at 25% and 19–25 fps, on par with the build before tiers.
+   - **A low camera draws the far forest only so far (11-08, Jason: "I'm starting to hit the forests% debug -
+     oddly it's when I'm closer to the ground"):** the far reach is capped at 800 m + 14 m per metre of camera
+     height (about 1 km from 15 m up, the full reach by ~150 m), and giants keep 45 × their height, so kapok
+     and sequoia emergents still break the skyline. Rainforest floor: 11.5k plants drawn → 4.8k, far triangles
+     110k → 43k, with no visible change at the horizon (screenshots compared). **Why (a hypothesis, not
+     measured on the phone):** headless SwiftShader costs the same low or high, so it can't show this. From a
+     low camera you look along the forest, so the far shapes (1–2 px specks past a kilometre) stack dozens
+     deep behind each horizon pixel. The log depth buffer writes `gl_FragDepth`, which turns off early depth
+     testing and Apple's hidden-surface removal, so every layer is shaded. The camera director's ground framing
+     (about 16 m above you, against 26 m before) made those views flatter. If FORESTS still shows near the ground,
+     the next suspect is the log depth buffer itself.
    - **Considered: a raytracing renderer (11-08, Jason asked).** Not adopted, Claude's recommendation:
      raytracing costs more per pixel than rasterizing (each pixel walks a tree of the scene); plant sway,
      butterfly flight and the Earth's curve all happen in vertex shaders, which a raytracer would need
