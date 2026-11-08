@@ -76,24 +76,3 @@ export function offset(lat, lon, bearingDeg, meters) {
   if (lon2 < -180) lon2 += 360;
   return { lat: p2 / DEG, lon: lon2 };
 }
-
-/**
- * Interim temperature model until CHELSA tiles exist (build step 1): annual mean
- * sea-level temperature from latitude alone, a smooth fit (27 °C at the equator,
- * ~19 at 30°, ~9 at 45°, falling toward the poles), then the 6.5 °C/km lapse rate.
- */
-export function interimTemperature(lat, heightM) {
-  const sea = 27 - 0.009 * lat * lat;
-  return sea - 6.5 * Math.max(0, heightM) / 1000;
-}
-
-/** The temperature ladder: latitude sets the rung, elevation climbs it. */
-export const BIOMES = ["ice", "tundra", "boreal", "temperate", "subtropical", "tropical"];
-export function biomeFor(tempC) {
-  if (tempC < -8) return "ice";
-  if (tempC < 0) return "tundra";
-  if (tempC < 8) return "boreal";
-  if (tempC < 18) return "temperate";
-  if (tempC < 24) return "subtropical";
-  return "tropical";
-}

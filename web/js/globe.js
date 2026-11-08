@@ -4,6 +4,7 @@
 // sun on the day side, and a sparkle where you are.
 import * as THREE from "three";
 import { fetchDecoded, groundColor } from "./terrain.js";
+import { ensureKoppen } from "./koppen.js";
 import { lonLatToTile, latLonToVec, vecToLatLon, R_EARTH } from "./geo.js";
 import { network, greatCircle } from "./ley.js";
 import { subsolarPoint } from "./sun.js";
@@ -109,7 +110,9 @@ export function buildGlobe() {
   let earth = null, loading = null;
   function load() {
     if (loading) return loading;
-    loading = worldHeights().then((heightOf) => {
+    // The whole climate map (72 small tiles) for the biomes.
+    const allTiles = Promise.all([-75, -45, -15, 15, 45, 75].flatMap((la) => [-165, -135, -105, -75, -45, -15, 15, 45, 75, 105, 135, 165].map((lo) => ensureKoppen(la, lo, 1))));
+    loading = Promise.all([worldHeights(), allTiles]).then(([heightOf]) => {
       // Detail subdivides each of the 20 faces linearly: (31 + 1)² × 20 = 20,480 facets.
       const geo = new THREE.IcosahedronGeometry(R_EARTH, 31);
       const pos = geo.attributes.position;
@@ -117,7 +120,8 @@ export function buildGlobe() {
       const v = new THREE.Vector3();
       for (let i = 0; i < pos.count; i += 3) {
         // One colour per facet, from its centre; each vertex lifted by its own height.
-        let clat = 0, clon = 0, ch = 0;
+        let clat = 0, ch = 0;
+        const clon = [];
         const lls = [];
         for (let k = 0; k < 3; k++) {
           v.fromBufferAttribute(pos, i + k);
@@ -126,12 +130,17 @@ export function buildGlobe() {
           lls.push(h);
           v.setLength(R_EARTH + Math.max(0, h) * RELIEF);
           pos.setXYZ(i + k, v.x, v.y, v.z);
-          clat += ll.lat / 3; ch += h / 3;
+          clat += ll.lat / 3; ch += h / 3; clon.push(ll.lon);
         }
         const steep = Math.max(...lls) - Math.min(...lls) > 1800;
         // From orbit, the ocean is water, not seafloor: bright in the shallows, deep offshore.
         if (ch < 0) c.setHSL(0.56 + 0.06 * Math.min(1, -ch / 5000), 0.85, 0.5 - 0.28 * Math.min(1, -ch / 4000));
-        else groundColor(c, clat, ch, steep);
+        else {
+          // Mean longitude of the facet's corners (careful across the date line).
+          const lon0 = clon[0];
+          const lonMean = lon0 + clon.reduce((s, l) => s + (((l - lon0 + 540) % 360) - 180), 0) / 3;
+          groundColor(c, clat, ((lonMean + 540) % 360) - 180, ch, 0, steep);
+        }
         for (let k = 0; k < 3; k++) cols.set([c.r, c.g, c.b], (i + k) * 3);
       }
       geo.setAttribute("color", new THREE.BufferAttribute(cols, 3));

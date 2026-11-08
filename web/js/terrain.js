@@ -3,8 +3,10 @@
 // zoom 7 to the edge of sight. Coarse on purpose: elevation is cut into big
 // flat-shaded facets, so the data's limits read as the look.
 import * as THREE from "three";
-import { terrariumHeight, lonLatToTile, tileToLonLat, interimTemperature, biomeFor } from "./geo.js";
+import { terrariumHeight, lonLatToTile, tileToLonLat } from "./geo.js";
 import { curved } from "./curvature.js";
+import { biomeFor, BIOMES } from "./biome.js";
+import { koppenAt, ensureKoppen } from "./koppen.js";
 
 const TILE_URL = (z, x, y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
 export const ZOOM = 11; // the near ring: ~19.6 km tiles at the equator
@@ -14,9 +16,9 @@ const SPAN = 3; // 3×3 tiles per ring
 // off Chile: 11/587/1214 is all 0, while zooms 7-10 there carry the seafloor),
 // so every ring fills exact zeros from the zoom below it.
 const RINGS = [
-  { zoom: 11, cells: 64 }, // ±29 km, ~900 m facets
-  { zoom: 9, cells: 48 }, // ±117 km, ~5 km facets
-  { zoom: 7, cells: 48 }, // ±470 km, ~20 km facets
+  { zoom: 11, cells: 64, smooth: 4 }, // ±29 km, ~900 m facets; relief against ~4 km around
+  { zoom: 9, cells: 48, smooth: 1 }, // ±117 km, ~5 km facets
+  { zoom: 7, cells: 48, smooth: 0 }, // ±470 km, ~20 km facets
 ];
 
 // Decoded tiles, kept so regrowing every 15 km doesn't redo the far rings.
@@ -50,27 +52,23 @@ export async function fetchDecoded(z, x, y) {
 
 // The palette: the temperature ladder, pushed toward psychedelia. Land colours
 // by biome; the seafloor by depth.
-const LAND = {
-  ice: 0xf2f0ff,
-  tundra: 0xb6a6d9,
-  boreal: 0x1f8a78,
-  temperate: 0x5fd16a,
-  subtropical: 0xd6d64a,
-  tropical: 0x22d48a,
-};
 const SAND = 0xffd98a, ROCK = 0xb05fa8;
 const seafloorColor = (c, depth) => c.setHSL(0.62 + Math.min(depth / 6000, 1) * 0.15, 0.75, 0.42 - Math.min(depth / 6000, 1) * 0.3);
 
-/** The ground's colour for a height (and steepness), shared with the globe. */
-export function groundColor(c, lat, h, steep = false) {
+/**
+ * The ground's colour: seafloor by depth, beaches, bare rock where steep, and
+ * otherwise the biome (Köppen class, climbed by relief). Shared with the globe.
+ */
+export function groundColor(c, lat, lon, h, reliefM = 0, steep = false) {
   if (h < 0) return seafloorColor(c, -h);
-  if (h < 12) return c.setHex(SAND);
-  if (steep) return c.setHex(ROCK);
-  return c.setHex(LAND[biomeFor(interimTemperature(lat, h))]);
+  const biome = biomeFor(koppenAt(lat, lon), reliefM, lat, h);
+  if (h < 12 && biome !== "ice") return c.setHex(SAND);
+  if (steep && biome !== "ice") return c.setHex(ROCK);
+  return c.setHex(BIOMES[biome].color);
 }
 
 /** One ring: its height grid, its mesh (minus a hole for the ring inside it), and a heightAt. */
-async function buildRing(frame, lat, lon, { zoom, cells }, hole) {
+async function buildRing(frame, lat, lon, { zoom, cells, smooth }, hole) {
   const t = lonLatToTile(lon, lat, zoom);
   const x0 = Math.floor(t.x) - 1, y0 = Math.floor(t.y) - 1;
   const size = 256 * SPAN;
@@ -121,6 +119,19 @@ async function buildRing(frame, lat, lon, { zoom, cells }, hole) {
       grid[j * N + i] = s / n;
     }
 
+  // A smoothed copy of the grid: relief is how far ground stands above it.
+  const smoothGrid = new Float32Array(N * N);
+  for (let j = 0; j < N; j++)
+    for (let i = 0; i < N; i++) {
+      let s = 0, n = 0;
+      for (let dj = -smooth; dj <= smooth; dj++)
+        for (let di = -smooth; di <= smooth; di++) {
+          const ii = i + di, jj = j + dj;
+          if (ii >= 0 && jj >= 0 && ii < N && jj < N) { s += grid[jj * N + ii]; n++; }
+        }
+      smoothGrid[j * N + i] = s / n;
+    }
+
   const nodeLL = (i, j) => tileToLonLat(x0 + (i * step) / 256, y0 + (j * step) / 256, zoom);
   const pos = new Float32Array(N * N * 3);
   for (let j = 0; j < N; j++)
@@ -149,10 +160,8 @@ async function buildRing(frame, lat, lon, { zoom, cells }, hole) {
         const rise = Math.max(Math.abs(p[1] - q[1]), Math.abs(q[1] - r[1]), Math.abs(r[1] - p[1]));
         const run = Math.hypot(p[0] - r[0], p[2] - r[2]) || 1;
         const ll = nodeLL(i + 0.5, j + 0.5);
-        if (h < 0) seafloorColor(c, -h);
-        else if (h < 12) c.setHex(SAND);
-        else if (rise / run > 0.45) c.setHex(ROCK);
-        else c.setHex(LAND[biomeFor(interimTemperature(ll.lat, h))]);
+        const sm = (smoothGrid[j * N + i] + smoothGrid[j * N + i + 1] + smoothGrid[(j + 1) * N + i] + smoothGrid[(j + 1) * N + i + 1]) / 4;
+        groundColor(c, ll.lat, ll.lon, h, h - sm, rise / run > 0.45);
         // Subtle, stable per-facet variation, hashed on the global grid.
         const gi = Math.round((x0 * 256) / step) + i, gj = Math.round((y0 * 256) / step) + j;
         const n = (((gi * 73856093) ^ (gj * 19349663) ^ (alt * 83492791) ^ (zoom * 2654435761)) >>> 0) / 4294967296;
@@ -180,8 +189,19 @@ async function buildRing(frame, lat, lon, { zoom, cells }, hole) {
     return h(i + 1, j + 1) + (1 - fx) * (h(i, j + 1) - h(i + 1, j + 1)) + (1 - fy) * (h(i + 1, j) - h(i + 1, j + 1));
   }
 
+  // The smoothed surroundings under a point (for relief), or null outside.
+  function smoothAt(x, z) {
+    const ll = frame.toLatLon(x, z);
+    const tt = lonLatToTile(ll.lon, ll.lat, zoom);
+    const gi = ((tt.x - x0) * 256) / step, gj = ((tt.y - y0) * 256) / step;
+    if (!(gi >= 0 && gj >= 0 && gi < cells && gj < cells)) return null;
+    const i = Math.floor(gi), j = Math.floor(gj), fx = gi - i, fy = gj - j;
+    const h = (ii, jj) => smoothGrid[jj * N + ii];
+    return (h(i, j) * (1 - fx) + h(i + 1, j) * fx) * (1 - fy) + (h(i, j + 1) * (1 - fx) + h(i + 1, j + 1) * fx) * fy;
+  }
+
   const lo = v(0, 0), hi = v(cells, cells);
-  return { mesh, heightAt, failed, bounds: { minX: lo[0], maxX: hi[0], minZ: lo[2], maxZ: hi[2] } };
+  return { mesh, heightAt, smoothAt, failed, bounds: { minX: lo[0], maxX: hi[0], minZ: lo[2], maxZ: hi[2] } };
 }
 
 /** A ring's local bounds, known before any tile is fetched. */
@@ -198,6 +218,7 @@ function ringBounds(frame, lat, lon, zoom) {
  * heightAt reads the finest ring that covers a point (sea level beyond them all).
  */
 export async function buildTerrain(frame, lat, lon) {
+  await ensureKoppen(lat, lon, 6); // the climate map under all three rings
   const rings = await Promise.all(
     RINGS.map((spec, k) => buildRing(frame, lat, lon, spec, k ? ringBounds(frame, lat, lon, RINGS[k - 1].zoom) : null)),
   );
@@ -210,5 +231,13 @@ export async function buildTerrain(frame, lat, lon) {
     }
     return 0;
   }
-  return { mesh, heightAt, failed: rings[0].failed, bounds: rings[0].bounds };
+  /** Metres a point stands above its smoothed surroundings (for climbing the biome ladder). */
+  function reliefAt(x, z) {
+    for (const r of rings) {
+      const sm = r.smoothAt(x, z);
+      if (sm !== null) return r.heightAt(x, z) - sm;
+    }
+    return 0;
+  }
+  return { mesh, heightAt, reliefAt, failed: rings[0].failed, bounds: rings[0].bounds };
 }

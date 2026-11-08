@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { terrariumHeight, lonLatToTile, tileToLonLat, makeFrame, offset, distance, biomeFor, interimTemperature } from "../web/js/geo.js";
+import { terrariumHeight, lonLatToTile, tileToLonLat, makeFrame, offset, distance } from "../web/js/geo.js";
 import { sunPosition } from "../web/js/sun.js";
 import { generateCreature, TRIANGLE_CAP } from "../web/js/creature-graph.js";
 import { randomStats, parseStats, valid, BUDGET } from "../web/js/stats.js";
@@ -37,13 +37,6 @@ test("sun: overhead at the equator near the March equinox noon, down at midnight
   assert.ok(night.altitude < -85, `altitude ${night.altitude}`);
   const ny = sunPosition(new Date("2026-06-21T17:00:00Z"), 40.7, -74.0); // ~1 pm EDT, summer
   assert.ok(ny.altitude > 70 && ny.altitude < 74, `altitude ${ny.altitude}`);
-});
-
-test("temperature ladder: latitude sets the rung, elevation climbs it", () => {
-  assert.equal(biomeFor(interimTemperature(0, 0)), "tropical");
-  assert.equal(biomeFor(interimTemperature(45, 0)), "temperate");
-  assert.equal(biomeFor(interimTemperature(0, 4000)), "boreal");
-  assert.equal(biomeFor(interimTemperature(80, 0)), "ice");
 });
 
 test("every creature stays within 256 triangles, and seeds are deterministic", () => {
