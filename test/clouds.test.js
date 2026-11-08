@@ -49,3 +49,45 @@ test("sky noise is seeded and tiles seamlessly", () => {
   // The texture uses its full range.
   assert.ok(Math.min(...w) === 0 && Math.max(...w) === 255);
 });
+
+import { orographic, makeOrography } from "../web/js/weather.js";
+
+test("orography: windward slopes cloud up and rain, lee sides dry out", () => {
+  const flat = orographic(0.4, 0, 0), up = orographic(0.4, 0, 1500), down = orographic(0.4, 0, -1500);
+  assert.ok(orographic(0.4, 0.5, 0, 2500).cover < 0.2 && orographic(0.4, 0.5, 0, 2500).storm === 0, "behind a high barrier: dry");
+  assert.equal(flat.cover, 0.4);
+  assert.ok(up.cover > 0.85 && up.storm > 0.2, JSON.stringify(up));
+  assert.ok(down.cover < 0.1 && down.storm === 0, JSON.stringify(down));
+});
+
+test("a ridge under the westerlies: wet west face, rain shadow east, cap clouds on top", () => {
+  // A north-south ridge at 10°E, 3 km high and ~50 km wide, at 45°N (the westerlies blow east).
+  const ridge = (lat, lon) => 3000 * Math.max(0, 1 - Math.abs(lon - 10) / 0.3);
+  const t0 = 1762560000;
+  const mean = (lon) => {
+    let cover = 0, storm = 0, n = 0;
+    for (let lat = 44; lat <= 46; lat += 0.05) for (let k = 0; k < 6; k++) { const w = weatherAt(lat, lon, t0 + k * 7200, ridge); cover += w.cover; storm += w.storm; n++; }
+    return { cover: cover / n, storm: storm / n };
+  };
+  const plain = mean(8), windward = mean(9.85), lee = mean(10.2);
+  assert.ok(windward.cover > plain.cover + 0.15, JSON.stringify({ windward, plain }));
+  assert.ok(windward.storm > plain.storm, JSON.stringify({ windward, plain }));
+  assert.ok(lee.cover < plain.cover * 0.5, JSON.stringify({ lee, plain }));
+  const farLee = mean(11.0); // ~55 km downwind of the crest, on flat ground
+  assert.ok(farLee.cover < plain.cover * 0.75, `the rain shadow reaches far downwind: ${JSON.stringify({ farLee, plain })}`);
+  assert.ok(weatherAt(45, 10, t0, ridge).base > weatherAt(45, 8, t0, ridge).base + 2000, "the base rides up over the ridge");
+  // In the trades (blowing west) the same ridge is wet on its east face instead.
+  const tradeRidge = (lat, lon) => ridge(45, lon);
+  const meanTrade = (lon) => { let c = 0, n = 0; for (let lat = 14; lat <= 16; lat += 0.05) { c += weatherAt(lat, lon, t0, tradeRidge).cover; n++; } return c / n; };
+  assert.ok(meanTrade(10.15) > meanTrade(9.8), "trade winds: the east face is windward");
+});
+
+test("the sky's terrain texture: heights and a ~15 km blur, in 30 m steps", () => {
+  const spike = (x, z) => (Math.hypot(x, z) < 3000 ? 3000 : 600);
+  const o = makeOrography(spike, -60000, -60000, 120000, 64);
+  const at = (i, j, c) => o.data[(j * 64 + i) * 2 + c] * 30;
+  assert.equal(at(0, 0, 0), 600);
+  assert.ok(Math.abs(at(32, 32, 0) - 3000) <= 30); // the peak, sharp
+  assert.ok(at(32, 32, 1) < 1500 && at(32, 32, 1) > 600); // blurred into the broad land
+  assert.ok(o.min >= 590 && o.max < 1500);
+});

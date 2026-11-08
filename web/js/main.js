@@ -132,6 +132,7 @@ function swapWorld(next, place) {
   }
   world = next;
   scene.add(world.group);
+  skyPass.setWorld(world.terrain); // the land the clouds ride over
 }
 function regrow(lat, lon, onReady) {
   const token = ++worldToken;
@@ -583,7 +584,7 @@ function frame() {
     renderer.render(globe.scene, globe.camera);
   } else {
     curveUniform.value.copy(camera.position); // the Earth curves away from the eye
-    skyPass.update({ frame: world ? world.frame : makeFrame(view.ll.lat, view.ll.lon), camera, unix, sun: { altitude: sunState.altitude, dir }, day, fog: scene.fog, clouds: !underwater && !state.ride && !!world, underwater, steps: 20 + 44 * detail.scale, ground: world ? world.terrain.heightAt(state.pos.x, state.pos.z) - world.terrain.reliefAt(state.pos.x, state.pos.z) : 0 });
+    skyPass.update({ frame: world ? world.frame : makeFrame(view.ll.lat, view.ll.lon), camera, unix, sun: { altitude: sunState.altitude, dir }, day, fog: scene.fog, clouds: !underwater && !state.ride && !!world, underwater, steps: 20 + 44 * detail.scale });
     skyPass.render(renderer, scene, camera);
   }
   window.__dream.frames++;
