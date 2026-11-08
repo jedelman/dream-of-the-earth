@@ -12,10 +12,14 @@ import { buildSea } from "./water.js";
 import { buildGlobe } from "./globe.js";
 import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
-import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount } from "./ride.js";
+import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount, linesNear } from "./ride.js";
 import { buildSkyShader, skyColors, layerTransparent } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
+import { RANGE, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName } from "./interactions.js";
+import { sound } from "./sound.js";
+import { logLine } from "./eventlog.js";
+import { buildBursts } from "./bursts.js";
 import { buildSkyBeings } from "./skybeings.js";
 import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
 import { biomeFor, koppenCode } from "./biome.js";
@@ -166,7 +170,12 @@ const globe = buildGlobe();
 
 // ---- Input: keyboard, plus a touch stick and up/down buttons ----
 const keys = new Set();
-addEventListener("keydown", (e) => { keys.add(e.code); if (["Space", "ArrowUp", "ArrowDown"].includes(e.code)) e.preventDefault(); });
+addEventListener("keydown", (e) => {
+  keys.add(e.code);
+  sound.unlock();
+  if (["Space", "ArrowUp", "ArrowDown"].includes(e.code)) e.preventDefault();
+  if (e.code === "KeyM" && !e.repeat) logLine(sound.toggle() ? "Sound off." : "Sound on.", "note");
+});
 addEventListener("keyup", (e) => keys.delete(e.code));
 const touch = { turn: 0, thrust: 0, up: 0, id: null, x: 0, y: 0 };
 // Two fingers pinch to zoom; one finger steers.
@@ -176,6 +185,7 @@ const pinchDistance = () => { const [a, b] = [...pointers.values()]; return Math
 // A quick tap (or click) that doesn't drag: go there.
 let tapStart = null;
 canvas.addEventListener("pointerdown", (e) => {
+  sound.unlock();
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   canvas.setPointerCapture(e.pointerId);
   tapStart = pointers.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() } : null;
@@ -205,7 +215,7 @@ canvas.addEventListener("pointerup", (e) => {
   const tap = tapStart && tapStart.id === e.pointerId && performance.now() - tapStart.t < 400;
   tapStart = null;
   endTouch(e);
-  if (tap) goTo(e.clientX, e.clientY);
+  if (tap) onTap(e.clientX, e.clientY);
 });
 canvas.addEventListener("pointercancel", endTouch);
 for (const [id, v] of [["up", 1], ["down", -1]]) {
@@ -298,6 +308,8 @@ function step(dt) {
 function boardRide(c) {
   clearTarget();
   state.ride = startRide(c);
+  sound.whoosh();
+  logLine(highwayLine(c.line.cls.name, remainingMeters(state.ride) / 1000), "highway");
   state.hopCooldown = 0.8;
   world.group.visible = false;
   rideFx.group.visible = true;
@@ -334,6 +346,7 @@ function leaveRide(arrived) {
     rideFx.group.visible = false;
     camera.position.set(state.pos.x - -Math.sin(state.heading) * 85, state.pos.y + 28, state.pos.z - -Math.cos(state.heading) * 85);
     setStatus(arrived ? `you're at a node: ${nodeName(ll)}` : "");
+    logLine(arrived ? `You arrive at a node: ${nodeName(ll)}.` : "You step off the highway.", "highway");
     if (arrived) setTimeout(() => setStatus(""), 4000);
   });
 }
@@ -353,6 +366,7 @@ function teleport(l) {
   if (l.heading !== undefined) state.heading = (-l.heading * Math.PI) / 180;
   state.speed = 0; state.vy = 0; state.captureCooldown = 3;
   setStatus(`the dream carries you to ${l.name.split(" · ")[0]}…`);
+  logLine(`The dream carries you to ${l.name.split(" · ")[0]}.`, "note");
   regrow(l.lat, l.lon, (w) => {
     const p = w.frame.toLocal(l.lat, l.lon);
     swapWorld(w, { lat: l.lat, lon: l.lon, y: Math.max(0, w.terrain.heightAt(p.x, p.z)) + (l.alt ?? 350) });
@@ -367,12 +381,20 @@ function nodeName(ll) {
   return CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
 }
 
-// ---- Tap to move: find the ground under a tap, plan a way there, and steer ----
+// ---- Tap to move and to touch things: find what's under a tap, go there, and when you're
+// close enough it answers: trees shake, creatures squeak, sky beings hum, highways take you ----
 const tapRay = new THREE.Raycaster();
-/** The ground (or sea surface) under a screen point, on the curved Earth: { x, z, h } or null. */
-function groundAt(clientX, clientY) {
+const myName = creatureName(seed);
+const bursts = buildBursts(scene);
+let simT = 0, hopAt = -10, squeaks = 0, hums = 0;
+const shaken = new Map(); // how often each tree's been shaken, so it can say something new
+function aimTap(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   tapRay.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), camera);
+  return r;
+}
+/** The ground (or sea surface) along the tap ray, on the curved Earth: { x, z, h, t } or null. */
+function groundAt() {
   const o = tapRay.ray.origin, d = tapRay.ray.direction;
   // The surface as drawn: real height, dropped by d²/2R from the eye.
   const below = (t) => {
@@ -384,26 +406,87 @@ function groundAt(clientX, clientY) {
     if (below(t)) {
       for (let k = 0; k < 12; k++) { const m = (t0 + t) / 2; if (below(m)) t = m; else t0 = m; }
       const x = o.x + d.x * t, z = o.z + d.z * t;
-      return { x, z, h: world.terrain.heightAt(x, z) };
+      return { x, z, h: world.terrain.heightAt(x, z), t };
     }
     t0 = t;
     t += Math.max(3, t * 0.02);
   }
   return null;
 }
-function goTo(clientX, clientY) {
+/** A highway glowing along the tap ray (before it reaches the ground): { t, x, z, alt, line } or null. */
+function highwayAt() {
+  const o = tapRay.ray.origin, d = tapRay.ray.direction;
+  for (let t = 20, i = 0; i < 500 && t < 40000; i++, t += Math.max(10, t * 0.015)) {
+    const x = o.x + d.x * t, z = o.z + d.z * t, dx = x - camera.position.x, dz = z - camera.position.z;
+    const alt = o.y + d.y * t + (dx * dx + dz * dz) / TWO_R, ground = world.terrain.heightAt(x, z);
+    if (alt < Math.max(0, ground)) return null; // the land came first
+    const hAlt = highwayAltitude(ground);
+    if (Math.abs(alt - hAlt) > 140) continue;
+    const ll = world.frame.toLatLon(x, z);
+    const near = linesNear(ll.lat, ll.lon, -60); // inside the glow, not just the capture zone
+    if (near.length) return { t, x, z, alt: hAlt, line: near[0].line };
+  }
+  return null;
+}
+/** What a tap touched, nearest first: your creature, a butterfly, a sky being, a tree, a highway, or the ground. */
+function pick(clientX, clientY) {
+  const r = aimTap(clientX, clientY), found = [], v = new THREE.Vector3();
+  const me = tapRay.intersectObject(creature.group, true)[0];
+  if (me) found.push({ kind: "self", d: me.distance });
+  for (const b of world.insects.butterflies()) {
+    v.set(b.x, b.y, b.z);
+    const d = v.distanceTo(camera.position);
+    v.project(camera);
+    if (v.z > 1) continue;
+    if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 24) found.push({ kind: "butterfly", d, b });
+  }
+  const bh = tapRay.intersectObject(world.beings.group, true)[0];
+  if (bh) { let o = bh.object; while (o && !o.userData.being) o = o.parent; if (o) found.push({ kind: "being", d: bh.distance, being: o.userData.being, obj: o }); }
+  const tree = world.plants.pick(tapRay);
+  if (tree) found.push({ kind: "tree", d: tree.distance, rec: tree.rec });
+  const hw = highwayAt();
+  if (hw) found.push({ kind: "highway", d: hw.t, ...hw });
+  const g = groundAt();
+  if (g) found.push({ kind: "ground", d: g.t, ...g });
+  found.sort((a, b) => a.d - b.d);
+  return found[0] || null;
+}
+function onTap(clientX, clientY) {
   if (!world || state.ride || zoom > GLOBE_AT || rebuilding) return;
-  const hit = groundAt(clientX, clientY);
+  const hit = pick(clientX, clientY);
   if (!hit) return;
-  const p = state.pos;
-  // Anything with wings flies straight there; the rest find a way on foot and by water.
-  const fly = stats.fly > 0;
+  const p = state.pos, flat = (x, z) => Math.hypot(x - p.x, z - p.z), v = new THREE.Vector3();
+  if (hit.kind === "self") return squeak();
+  if (hit.kind === "tree") {
+    const reach = RANGE.tree + hit.rec.height * 0.4, act = () => shakeTree(hit.rec);
+    return flat(hit.rec.x, hit.rec.z) < reach ? act() : moveTo({ x: hit.rec.x, z: hit.rec.z, h: hit.rec.y + hit.rec.height * 0.9 }, { range: reach * 0.8, act });
+  }
+  if (hit.kind === "butterfly") {
+    const b = hit.b, act = () => chirp(hit.b.k);
+    return Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z) < RANGE.butterfly ? act() : moveTo({ x: b.x, z: b.z, h: b.y }, { range: RANGE.butterfly * 0.6, act });
+  }
+  if (hit.kind === "being") {
+    hit.obj.getWorldPosition(v);
+    const act = () => humWith(hit.being);
+    if (v.distanceTo(p) < RANGE.being) return act();
+    logLine("The sky being is too far off to hear you. You set off toward it.", "sky");
+    return moveTo({ x: v.x, z: v.z, h: world.terrain.heightAt(v.x, v.z) }, { range: RANGE.being * 0.5, act, alt: v.y - 400 });
+  }
+  if (hit.kind === "highway") {
+    const act = () => boardTapped(hit.line);
+    return flat(hit.x, hit.z) < RANGE.highway ? act() : moveTo({ x: hit.x, z: hit.z, h: hit.alt }, { range: RANGE.highway * 0.7, act, alt: hit.alt });
+  }
+  moveTo(hit);
+}
+/** Set off for a point. Anything with wings flies straight; the rest find a way on foot and by water. */
+function moveTo(hit, { range, act, alt } = {}) {
+  const p = state.pos, fly = stats.fly > 0;
   const pts = fly ? [{ x: hit.x, z: hit.z }] : planPath({ x: p.x, z: p.z }, hit, world.terrain.heightAt, sp);
-  if (!pts) { setStatus("no way there on foot"); setTimeout(() => setStatus(""), 2500); return; }
-  state.target = { fly, ground: Math.max(0, hit.h), pts: pts.map((q) => world.frame.toLatLon(q.x, q.z)), idx: 0 };
+  if (!pts) { logLine("There's no way there on foot.", "note"); return; }
+  state.target = { fly, ground: Math.max(0, hit.h ?? 0), range, act, alt, pts: pts.map((q) => world.frame.toLatLon(q.x, q.z)), idx: 0 };
   routeDots.visible = true;
 }
-function clearTarget() { state.target = null; routeDots.visible = false; }
+function clearTarget() { if (state.target) state.target = null; routeDots.visible = false; }
 /** Steering toward the next waypoint, as if from the controls: { turn, thrust, up } or null. */
 function autopilot() {
   const tg = state.target;
@@ -412,6 +495,7 @@ function autopilot() {
   const wp = world.frame.toLocal(tg.pts[tg.idx].lat, tg.pts[tg.idx].lon);
   const dx = wp.x - p.x, dz = wp.z - p.z, dist = Math.hypot(dx, dz);
   if (!last && dist < 18) { tg.idx++; return autopilot(); }
+  if (last && tg.act && dist < tg.range) { const act = tg.act; clearTarget(); act(); return null; }
   if (last && dist < 6) {
     // There. A flyer settles down onto it; then the controls are yours again.
     if (!tg.fly || p.y - tg.ground < 3 || state.mode !== "air") { clearTarget(); return null; }
@@ -425,10 +509,57 @@ function autopilot() {
   if (tg.fly) {
     const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
     const ahead = Math.max(0, world.terrain.heightAt(p.x, p.z), world.terrain.heightAt(p.x + fx * 120, p.z + fz * 120));
-    const cruise = last && dist < 220 ? tg.ground + 2 : Math.max(ahead + 70, Math.min(p.y, ahead + 400));
+    const cruise = tg.alt !== undefined ? Math.max(tg.alt, ahead + 70) : last && dist < 220 ? tg.ground + 2 : Math.max(ahead + 70, Math.min(p.y, ahead + 400));
     up = Math.max(-1, Math.min(1, (cruise - p.y) / 25));
   }
   return { turn, thrust, up };
+}
+
+// ---- What things do when you reach them ----
+function squeak() {
+  sound.squeak(1.25 / graph.scale);
+  hopAt = simT;
+  const at = state.pos.clone();
+  at.y += 4 * graph.scale;
+  bursts.emit({ at, colors: [new THREE.Color(0xff9ec7), new THREE.Color(0xfff3b0)], n: 14, spread: 2.5, up: 4, fall: 2, life: 1.2 });
+  logLine(selfLine(myName, squeaks++), "creature");
+}
+function shakeTree(rec) {
+  const n = shaken.get(rec.seed) || 0;
+  shaken.set(rec.seed, n + 1);
+  world.plants.shake(rec, simT, rec.species === "sequoiadendron" ? 0.008 : rec.species === "carnegiea" ? 0 : 0.06);
+  logLine(treeLine(rec.species, rec.seed, rec.blossom, n), "tree");
+  if (rec.species === "carnegiea") { sound.squeak(1.7); return; } // ouch
+  sound.rustle();
+  const crown = new THREE.Vector3(rec.x, rec.y + rec.height * 0.75, rec.z), leaf = new THREE.Color(...rec.c);
+  const fluff = rec.species === "ceiba" && !rec.blossom;
+  const colors = fluff ? [new THREE.Color(0xfffaf0), new THREE.Color(0xf3ecff)] : [leaf, leaf.clone().offsetHSL(0.03, 0, 0.12)];
+  bursts.emit({ at: crown, colors, n: fluff ? 30 : 22, spread: Math.max(2, rec.height * 0.3), up: 0.5, fall: fluff ? 0.5 : 1.4, life: fluff ? 7 : 5, ground: rec.y });
+  if (rec.species === "cocos" || rec.species === "picea" || rec.species === "quercus") {
+    sound.thud();
+    bursts.emit({ at: crown, colors: [new THREE.Color(0x7a4a2a)], n: rec.species === "cocos" ? 1 : 4, spread: 2, up: 0, fall: 14, life: 4, ground: rec.y });
+  }
+}
+function chirp(k) {
+  const b = world.insects.butterflies().find((q) => q.k === k);
+  if (!b) return;
+  sound.chirp();
+  bursts.emit({ at: new THREE.Vector3(b.x, b.y, b.z), colors: [new THREE.Color().setHSL(b.hue, 0.95, 0.65), new THREE.Color(0xffffff)], n: 12, spread: 1.5, up: 2, fall: 0.8, life: 1.6 });
+  logLine(butterflyLine(b.hue, Math.round(b.seed * 1e6), squeaks++), "creature");
+}
+function humWith(being) {
+  sound.hum();
+  const at = state.pos.clone();
+  at.y += 6;
+  bursts.emit({ at, colors: [new THREE.Color(0xc9b6ff), new THREE.Color(0x9ef0ff)], n: 18, spread: 6, up: 1, fall: 0.4, life: 3 });
+  logLine(beingLine(being.seed, hums++), "sky");
+}
+function boardTapped(line) {
+  const ll = world.frame.toLatLon(state.pos.x, state.pos.z);
+  const c = linesNear(ll.lat, ll.lon, 3000).find((q) => q.line.i === line.i);
+  if (!c) { logLine("The highway is out of reach.", "note"); return; }
+  const tg = tangentEN(line, c.t, 1), fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
+  boardRide({ line, t: c.t, dir: tg.e * fx - tg.n * fz >= 0 ? 1 : -1 });
 }
 // The way there, drawn as golden dots, and a ring where you're going.
 const ROUTE_MAX = 64;
@@ -572,6 +703,8 @@ function frame() {
   }
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
   drawRoute(t);
+  simT = t;
+  bursts.update(dt);
   // From far away: a sparkle on you, and the highways as thin lines.
   marker.visible = zoom > 700;
   marker.position.copy(view.pos);
@@ -602,7 +735,8 @@ function worldView(dt, t) {
   step(dt);
   if (state.ride) return rideView(0, t); // boarded this frame
   const p = state.pos;
-  creature.group.position.set(p.x, p.y + (state.mode === "water" ? Math.sin(t * 2) * 0.4 : 0), p.z);
+  const hopAge = t - hopAt, hopY = hopAge < 0.45 ? Math.sin((Math.PI * hopAge) / 0.45) * 3 * graph.scale : 0;
+  creature.group.position.set(p.x, p.y + hopY + (state.mode === "water" ? Math.sin(t * 2) * 0.4 : 0), p.z);
   creature.group.rotation.y = state.heading;
   creature.update(t, { mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / 60) });
 
@@ -642,7 +776,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail };
+window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null };
 setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);

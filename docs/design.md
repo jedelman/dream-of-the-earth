@@ -210,7 +210,27 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
     walks round a lake and a strong one crosses it. No way there: it says so.
   - **Any key, drag or ▲▼ takes the controls back.** Boarding a highway or picking a landmark clears the target.
     Waypoints are kept as lat/lon, so a world regrow mid-trip doesn't lose them.
-  - **Not yet:** tapping a highway or another creature does nothing special; flyers don't path around storms.
+  - **Not yet:** flyers don't path around storms.
+- **Touching things (built 11-08, Jason: "Tap to move, but also when within range, maybe trees shake, creatures
+  squeak, and you get on the highway? Maybe also a little text to describe the results - a light on screen log a
+  la world of warcraft or minecraft"):** a tap now finds the nearest thing along its ray: your own creature, a
+  butterfly (found on screen from the same figure-eight the shader flies), a sky being, a tree (instanced meshes
+  raycast to their records), a highway's glow (the ray marched against `linesNear` at highway height), or the
+  ground. In range, it answers at once; otherwise you go there by tap-to-move and it answers when you arrive.
+  - **Trees** (within 20 m plus 40% of their height) shake: a dying wobble in the plant shader for that one
+    instance, a rustle, and what falls: leaves in the tree's own colour, kapok fluff that drifts like snow, a
+    coconut or acorns or cones that thud, petals from a tree in flower. A saguaro doesn't shake (ouch); a giant
+    sequoia barely notices. Grass and moss don't answer: a tap on them means "go there".
+  - **Your creature** squeaks (higher for smaller creatures), hops, and sparkles; it has a name now, grown from
+    its seed like everything else (seed 7 is Nyo).
+  - **Butterflies** chirp and sparkle in their own colour. **Sky beings** (within 3 km) hum back, two low voices
+    slightly apart. **Highways** (within 170 m) take you aboard, any creature, wings or not, in the direction
+    closest to your heading.
+  - **Sounds** are synthesized with WebAudio (no files), start on the first tap or key, and M mutes (remembered).
+  - **The log:** a few lines bottom-left that fade after 7 s, coloured by kind (trees green, creatures pink,
+    highways gold, sky lavender). It also tells you about boarding and leaving highways, arriving at nodes,
+    and landmark trips. Lines vary by hash, so the same tree says the same thing to everyone, and shaking it
+    again can say something new.
 
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
