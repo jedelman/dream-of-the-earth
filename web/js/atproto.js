@@ -5,7 +5,7 @@
 // Nothing in this file writes. Everything fetched is untrusted: ids are checked,
 // replies are size-capped, and records go through parseArtifact.
 import { placesAround } from "./places.js";
-import { NSID, parseArtifact, fadeOf } from "./artifacts.js";
+import { NSID, WORLD_URL, parseArtifact, fadeOf } from "./artifacts.js";
 
 export const CONSTELLATION = "https://constellation.microcosm.blue";
 export const APPVIEW = "https://public.api.bsky.app";
@@ -43,12 +43,12 @@ export function pdsOf(did) {
   return pdsCache.get(did);
 }
 
-/** The records that point at one place: [{ did, rkey }], newest first, at most 300. */
-export async function linksTo(placeUrl) {
+/** The records that point at a URL from one field: [{ did, rkey }], newest first, at most pages × 100. */
+export async function linksTo(url, field = "place", pages = 3) {
   const out = [];
   let cursor = null;
-  for (let page = 0; page < 3; page++) {
-    const q = new URLSearchParams({ subject: placeUrl, source: `${NSID}:place`, limit: "100" });
+  for (let page = 0; page < pages; page++) {
+    const q = new URLSearchParams({ subject: url, source: `${NSID}:${field}`, limit: "100" });
     if (cursor) q.set("cursor", cursor);
     const r = await getJson(`${CONSTELLATION}/xrpc/blue.microcosm.links.getBacklinks?${q}`);
     for (const x of r.records || []) if (x && x.collection === NSID && DID_RE.test(x.did) && RKEY_RE.test(x.rkey)) out.push({ did: x.did, rkey: x.rkey });
@@ -112,16 +112,8 @@ async function pool(items, n, job) {
   return out;
 }
 
-/**
- * What the viewer's mutuals (and the viewer) have left around a point: [{ uri, did, rkey, handle, own, ...artifact }].
- * Faded ones are left out. Places that fail to answer are skipped, not fatal.
- */
-export async function discover({ viewer, lat, lon, radiusM = 16000, nowS = Date.now() / 1000 }) {
-  if (!DID_RE.test(viewer)) return [];
-  const cells = placesAround(lat, lon, radiusM);
-  const found = (await pool(cells, 6, (c) => linksTo(c.url))).flatMap((x) => x || []);
-  const byMaker = new Map();
-  for (const l of found) { if (!byMaker.has(l.did)) byMaker.set(l.did, new Set()); byMaker.get(l.did).add(l.rkey); }
+/** Read, check and name the wanted records: the artifacts that are still standing. */
+async function gather(viewer, byMaker, nowS) {
   const ok = await mutualsAmong(viewer, [...byMaker.keys()]);
   const wanted = [];
   for (const [did, rkeys] of byMaker) if (ok.has(did)) for (const rkey of [...rkeys].sort().reverse().slice(0, PER_MAKER)) wanted.push({ did, rkey });
@@ -134,4 +126,26 @@ export async function discover({ viewer, lat, lon, radiusM = 16000, nowS = Date.
     out.push({ ...a, did: w.did, rkey: w.rkey, uri: `at://${w.did}/${NSID}/${w.rkey}`, handle: names.get(w.did) || null, own: w.did === viewer });
   });
   return out;
+}
+const group = (links) => {
+  const byMaker = new Map();
+  for (const l of links) { if (!byMaker.has(l.did)) byMaker.set(l.did, new Set()); byMaker.get(l.did).add(l.rkey); }
+  return byMaker;
+};
+
+/** Everything the viewer's mutuals (and the viewer) have left anywhere in the dream, still standing. */
+export async function discoverWorld({ viewer, nowS = Date.now() / 1000 }) {
+  if (!DID_RE.test(viewer)) return [];
+  return gather(viewer, group(await linksTo(WORLD_URL, "world", 10)), nowS);
+}
+
+/**
+ * What the viewer's mutuals (and the viewer) have left around a point: [{ uri, did, rkey, handle, own, ...artifact }].
+ * Faded ones are left out. Places that fail to answer are skipped, not fatal.
+ */
+export async function discover({ viewer, lat, lon, radiusM = 16000, nowS = Date.now() / 1000 }) {
+  if (!DID_RE.test(viewer)) return [];
+  const cells = placesAround(lat, lon, radiusM);
+  const found = (await pool(cells, 6, (c) => linksTo(c.url))).flatMap((x) => x || []);
+  return gather(viewer, group(found), nowS);
 }

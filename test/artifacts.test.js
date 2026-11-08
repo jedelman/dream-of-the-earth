@@ -96,3 +96,22 @@ test("a cairn grows the same from the same seed, and stays under its triangle ca
   }
   assert.ok(shapes.size > 20, "seeds give many different cairns");
 });
+
+import { metresBetween, distanceText, byDistance, WORLD_URL } from "../web/js/artifacts.js";
+test("every cairn also points at the world, so one query lists them all", () => {
+  const r = makeCairn({ lat: 1, lon: 2, seed: 3, hue: 4, now: new Date("2026-11-08T00:00:00Z") });
+  assert.equal(r.world, WORLD_URL);
+  assert.ok(parseArtifact(r, Date.parse("2026-11-08T00:00:00Z") / 1000), "with the world link");
+  const { world, ...older } = r;
+  assert.ok(parseArtifact(older, Date.parse("2026-11-08T00:00:00Z") / 1000), "records from before the link still parse");
+  assert.equal(parseArtifact({ ...r, world: "https://example.com/" }, Date.parse("2026-11-08T00:00:00Z") / 1000), null, "a different world is refused");
+});
+test("the list: nearest first, distances in words", () => {
+  assert.ok(Math.abs(metresBetween(0, 0, 0, 1) - 111195) < 50, "a degree of longitude at the equator");
+  assert.equal(distanceText(43), "40 m");
+  assert.equal(distanceText(3240), "3.2 km");
+  assert.equal(distanceText(5388123), "5,388 km");
+  const list = byDistance([{ lat: -3.1, lon: -60 }, { lat: 44.01, lon: -72.7 }], 44, -72.7);
+  assert.equal(list[0].lat, 44.01);
+  assert.ok(list[0].metres < 2000 && list[1].metres > 5e6);
+});

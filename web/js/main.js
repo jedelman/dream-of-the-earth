@@ -19,8 +19,8 @@ import { planPath } from "./pathfind.js";
 import { RANGE, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
 import { buildGlints } from "./glints.js";
 import { buildCairns } from "./cairns.js";
-import { discover, didOf, handlesOf, getRecord } from "./atproto.js";
-import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm } from "./artifacts.js";
+import { discover, discoverWorld, didOf, handlesOf, getRecord } from "./atproto.js";
+import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm, byDistance, metresBetween } from "./artifacts.js";
 import { account, isReturning, takeReturn } from "./account.js";
 import { buildMaker } from "./maker.js";
 import { sound } from "./sound.js";
@@ -105,6 +105,27 @@ layerTransparent(rideFx.group);
 // ---- The creature ----
 const graph = generateCreature(seed);
 const creature = buildCreature(graph, stats);
+// Where it looks from: just in front of its eyes (or its head, or the front of its body), in its own units.
+const eyeLocal = (() => {
+  const eyes = graph.parts.filter((p) => p.kind === "eye"), heads = graph.parts.filter((p) => p.kind === "head");
+  const src = eyes.length ? eyes : heads;
+  if (!src.length) { const b = graph.parts.find((p) => p.kind === "body"); return new THREE.Vector3(0, (b?.size[1] ?? 3) * 0.4, -(b?.size[2] ?? 5) * 0.6 - 0.5); }
+  const avg = (k) => src.reduce((n, p) => n + p.pos[k], 0) / src.length;
+  return new THREE.Vector3(avg(0), avg(1) + 0.2, Math.min(...src.map((p) => p.pos[2] - (p.size?.[2] ?? 1))) - 0.6);
+})();
+/** How see-through the creature is (1 = solid). Translucent, it draws after the sky, or the sky pass would paint over it. */
+let creatureOpacity = 1;
+function fadeCreature(o) {
+  if (Math.abs(o - creatureOpacity) < 0.004) return;
+  const was = creatureOpacity < 1, now = o < 0.999;
+  creatureOpacity = now ? o : 1;
+  creature.group.traverse((m) => {
+    if (m.isPoints) m.visible = creatureOpacity > 0.5; // its gleam sparkles: from inside its head they'd fill the view
+    if (!m.isMesh) return;
+    if (was !== now) { m.material.transparent = now; m.material.depthWrite = !now; m.material.needsUpdate = true; m.layers.set(now ? TRANSPARENT_LAYER : 0); }
+    m.material.opacity = creatureOpacity;
+  });
+}
 scene.add(creature.group);
 layerTransparent(creature.group);
 // The camera is run by a director (director.js): framing by what you're doing, and shots for what happens.
@@ -484,6 +505,12 @@ function pick(clientX, clientY) {
   return found[0] || null;
 }
 function onTap(clientX, clientY) {
+  if (zoom > GLOBE_AT && !state.ride && !rebuilding) {
+    // The globe is a map: tap a cairn's dot to go there.
+    const r = canvas.getBoundingClientRect(), a = globe.pick(clientX - r.left, clientY - r.top, r.width, r.height);
+    if (a) travelTo(a);
+    return;
+  }
   if (!world || state.ride || zoom > GLOBE_AT || rebuilding) return;
   director.input(simT);
   const hit = pick(clientX, clientY);
@@ -737,6 +764,7 @@ const people = { viewer: null, handle: null }; // whose mutuals' cairns to show 
 const mine = new Map(); // uri -> artifact you made or renewed this session (the index can lag a minute or two)
 const gone = new Set(); // uris you took down this session
 let artifacts = [], artifactsAt = -Infinity, discovering = false, cairnsWorld = null;
+let everywhere = [], everywhereAt = -Infinity, listing = false; // every mutual's cairn, anywhere (the list and the globe)
 const realNow = () => Date.now() / 1000; // artifacts fade on the real clock, whatever ?t= says
 async function refreshArtifacts() {
   if (!people.viewer || !world || discovering) return;
@@ -748,12 +776,41 @@ async function refreshArtifacts() {
     if (w !== world || viewer !== people.viewer) return; // the world regrew, or someone else is looking: next time
     const byUri = new Map(found.filter((a) => !gone.has(a.uri)).map((a) => [a.uri, a]));
     for (const [uri, a] of mine) if (a.did === viewer && (!byUri.has(uri) || byUri.get(uri).since < a.since)) byUri.set(uri, a);
+    for (const a of everywhere) if (!byUri.has(a.uri) && metresBetween(o.lat, o.lon, a.lat, a.lon) < 16000) byUri.set(a.uri, a); // the index may lag
     showArtifacts([...byUri.values()]);
   } catch (e) {
     console.warn("artifacts:", e.message);
   } finally {
     discovering = false;
   }
+}
+/** Every cairn your mutuals (and you) left anywhere: the CAIRNS list and the dots on the globe. */
+async function refreshEverywhere() {
+  if (!people.viewer || listing) return;
+  listing = true;
+  everywhereAt = simT;
+  const viewer = people.viewer;
+  try {
+    const found = await discoverWorld({ viewer });
+    if (viewer !== people.viewer) return;
+    const byUri = new Map(found.filter((a) => !gone.has(a.uri)).map((a) => [a.uri, a]));
+    for (const [uri, a] of mine) if (a.did === viewer && (!byUri.has(uri) || byUri.get(uri).since < a.since)) byUri.set(uri, a);
+    setEverywhere([...byUri.values()]);
+  } catch (e) {
+    console.warn("cairns:", e.message);
+  } finally {
+    listing = false;
+  }
+}
+function setEverywhere(list) {
+  everywhere = list;
+  globe.setMarks(everywhere);
+  maker.setCount(everywhere.length);
+}
+/** Off to a cairn: arrive 30 m south and 20 m west of it, facing north, so it stands ahead and to the right. */
+function travelTo(a) {
+  const dLat = -30 / 111320, dLon = -20 / (111320 * Math.max(0.05, Math.cos((a.lat * Math.PI) / 180)));
+  teleport({ name: a.own ? "your cairn" : a.handle ? `@${a.handle}'s cairn` : "a cairn", lat: a.lat + dLat, lon: a.lon + dLon, alt: 10, heading: 0, zoom: 85 });
 }
 function showArtifacts(list) {
   artifacts = list;
@@ -762,7 +819,7 @@ function showArtifacts(list) {
   scanAt = 0;
 }
 function setViewer(did, handle) {
-  if (did !== people.viewer) { artifacts = []; cairns.set([], world || { frame: null }); }
+  if (did !== people.viewer) { artifacts = []; cairns.set([], world || { frame: null }); setEverywhere([]); everywhereAt = -Infinity; }
   people.viewer = did;
   people.handle = handle;
   maker.setPerson({ did, handle, signedIn: !!did && account.did === did });
@@ -794,6 +851,13 @@ function cairnSpot() {
   return { x: state.pos.x + (fx * Math.cos(a) + rx * Math.sin(a)) * d, z: state.pos.z + (fz * Math.cos(a) + rz * Math.sin(a)) * d };
 }
 const maker = buildMaker({
+  cairns: () => {
+    if (simT - everywhereAt > 30) refreshEverywhere(); // fresh enough; the sheet redraws when it lands
+    const ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn, nowS = realNow();
+    return byDistance(everywhere, ll.lat, ll.lon).map((a) => ({ a, metres: a.metres, age: ago(a.since, nowS) }));
+  },
+  travel: (a) => travelTo(a),
+  globe: () => { zoom = 16e6; logLine("The whole Earth. Tap a cairn's dot to go there.", "note"); },
   look: (handle) => lookAs(handle),
   signIn: (handle) => account.signIn(handle, hereQuery()),
   signOut: async () => { await account.signOut(); logLine("Signed out of Bluesky.", "note"); },
@@ -814,6 +878,7 @@ const maker = buildMaker({
     const a = parseArtifact(record, realNow()), rkey = String(r.uri).split("/").pop();
     mine.set(r.uri, { ...a, did: account.did, rkey, uri: r.uri, handle: people.handle, own: true });
     showArtifacts([...artifacts.filter((x) => x.uri !== r.uri), mine.get(r.uri)]);
+    setEverywhere([...everywhere.filter((x) => x.uri !== r.uri), mine.get(r.uri)]);
     sound.chime();
     logLine("You stack a cairn. It will stand here for a moon.", "artifact");
   },
@@ -824,6 +889,7 @@ const maker = buildMaker({
     const a = { ...e.a, ...parseArtifact(next, realNow()) };
     mine.set(a.uri, a);
     showArtifacts(artifacts.map((x) => (x.uri === a.uri ? a : x)));
+    setEverywhere(everywhere.map((x) => (x.uri === a.uri ? a : x)));
     sound.chime();
     logLine("You restack your cairn. It will stand another moon.", "artifact");
   },
@@ -832,6 +898,7 @@ const maker = buildMaker({
     gone.add(e.a.uri);
     mine.delete(e.a.uri);
     showArtifacts(artifacts.filter((x) => x.uri !== e.a.uri));
+    setEverywhere(everywhere.filter((x) => x.uri !== e.a.uri));
     logLine("You unstack your cairn, stone by stone.", "artifact");
   },
 });
@@ -1010,6 +1077,7 @@ function frame() {
   bursts.update(dt);
   if (world && cairnsWorld !== world) { cairns.place(world); cairnsWorld = world; artifactsAt = -Infinity; } // regrown: re-place, then look again
   if (people.viewer && world && !rebuilding && simT - artifactsAt > 90) refreshArtifacts();
+  if (people.viewer && simT - everywhereAt > 180) refreshEverywhere();
   cairns.update(t, realNow());
   updateReach(t, dt);
   // From far away: a sparkle on you, and the highways as thin lines.
@@ -1038,6 +1106,7 @@ function cameraRig() {
   return { back: zoom * Math.cos(pitch), up: zoom * Math.sin(pitch), near: zoom < 400 };
 }
 
+const UP_AXIS = new THREE.Vector3(0, 1, 0);
 function worldView(dt, t) {
   step(dt);
   if (state.ride) return rideView(0, t); // boarded this frame
@@ -1050,7 +1119,11 @@ function worldView(dt, t) {
   // The camera: the director frames what you're doing.
   let goal = null;
   if (state.target) { const g = state.target.pts[state.target.pts.length - 1], q = world.frame.toLocal(g.lat, g.lon); goal = new THREE.Vector3(q.x, state.target.ground, q.z); }
-  director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: graph.scale });
+  // Zoomed all the way in, you look through its eyes, and it fades so you can see past it.
+  const eyes = THREE.MathUtils.smoothstep(34 - zoom, 0, 17);
+  fadeCreature(1 - 0.85 * eyes);
+  const eye = eyeLocal.clone().multiplyScalar(graph.scale).applyAxisAngle(UP_AXIS, state.heading);
+  director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: graph.scale, eyes, eye });
   const underwater = camera.position.y < 0 && world.terrain.heightAt(camera.position.x, camera.position.z) < camera.position.y;
   return { ll: world.frame.toLatLon(p.x, p.z), pos: p, underwater };
 }
@@ -1058,6 +1131,7 @@ function worldView(dt, t) {
 // In ley-space the frame is centred on the rider every frame.
 const rideOrigin = new THREE.Vector3(0, LEY_ALT, 0);
 function rideView(dt, t) {
+  fadeCreature(1); // solid again on a highway
   rideStep(dt);
   const r = state.ride;
   if (!r) return worldView(0, t);
@@ -1073,7 +1147,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, spawn, triangles: creature.triangles, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(); return globe.pick(x - r.left, y - r.top, r.width, r.height)?.handle ?? null; }, everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 setStatus("dreaming…");
 regrow(spawn.lat, spawn.lon, (w) => {
   swapWorld(w);

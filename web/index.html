@@ -34,7 +34,15 @@
   /* Bluesky: the button under LANDMARKS, and its sheet, dropping from it (the middle stays clear for the cairn you're choosing) */
   #me { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 30px); font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); padding: 4px 8px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
   #me.on { color: var(--gold); }
-  .sheet { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 62px); max-height: calc(100vh - 140px); overflow-y: auto; width: min(calc(100vw - 20px), 380px); box-sizing: border-box; padding: 14px 16px 12px; color: var(--ink); background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 10px 30px rgba(0, 0, 0, .45); font: 12px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; z-index: 5; }
+  #cairns { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 58px); font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #ffe3a3; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
+  .sheet ul.cairns { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .sheet ul.cairns li { display: grid; grid-template-columns: 14px 1fr auto; grid-template-areas: "sw who go" "sw where go" "sw what go"; column-gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid rgba(255, 211, 77, .18); }
+  .sheet ul.cairns .swatch { grid-area: sw; width: 10px; height: 10px; align-self: start; margin-top: 4px; }
+  .sheet ul.cairns .who { grid-area: who; color: var(--gold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet ul.cairns .where { grid-area: where; font-size: 11px; opacity: .75; }
+  .sheet ul.cairns .what { grid-area: what; font-size: 11px; color: #ffe3a3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet ul.cairns button.go { grid-area: go; padding: 5px 12px; }
+  .sheet { position: fixed; right: max(10px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 88px); max-height: calc(100vh - 140px); overflow-y: auto; width: min(calc(100vw - 20px), 380px); box-sizing: border-box; padding: 14px 16px 12px; color: var(--ink); background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 10px 30px rgba(0, 0, 0, .45); font: 12px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; z-index: 5; }
   .sheet h2 { margin: 0 0 8px; font-size: 13px; color: var(--gold); letter-spacing: .05em; font-weight: normal; }
   .sheet p { margin: 6px 0; } .sheet .small { opacity: .72; font-size: 11px; } .sheet .msg { color: #ffb0b0; min-height: 0; } .sheet .msg:empty { display: none; }
   .sheet .quote { color: #ffe3a3; }
@@ -58,6 +66,7 @@
 <div id="hud" aria-live="off"></div>
 <select id="places" aria-label="Go to a landmark"><option value="" selected disabled>LANDMARKS ▾</option></select>
 <button id="me" aria-haspopup="dialog" aria-expanded="false">BLUESKY ▾</button>
+<button id="cairns" aria-haspopup="dialog" aria-expanded="false" hidden>CAIRNS ▾</button>
 <div id="sheet" class="sheet" role="dialog" aria-label="Bluesky" hidden></div>
 <div id="status" role="status" hidden></div>
 <div id="log" aria-live="polite"></div>
