@@ -30,9 +30,10 @@ const triCount = (g) => (g.index ? g.index.count : g.attributes.position.count) 
 
 /**
  * Returns { group, update(t, motion), triangles, size (metres per body unit), foot (metres from its origin down to
- * its lowest point, so it can stand on the ground) }. worn: the things it wears (wearables.js), by kind.
+ * its lowest point, so it can stand on the ground) }. worn: the things it wears (wearables.js), by kind; looks: the
+ * rhizome's looks it has (halo, motes, sheen).
  */
-export function buildCreature(graph, stats, worn = []) {
+export function buildCreature(graph, stats, worn = [], looks = []) {
   const group = new THREE.Group();
   const gleam = stats.gleam / 6;
   const animated = [];
@@ -90,7 +91,7 @@ export function buildCreature(graph, stats, worn = []) {
   group.updateMatrixWorld(true);
   const box = new THREE.Box3();
   group.traverse((o) => { if (o.isMesh) box.expandByObject(o); });
-  const wornUpdate = wearOn(graph.parts, pivots, box, worn);
+  const wornUpdate = wearOn(graph.parts, pivots, box, worn, looks);
   const size = sizeOf(graph);
   group.scale.setScalar(size);
   const foot = Math.max(0, -box.min.y) * size;

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { speeds, POWER, randomStats, valid, BUDGET, parseStats, maxSlopeDeg, SLOPE_LIMIT, sightOf } from "../web/js/stats.js";
 import { mulberry32 } from "../web/js/rng.js";
 
-const at = (n) => speeds({ climb: n, swim: n, run: n, gleam: 0, perception: 0 });
+const at = (n) => speeds({ climb: n, swim: n, run: n, gleam: 0, perception: 0, fly: n });
 
 test("every speed is a power law in its stat: v = v0 · (1 + stat)^p", () => {
   for (const k of ["run", "jump", "swim", "dive", "fly", "climb"]) {
@@ -40,10 +40,15 @@ test("random stats spend the whole budget within the rules", () => {
   }
 });
 
-test("five stats now; the old four (fly first) read as climb, swim, run, gleam with no perception", () => {
-  assert.deepEqual(parseStats("1,5,4,2"), { climb: 1, swim: 5, run: 4, gleam: 2, perception: 0 });
-  assert.deepEqual(parseStats("2,2,2,2,4"), { climb: 2, swim: 2, run: 2, gleam: 2, perception: 4 });
+test("six stats now (fly last, back with Wings); five read with no fly; the old four (fly first) as climb, swim, run, gleam", () => {
+  assert.deepEqual(parseStats("1,5,4,2"), { climb: 1, swim: 5, run: 4, gleam: 2, perception: 0, fly: 0 });
+  assert.deepEqual(parseStats("2,2,2,2,4"), { climb: 2, swim: 2, run: 2, gleam: 2, perception: 4, fly: 0 });
+  assert.deepEqual(parseStats("1,1,2,1,4,3"), { climb: 1, swim: 1, run: 2, gleam: 1, perception: 4, fly: 3 });
   assert.equal(parseStats("6,6,6,6,6"), null);
+  assert.deepEqual(parseStats("9,0,3,0,0,0").climb, 9, "someone's raised ceiling reads");
+  assert.equal(parseStats("10,0,2,0,0,0"), null, "nothing past nine");
+  assert.ok(!valid({ climb: 7, swim: 0, run: 5, gleam: 0, perception: 0, fly: 0 }, {}), "seven needs a raised ceiling");
+  assert.ok(valid({ climb: 7, swim: 0, run: 5, gleam: 0, perception: 0, fly: 0 }, { climb: 1 }));
   assert.equal(parseStats("1,2,3"), null);
   // A seed's creature keeps its old stats (the same draw), fly becoming climb.
   assert.deepEqual(randomStats(mulberry32(7)), randomStats(mulberry32(7)));

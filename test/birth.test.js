@@ -6,7 +6,7 @@ import { take, tookHere, countOf, boostsOf, ITEMS } from "../web/js/inventory.js
 import { valid } from "../web/js/stats.js";
 import { nearestNewMoon, SYNODIC_S } from "../web/js/moon.js";
 
-const s = { climb: 2, swim: 4, run: 3, gleam: 1, perception: 2 };
+const s = { climb: 2, swim: 4, run: 3, gleam: 1, perception: 2, fly: 0 };
 
 test("a creature from before births is born where its stats lean (run on a tie)", () => {
   assert.equal(bornOf(s), "sea");
@@ -23,17 +23,20 @@ test("the stat a birth puts to sleep counts as nothing until its waker is worn; 
   assert.equal(effective(s, "land", []).swim, 0);
   assert.equal(effective(s, "land", ["tidefin"]).swim, 4);
   assert.equal(effective(s, "sea", []).run, 0);
-  assert.equal(effective(s, "sea", [], { perception: 2 }).perception, 4);
-  assert.equal(effective({ ...s, perception: 5 }, "sea", [], { perception: 2 }).perception, 6, "never past six");
+  assert.equal(effective(s, "sea", [], { boosts: { perception: 2 } }).perception, 4);
+  assert.equal(effective({ ...s, perception: 5 }, "sea", [], { boosts: { perception: 2 } }).perception, 6, "never past six");
+  assert.equal(effective({ ...s, perception: 5 }, "sea", [], { boosts: { perception: 2 }, ceilings: { perception: 1 } }).perception, 7, "unless the ceiling's raised");
+  assert.equal(effective({ ...s, fly: 3 }, "sea", []).fly, 0, "no wings, no flight");
+  assert.equal(effective({ ...s, fly: 3 }, "sea", [], { wings: true }).fly, 3);
   assert.equal(s.swim, 4, "the stats themselves don't change");
 });
 
 test("a new creature's points move out of the stat its birth puts to sleep, none lost", () => {
   const land = bornStats(s, "land");
-  assert.deepEqual(land, { climb: 2, swim: 0, run: 6, gleam: 1, perception: 3 });
+  assert.deepEqual(land, { climb: 2, swim: 0, run: 6, gleam: 1, perception: 3, fly: 0 });
   assert.ok(valid(land));
-  const sea = bornStats({ climb: 6, swim: 5, run: 6, gleam: 0, perception: 0 }, "sea");
-  assert.deepEqual(sea, { climb: 6, swim: 6, run: 0, gleam: 0, perception: 0 + 5 });
+  const sea = bornStats({ climb: 6, swim: 5, run: 6, gleam: 0, perception: 0, fly: 0 }, "sea");
+  assert.deepEqual(sea, { climb: 6, swim: 6, run: 0, gleam: 0, perception: 0 + 5, fly: 0 });
 });
 
 test("dive depth: a duck under with no swim, then four times deeper a point, anywhere at six", () => {

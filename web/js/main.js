@@ -25,6 +25,8 @@ import { PIGEON_NSID, makePigeon, parsePigeon, arrivalOf, flownOff } from "./pig
 import { buildPigeonFx } from "./pigeonfx.js";
 import { realmLayout, floorAt, lowest, REALMS, GATHER_M, REALM_ALT, TURN } from "./realm.js";
 import { buildRealmFx, FOG as REALM_FOG } from "./realmfx.js";
+import { rhizomeOf, viewOf, canSlot, canUnslot, effectsOf, cleanFilled, POWERS, GEM_OF as GEM_OF_COLOUR } from "./rhizome.js";
+import { buildRhizomeView, effectsWords } from "./rhizomeview.js";
 import { makeIntent, parseIntent, driftOf, whereAt, fresh, INTENT_NSID, HEARTBEAT_S, STALE_S, MOMENT_S } from "./intents.js";
 import { listen } from "./presence.js";
 import { buildFlock } from "./flock.js";
@@ -38,8 +40,8 @@ import { BORN, ASLEEP, WAKER, bornOf, asleep, effective, bornStats, maxDepth, sp
 import { buildFinds, FIND_COLOUR } from "./finds.js";
 import { ensureKoppen, koppenAt } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
-import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon } from "./inventory.js";
-import { whenText } from "./moon.js";
+import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem } from "./inventory.js";
+import { whenText, lunationOf } from "./moon.js";
 import { buildShrines } from "./shrines.js";
 import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf, WAKES, skyState, wokeAt } from "./shrinelore.js";
 import { buildWorldview } from "./worldview.js";
@@ -98,8 +100,8 @@ function keptInventory() {
   try {
     const v = JSON.parse(localStorage.getItem(INVENTORY_KEY) || "null");
     if (!v) return null;
-    const p = parseInventoryRecord({ items: v.items, worn: v.worn, kit: v.kit, lunation: v.lunation, took: v.took, got: v.got });
-    return p && { items: p.items, worn: p.worn, kit: p.kit, lunation: p.lunation, took: p.took, got: p.got, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
+    const p = parseInventoryRecord({ items: v.items, worn: v.worn, kit: v.kit, lunation: v.lunation, took: v.took, got: v.got, rhizome: v.rhizome });
+    return p && { items: p.items, worn: p.worn, kit: p.kit, lunation: p.lunation, took: p.took, got: p.got, rhizome: p.rhizome, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
   } catch { return null; }
 }
 let inv = keptInventory() || { ...firstInventory(Date.now() / 1000), at: 0, changed: false }; // a moonseed and a prism to begin with
@@ -107,15 +109,32 @@ inv = { ...kitUp(inv), at: inv.at, changed: inv.changed }; // a pouch from befor
 let invAt = -Infinity; // when it last changed (s), so your repo gets it once things settle
 let bagView = null;
 function keepInventory(next, { changed = true, at = Date.now() } = {}) {
-  const wasWorn = wornOf(inv).join(",");
+  const wasWorn = `${wornOf(inv).join(",")}|${inv.rhizome ? [...rhiz().fx.looks].join(",") : ""}`;
   next = kitUp(next);
-  inv = { items: next.items, worn: wornOf(next), kit: next.kit, lunation: next.lunation, took: next.took ?? { lunation: -1, keys: [] }, got: next.got ?? [], at, changed };
+  // Your rhizome's seed, set once (from your creature's, the first time), so it stays yours whatever creature you become.
+  if (next.rhizome?.seed == null) next = { ...next, rhizome: { seed: hashString(`rhizome:${seed}`) >>> 0, slots: next.rhizome?.slots ?? {} } };
+  inv = { items: next.items, worn: wornOf(next), kit: next.kit, lunation: next.lunation, took: next.took ?? { lunation: -1, keys: [] }, got: next.got ?? [], rhizome: next.rhizome, at, changed };
   invAt = Date.now() / 1000;
   try { localStorage.setItem(INVENTORY_KEY, JSON.stringify(inv)); } catch { /* private mode */ }
   bagView?.refresh(); // the BAG button, once it exists
-  if (wornOf(inv).join(",") !== wasWorn) wornChanged?.();
+  if (`${wornOf(inv).join(",")}|${[...rhiz().fx.looks].join(",")}` !== wasWorn) wornChanged?.();
+  rhizomeChanged?.();
 }
 let wornChanged = null; // set once the creature exists: what you wear shows on it
+let rhizomeChanged = null; // set once the rhizome's view exists
+// ---- Your rhizome (rhizome.js): grown from your own seed; the gems you've set wake what lies between them ----
+let rz = { key: "", R: null, filled: {}, fx: { boosts: {}, ceilings: {}, powers: new Set(), deeper: new Set(), looks: new Set() } };
+function rhiz() {
+  const r = inv?.rhizome;
+  if (!r || r.seed == null) return rz;
+  const key = `${r.seed}:${JSON.stringify(r.slots)}`;
+  if (rz.key !== key) {
+    const R = rz.R && rz.R.seed === r.seed ? rz.R : rhizomeOf(r.seed), filled = cleanFilled(R, r.slots);
+    rz = { key, R, filled, fx: effectsOf(R, filled) };
+  }
+  return rz;
+}
+const hasPower = (p) => rhiz().fx.powers.has(p);
 keepInventory(inv, { changed: inv.changed, at: inv.at });
 // Separate streams, so choosing your stats doesn't move your spawn. A creature named in the URL lands where its
 // seed says, so any spawn is reproducible; your own lands somewhere new each visit.
@@ -181,7 +200,7 @@ layerTransparent(rideFx.group);
 
 // ---- The creature ----
 let graph = generateCreature(seed, genes);
-let creature = buildCreature(graph, stats, wornOf(inv));
+let creature = buildCreature(graph, stats, wornOf(inv), [...rhiz().fx.looks]);
 // Where it looks from: just in front of its eyes (or its head, or the front of its body), in its own units.
 function eyeOf(graph) {
   const eyes = graph.parts.filter((p) => p.kind === "eye"), heads = graph.parts.filter((p) => p.kind === "head");
@@ -195,20 +214,26 @@ let eyeLocal = eyeOf(graph);
 let creatureOpacity = 1, footLift = 0;
 let editing = false; // the creature editor is open: the camera looks at it, not through it
 /** The stat your wings run on: climb, until the dream quest gives flight its own (Jason, 11-09). */
-const wings = () => stats.climb;
+const wings = () => body().fly; // 0 until the rhizome's Wings wake (then the fly stat, from the same twelve points)
 /** Perception 3 and up sees the sky beings. */
 /**
  * The stats your body uses now: the one your birth put to sleep counts as nothing until you wear what wakes it, and
  * what you wear adds (the owl's eye: perception).
  */
-const body = () => effective(stats, born, wornOf(inv), boostsOf(inv));
+const body = () => {
+  const fx = rhiz().fx, boosts = { ...boostsOf(inv) };
+  for (const [k, n] of Object.entries(fx.boosts)) boosts[k] = (boosts[k] ?? 0) + n;
+  return effective(stats, born, wornOf(inv), { boosts, ceilings: fx.ceilings, wings: fx.powers.has("wings") });
+};
+/** The most a stat can hold now: six, and one more for each of the rhizome's raises (nine at most). */
+const ceilingOf = (k) => Math.min(9, MAX + (rhiz().fx.ceilings[k] ?? 0));
 const seesBeings = () => body().perception >= SEE_BEINGS;
 /** The ley lines (the highways) show, and carry you, only while you wear a prism (Jason, 11-09: "ley lines are invisible without the correct item"). */
-const seesLey = () => wearing(inv, "prism");
+const seesLey = () => wearing(inv, "prism") || hasPower("leysight");
 /** The HUD's stats, on two lines: as your body has them (a sleeping stat says so; one your worn things lift shows +). */
 const statsLines = () => {
   const b = body();
-  const one = (k) => asleep(k, born, wornOf(inv)) ? `${k.toUpperCase()} ASLEEP (${ITEMS[WAKER[born]].name.toUpperCase()})` : `${k.toUpperCase()} ${bar(b[k])}${b[k] > stats[k] ? "+" : ""}`;
+  const one = (k) => k === "fly" && !hasPower("wings") ? "FLY · NO WINGS" : asleep(k, born, wornOf(inv)) ? `${k.toUpperCase()} ASLEEP (${ITEMS[WAKER[born]].name.toUpperCase()})` : `${k.toUpperCase()} ${bar(b[k], ceilingOf(k))}${b[k] > stats[k] ? "+" : ""}`;
   return [STATS.slice(0, 3), STATS.slice(3)].map((ks) => ks.map(one).join("  ")).join("\n");
 };
 let steepAt = -Infinity, deepAt = -Infinity;
@@ -246,14 +271,14 @@ const myCreature = () => ({ seed, genes, stats, born });
 const keyOf = (c) => `${c.seed}:${STATS.map((k) => c.stats[k]).join(",")}:${JSON.stringify(parseGenes(c.genes))}:${bornOf(c.stats, c.born)}`;
 const lookKey = () => keyOf(myCreature());
 /** What mutuals see of you: your look and what you wear. */
-const shownKey = () => `${lookKey()}:${wornOf(inv).join(",")}`;
+const shownKey = () => `${lookKey()}:${wornOf(inv).join(",")}:${[...rhiz().fx.looks].join(",")}`;
 let lookAt = -Infinity; // when the look last changed (real seconds), so mutuals get it once you've settled
 /** A new look (from the editor, or your repo): regrow the creature where it stands, keep it, and tell mutuals once you've settled. */
 /** Swap the body on screen for one grown from g (your own, or a shrine's mask), where it stands. */
 function swapBody(g) {
   const was = creature;
   graph = g;
-  creature = buildCreature(graph, stats, wornOf(inv));
+  creature = buildCreature(graph, stats, wornOf(inv), [...rhiz().fx.looks]);
   creature.group.position.copy(was.group.position);
   creature.group.rotation.copy(was.group.rotation);
   scene.remove(was.group);
@@ -332,6 +357,10 @@ function shrineStateOf(home) {
   if (!c || c.until < shrineClock.t) c = wokeCache[home.spell] = { woke: wokeAt(home.spell, shrineClock.t, shrineClock.sky) ?? Infinity, until: shrineClock.t + 600 };
   return used >= c.woke ? "resting" : "awake";
 }
+// The rhizome's shrine waking: a sleeping shrine wakes for you when you touch it, once a moon each.
+const WOKEN_KEY = "dream.woken";
+const shrineWoken = (() => { try { return JSON.parse(localStorage.getItem(WOKEN_KEY) || "{}") || {}; } catch { return {}; } })();
+const canWake = (home) => hasPower("shrinewake") && home.key !== "test" && shrineWoken[home.key] !== lunationOf(realNow());
 /** Every few seconds: the sky where you are, and every shrine around shown asleep, awake or resting. */
 function shrineTick() {
   if (!world) return;
@@ -371,7 +400,11 @@ function castSpell(sh) {
   const def = SPELLS[sh.spell], cur = spells[def.kind];
   // Asleep, it does nothing; resting, it has given you its gift this waking.
   const st = shrineStateOf(sh);
-  if (st === "asleep") { logLine(`${capital(def.name)} sleeps. It wakes ${WAKES[sh.spell].when}.`, "shrine"); return; }
+  if (st === "asleep" && canWake(sh)) { // the rhizome's shrine waking: it wakes for you, once a moon
+    shrineWoken[sh.key] = lunationOf(realNow());
+    try { localStorage.setItem(WOKEN_KEY, JSON.stringify(shrineWoken)); } catch { /* private mode */ }
+    logLine(`${capital(def.name)} wakes for you.`, "shrine");
+  } else if (st === "asleep") { logLine(`${capital(def.name)} sleeps. It wakes ${WAKES[sh.spell].when}.${hasPower("shrinewake") ? " (You've woken it once this moon.)" : ""}`, "shrine"); return; }
   if (st === "resting") { logLine(`${capital(def.name)} rests: it has given you its gift this waking. It wakes again ${WAKES[sh.spell].when}.`, "shrine"); return; }
   if (sh.key !== "test") {
     shrineUsed[sh.key] = realNow();
@@ -534,8 +567,22 @@ function meterFrame(dtMs, t, governing) {
 // Below GLOBE_AT the camera orbits in the world; beyond it, the globe.
 // The camera scales with the creature (CREATURE_M): close and low behind a creature now about 5 m long.
 const ZOOM_MIN = 6, ZOOM_MAX = 4e7, GLOBE_AT = 400000, ZOOM_HOME = 34;
-let zoom = params.get("zoom") ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(params.get("zoom")))) : ZOOM_HOME;
-const zoomBy = (factor) => { zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * factor)); };
+/** Without the rhizome's high view, the camera pulls back no further than this (Jason, 11-09: "infinite zoom out should be tied to a shrine or an item"). */
+const ZOOM_CAP = 60000;
+const zoomMax = () => (hasPower("highview") ? ZOOM_MAX : ZOOM_CAP);
+let zoom = params.get("zoom") ? Math.min(zoomMax(), Math.max(ZOOM_MIN, Number(params.get("zoom")))) : ZOOM_HOME;
+let capSaidAt = -Infinity;
+const zoomBy = (factor) => {
+  const max = zoomMax();
+  if (factor > 1 && zoom * factor > max && zoom >= max * 0.98 && simT - capSaidAt > 15) { capSaidAt = simT; logLine("This is as far back as you can see. The high view (a power in your rhizome) goes further.", "note"); }
+  zoom = Math.min(max, Math.max(ZOOM_MIN, zoom * factor));
+};
+/** The whole Earth, if you have the high view. */
+function toGlobe(words) {
+  if (!hasPower("highview")) { logLine("The whole Earth is the high view's: a power in your rhizome. Your atlas lists what you've found.", "note"); return; }
+  zoom = 16e6;
+  logLine(words, "note");
+}
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0018)); }, { passive: false });
 const globe = buildGlobe();
 
@@ -638,8 +685,10 @@ function canDream(home) {
   return !!s && s.key === home.key && s.endAt === null && home.key !== "test" && !state.realm && !dreamtNow(home);
 }
 let realmFx = null;
+const COLOUR_OF_KIND = { shape: "rose", camera: "cyan", world: "gold" };
 function enterDream(sh) {
-  const kind = SPELLS[sh.spell].kind, L = realmLayout(sh.key, kind, realNow());
+  const kind = SPELLS[sh.spell].kind, deep = rhiz().fx.deeper.has(COLOUR_OF_KIND[kind]);
+  const L = realmLayout(sh.key, kind, realNow(), deep ? 2 : 1); // the rhizome's deeper dreams: bigger, more lights, two gems
   endSpells(); // the spell becomes the dream
   clearTarget();
   const anchor = new THREE.Vector3(sh.x, REALM_ALT, sh.z);
@@ -651,7 +700,7 @@ function enterDream(sh) {
   world.group.visible = false;
   sound.shrine(kind);
   establishing();
-  logLine(`You step into ${REALMS[kind].name}. Three lights are hidden on its far islands.`, "shrine");
+  logLine(`You step into ${deep ? "the depths of " : ""}${REALMS[kind].name}. ${L.lights.length} lights are hidden on its far islands.`, "shrine");
 }
 /** Out of the dream, back at the shrine (with the gem, or without: Escape wakes you). */
 function exitDream() {
@@ -688,13 +737,13 @@ function realmTick() {
   });
   if (!r.gemOut && r.got.size >= r.L.lights.length) r.gemOut = true;
   if (r.gemOut && realmFx.gemAt(t).distanceTo(here) < GATHER_M) {
-    const kind = REALMS[r.kind].gem, n = countOf(inv, kind);
-    if (n < ITEMS[kind].max) keepInventory({ ...inv, items: { ...inv.items, [kind]: n + 1 } });
+    const kind = REALMS[r.kind].gem, n = countOf(inv, kind), gain = r.L.tier >= 2 ? 2 : 1;
+    if (n < ITEMS[kind].max) keepInventory({ ...inv, items: { ...inv.items, [kind]: Math.min(ITEMS[kind].max, n + gain) } });
     dreamt[r.shrine.key] = realNow();
     try { localStorage.setItem(DREAMS_KEY, JSON.stringify(dreamt)); } catch { /* private mode */ }
     sound.shrine(r.kind);
     bursts.emit({ at: realmFx.gemAt(t).add(r.anchor), colors: [new THREE.Color(REALM_FOG[r.kind]), new THREE.Color(0xffffff)], n: 40, spread: 3, up: 4, fall: 0.4, life: 2.2 });
-    logLine(n < ITEMS[kind].max ? `You take the ${ITEMS[kind].name}. The dream lets you go.` : `Your pouch holds no more ${ITEMS[kind].plural}. The dream lets you go.`, "shrine");
+    logLine(n < ITEMS[kind].max ? `You take ${gain > 1 ? `two ${ITEMS[kind].plural}` : `the ${ITEMS[kind].name}`}. The dream lets you go.` : `Your pouch holds no more ${ITEMS[kind].plural}. The dream lets you go.`, "shrine");
     r.woke = simT;
     setTimeout(exitDream, 1800);
   }
@@ -843,7 +892,8 @@ function leaveRide(arrived) {
   const tg = tangentEN(r.line, r.t, r.dir);
   setStatus(arrived ? "a node · the dream regrows…" : "the dream regrows…");
   regrow(ll.lat, ll.lon, (w) => {
-    swapWorld(w, { lat: ll.lat, lon: ll.lon, y: highwayAltitude(w.terrain.heightAt(0, 0)) });
+    // Off the highway: a flyer at its height; anything without wings set down near the ground, not left to glide a minute.
+    swapWorld(w, { lat: ll.lat, lon: ll.lon, y: wings() > 0 ? highwayAltitude(w.terrain.heightAt(0, 0)) : Math.max(0, w.terrain.heightAt(0, 0)) + 20 });
     state.ride = null;
     state.heading = Math.atan2(-tg.e, tg.n);
     state.speed = 0;
@@ -868,7 +918,7 @@ places.addEventListener("change", () => {
 function teleport(l) {
   clearTarget();
   if (state.ride) { state.ride = null; rideFx.group.visible = false; if (world) world.group.visible = true; }
-  zoom = l.zoom ?? ZOOM_HOME;
+  zoom = Math.min(zoomMax(), l.zoom ?? ZOOM_HOME);
   if (l.heading !== undefined) state.heading = (-l.heading * Math.PI) / 180;
   state.speed = 0; state.vy = 0; state.captureCooldown = 3;
   setStatus(`the dream carries you to ${l.name.split(" · ")[0]}…`);
@@ -1196,7 +1246,7 @@ function inReach() {
     if (d < RANGE.find) add({ kind: "find", key: f.key, name: ITEMS[f.holds].name, d, range: RANGE.find, f }, f.x, f.z);
   }
   for (const s of world.shrines.near(p.x, p.z, RANGE.shrine)) {
-    add({ kind: "shrine", key: s.key, name: SPELLS[s.spell].name, state: s.state, dream: canDream(s), d: Math.hypot(s.x - p.x, s.z - p.z), range: RANGE.shrine, s }, s.x, s.z);
+    add({ kind: "shrine", key: s.key, name: SPELLS[s.spell].name, state: s.state, dream: canDream(s), wake: s.state === "asleep" && canWake(s), d: Math.hypot(s.x - p.x, s.z - p.z), range: RANGE.shrine, s }, s.x, s.z);
   }
   for (const c of world.critters.near(p.x, p.z, RANGE.critter + 4)) {
     const d = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z);
@@ -1392,7 +1442,7 @@ const maker = buildMaker({
     return byDistance(everywhere, ll.lat, ll.lon).map((a) => ({ a, metres: a.metres, age: ago(a.since, nowS) }));
   },
   travel: (a) => travelTo(a),
-  globe: () => { zoom = 16e6; logLine("The whole Earth. Tap a cairn's dot to go there.", "note"); },
+  globe: () => toGlobe("The whole Earth. Tap a cairn's dot to go there."),
   look: (handle) => lookAs(handle),
   signIn: (handle) => account.signIn(handle, hereQuery()),
   signOut: async () => { await stopSharing(); await account.signOut(); logLine("Signed out of Bluesky.", "note"); },
@@ -1474,12 +1524,15 @@ const editor = buildEditor({
     },
     name: creatureName,
     isMine: () => showingMine,
+    ceiling: (k) => ceilingOf(k),
+    wings: () => hasPower("wings"),
     birth: (c) => { const b = bornOf(c.stats, c.born); return { asleep: ASLEEP[b], waker: WAKER[b], wakerName: `a ${ITEMS[WAKER[b]].name}`, awake: !asleep(ASLEEP[b], b, wornOf(inv)) }; },
-    respec: () => ({ open: respec.open, seeds: countOf(inv, "moonseed"), next: nextSeedAt(inv, realNow()) - realNow() }),
+    respec: () => ({ open: respec.open, free: respec.free, seeds: countOf(inv, "moonseed"), next: nextSeedAt(inv, realNow()) - realNow() }),
     eatMoonseed,
     settle: () => {
       if (!respec.open) return;
       respec.open = false;
+      if (respec.free) { respec.free = false; logLine("Your stats settle in.", "shrine"); return; }
       if (`${statsList(stats).join(",")}:${born}` === respec.before) { keepInventory(refund(inv, "moonseed")); logLine("Nothing changed, so the moonseed is still yours.", "note"); }
       else logLine("Your new stats settle in.", "shrine");
     },
@@ -1495,7 +1548,7 @@ const editor = buildEditor({
 });
 editor.setName(myName);
 // Respecs are moonseeds (11-09): eat one and your stats loosen until you close the editor.
-const respec = { open: false, before: "" };
+const respec = { open: false, before: "", free: false };
 function eatMoonseed() {
   const next = spend(inv, "moonseed");
   if (!next) return false;
@@ -1530,6 +1583,55 @@ bag.refresh();
 // What you wear (Jason, 11-09: "limited equip slots too so we have to choose between abilities"): two things at once,
 // changed on the ground or in the water, not in the air or on a highway, so you choose before you set off.
 wornChanged = () => { swapBody(graph); lookAt = realNow(); };
+// ---- The rhizome's sheet, and setting gems ----
+const rhizomeView = buildRhizomeView({
+  maker,
+  button: document.getElementById("rhizome"),
+  hooks: {
+    rhizome: () => rhiz().R,
+    filled: () => rhiz().filled,
+    view: () => viewOf(rhiz().R, rhiz().filled),
+    effects: () => rhiz().fx,
+    gems: () => inv.items,
+    slot: (i) => setGem(i),
+    unslot: (i) => takeGem(i),
+    canUnslot: (i) => canUnslot(rhiz().R, rhiz().filled, i),
+    respecOpen: () => respec.open,
+  },
+});
+rhizomeChanged = () => rhizomeView.refresh();
+/** A gem from your pouch into slot i: words if it can't, else null. Waking Wings opens your stats, free, once. */
+function setGem(i) {
+  const z = rhiz(), s = z.R.slots[i], gem = s && GEM_OF_COLOUR[s.colour];
+  if (!s || !canSlot(z.R, z.filled, i, gem)) return "That slot can't take a gem now.";
+  const before = new Set(z.fx.powers), words = new Set(effectsWords(z.fx));
+  const next = slotGem({ ...inv, rhizome: { ...inv.rhizome, slots: z.filled } }, i, gem);
+  if (!next) return `You have no ${ITEMS[gem].plural}.`;
+  keepInventory(next);
+  sound.chime();
+  const fx = rhiz().fx, woke = effectsWords(fx).filter((w) => !words.has(w));
+  logLine(woke.length ? `The ${ITEMS[gem].name} wakes: ${woke.join(", ")}.` : `You set the ${ITEMS[gem].name}. It waits for a neighbour.`, "shrine");
+  for (const p of fx.powers) if (!before.has(p)) logLine(`${POWERS[p].name}: ${POWERS[p].about}`, "shrine");
+  if (fx.powers.has("wings") && !before.has("wings")) {
+    // Flight comes back as its own stat: open your points, free this once, so some can go into it.
+    respec.open = true; respec.free = true; respec.before = `${statsList(stats).join(",")}:${born}`;
+    logLine("Your points loosen (free, this once): open your creature's sheet and move some into fly.", "shrine");
+  }
+  if (!fx.powers.has("highview") && zoom > ZOOM_CAP) zoom = ZOOM_CAP;
+  return null;
+}
+/** Slot i's gem back to your pouch (with a moonseed working): words if it can't, else null. */
+function takeGem(i) {
+  const z = rhiz();
+  if (!respec.open) return "Gems move only with a moonseed working.";
+  if (!canUnslot(z.R, z.filled, i)) return "Others hang from this one: take theirs out first.";
+  const next = unslotGem({ ...inv, rhizome: { ...inv.rhizome, slots: z.filled } }, i);
+  if (!next) return "Your pouch has no room for it.";
+  keepInventory(next);
+  if (zoom > zoomMax()) zoom = zoomMax();
+  logLine("You take the gem out. What it woke sleeps again.", "note");
+  return null;
+}
 function wornLock() {
   if (state.ride) return "Not while you're riding a highway.";
   if (state.mode === "air") return "Not in the air: land (or float) first.";
@@ -1575,7 +1677,7 @@ atlasView = buildAtlas({
       }).sort((a, b) => a.metres - b.metres);
     },
     travel: travelToShrine,
-    globe: () => { zoom = 16e6; logLine("The whole Earth. Tap a shrine's dot to go there.", "note"); },
+    globe: () => toGlobe("The whole Earth. Tap a shrine's dot to go there."),
   },
 });
 atlasView.refresh(Object.keys(found).length);
@@ -1590,7 +1692,7 @@ function seedTick() {
 }
 // Your pouch in your repo, like your creature: brought into step on sign-in and when you come back; written once things settle.
 const carry = { can: false, synced: "", busy: false };
-const invKey = () => JSON.stringify([inv.items, wornOf(inv), inv.kit, inv.lunation, inv.took, inv.got]);
+const invKey = () => JSON.stringify([inv.items, wornOf(inv), inv.kit, inv.lunation, inv.took, inv.got, inv.rhizome]);
 async function syncInventory() {
   if (!account.did || !carry.can || carry.busy) return;
   carry.busy = true;
@@ -1891,7 +1993,7 @@ function placeMyBubble() {
 /** What I'm doing now, as an intent: a ride, a trip, steering, or resting. */
 function myIntent() {
   const p = state.pos, ll = world.frame.toLatLon(p.x, p.z), nowS = realNow();
-  const base = { p: { lat: ll.lat, lon: ll.lon, alt: state.realm ? state.realm.shrine.y : p.y }, creature: { ...myCreature(), worn: wornOf(inv) }, say: fresh(share.say, nowS) ? share.say : null, act: fresh(share.act, nowS) ? share.act : null };
+  const base = { p: { lat: ll.lat, lon: ll.lon, alt: state.realm ? state.realm.shrine.y : p.y }, creature: { ...myCreature(), worn: wornOf(inv), looks: [...rhiz().fx.looks] }, say: fresh(share.say, nowS) ? share.say : null, act: fresh(share.act, nowS) ? share.act : null };
   if (state.ride) {
     const r = state.ride, rl = rideLatLon(r);
     return { ...base, p: { lat: rl.lat, lon: rl.lon, alt: p.y }, kind: "ride", key: `ride:${r.line.i}:${r.dir}`, ride: { line: r.line.i, t: r.t, dir: r.dir } };
@@ -2005,7 +2107,7 @@ function drawRoute(t) {
 const hud = document.getElementById("hud");
 const statusEl = document.getElementById("status");
 const setStatus = (s) => { statusEl.textContent = s; statusEl.hidden = !s; };
-const bar = (n) => "■".repeat(n) + "□".repeat(MAX - n);
+const bar = (n, max = MAX) => "■".repeat(Math.max(0, n)) + "□".repeat(Math.max(0, max - n));
 function updateHud() {
   if (state.ride) {
     const r = state.ride, ll = rideLatLon(r);
@@ -2245,7 +2347,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, inv: () => inv, realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, inv: () => inv, rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };
@@ -2325,7 +2427,7 @@ function boot(w) {
   }
   const ground = w.terrain.heightAt(state.pos.x, state.pos.z);
   // In the air over land (the opening shot cranes down onto you); afloat, born in the sea.
-  state.pos.y = !spawnFixed && born === "sea" && ground < 0 ? -1.5 : Math.max(0, ground) + (altParam !== null ? Math.max(5, Number(altParam)) : 350);
+  state.pos.y = !spawnFixed && born === "sea" && ground < 0 ? -1.5 : Math.max(0, ground) + (altParam !== null ? Math.max(5, Number(altParam)) : wings() > 0 ? 350 : 40);
   establishing(); // the opening shot: a crane down onto you
   setStatus(w.terrain.failed ? `${w.terrain.failed} elevation tiles didn't load; that ground is drawn at sea level` : "");
   // ?ride=N starts on highway N, halfway along (a shortcut for trying the ride).

@@ -23,13 +23,14 @@ const UNDO_MAX = 40;
 // A player's choice, not the world: nothing here needs to come out the same on another phone.
 const roll = () => (Math.random() * 2 ** 32) >>> 0;
 const swatch = (c) => `hsl(${Math.round(c.h * 360)} ${Math.round(c.s * 100)}% ${Math.round(c.l * 100)}%)`;
-const bar = (n) => "▮".repeat(n) + "▯".repeat(MAX - n);
+const bar = (n, max = MAX) => "▮".repeat(Math.max(0, n)) + "▯".repeat(Math.max(0, max - n));
 const clone = (c) => ({ seed: c.seed, genes: c.genes ? JSON.parse(JSON.stringify(c.genes)) : null, stats: { ...c.stats }, born: c.born });
 
 /**
  * hooks: { get() -> { seed, genes, stats, born }, set(next), name(seed) -> string, portrait(on), isMine() -> whether it's the one you keep,
  *          respec() -> { open, seeds, next }, eatMoonseed() -> whether one was eaten, settle() (the sheet closed),
- *          birth(c) -> { asleep (the stat its birth puts to sleep), waker (what wakes it), awake (worn now) } }.
+ *          birth(c) -> { asleep (the stat its birth puts to sleep), waker (what wakes it), awake (worn now) },
+ *          ceiling(stat) -> the most it can hold (six, raised by the rhizome), wings() -> whether fly is open }.
  * maker: the sheet's owner (one sheet at a time). button: the name button that opens it.
  */
 export function buildEditor({ hooks, maker, button }) {
@@ -64,7 +65,8 @@ export function buildEditor({ hooks, maker, button }) {
   const stat = (k, by) => !moonNow() ? refresh() : change((c) => {
     const left = BUDGET - STATS.reduce((t, s) => t + c.stats[s], 0);
     const n = c.stats[k] + by, b = hooks.birth(c);
-    if (n < 0 || n > MAX || (by > 0 && left <= 0)) return c;
+    if (n < 0 || n > hooks.ceiling(k) || (by > 0 && left <= 0)) return c;
+    if (by > 0 && k === "fly" && !hooks.wings()) return c; // fly waits for the rhizome's Wings
     if (by > 0 && k === b.asleep && !b.awake) return c; // a sleeping stat takes no points
     c.stats[k] = n;
     return c;
@@ -166,13 +168,13 @@ export function buildEditor({ hooks, maker, button }) {
     const rs = hooks.respec(), open = rs.open;
     const b = hooks.birth(c), sleeps = !b.awake;
     for (const s of els.statRows) {
-      const zz = s.k === b.asleep && sleeps;
-      s.v.textContent = bar(c.stats[s.k]);
+      const noWings = s.k === "fly" && !hooks.wings(), zz = (s.k === b.asleep && sleeps) || noWings, top = hooks.ceiling(s.k);
+      s.v.textContent = bar(c.stats[s.k], top);
       s.row.classList.toggle("asleep", zz);
-      s.row.querySelector(".k").textContent = zz ? `${s.k.toUpperCase()} · ASLEEP` : s.k.toUpperCase();
-      s.row.setAttribute("aria-label", `${s.k} ${c.stats[s.k]} of ${MAX}${zz ? ", asleep" : ""}`);
+      s.row.querySelector(".k").textContent = noWings ? "FLY · NO WINGS" : zz ? `${s.k.toUpperCase()} · ASLEEP` : s.k.toUpperCase();
+      s.row.setAttribute("aria-label", `${s.k} ${c.stats[s.k]} of ${top}${zz ? ", asleep" : ""}`);
       s.less.disabled = !open || c.stats[s.k] <= 0;
-      s.more.disabled = !open || c.stats[s.k] >= MAX || spent >= BUDGET || zz;
+      s.more.disabled = !open || c.stats[s.k] >= top || spent >= BUDGET || zz;
     }
     const where = c.born === "sea" ? "in the sea" : "on land";
     els.birth.textContent = `Born ${where}. Its ${b.asleep} ${sleeps ? `sleeps until it wears ${b.wakerName}` : `is awake: it's wearing ${b.wakerName}`}${sleeps && c.stats[b.asleep] ? ` (its ${c.stats[b.asleep]} point${c.stats[b.asleep] === 1 ? "" : "s"} there wait for it)` : ""}.`;
@@ -180,7 +182,9 @@ export function buildEditor({ hooks, maker, button }) {
     els.reborn.hidden = !open;
     const points = spent >= BUDGET ? `All ${BUDGET} points spent.` : `${BUDGET - spent} point${BUDGET - spent === 1 ? "" : "s"} left to spend.`;
     const next = whenText(Date.now() / 1000 + rs.next, Date.now() / 1000);
-    els.left.textContent = open
+    els.left.textContent = open && rs.free
+      ? `Your Wings woke: move your points (some into fly), free this once, then close this to settle them. ${points}`
+      : open
       ? `A moonseed is working: move your points, then close this to settle them (change nothing and you keep the seed). ${points}`
       : rs.seeds > 0
         ? `Stats change when you eat a moonseed. You have ${rs.seeds}. ${points}`

@@ -39,6 +39,8 @@ the latest file in `conversations/`.
     (`parsePigeon`). The recipient's inventory keeps which pigeons it has had; the sender's game clears its pigeons
     after a lunar month. Nothing stored by our Worker.
     What you wear (at most two things) is in the same record, and travels in your intent as names, never geometry.
+    So is your rhizome (its seed and which slot holds which gem): the rules are re-checked against the rhizome
+    grown from the seed (`cleanFilled`), and its looks travel in the intent as names.
   - **Your atlas (Jason, 11-09):** "I'm okay with publishing the atlas to the repo! I guess it means bots can wall hack
     but what's the point of cheating at a cozy exploration game?" One record per player
     (`org.jason-edelman.dream.atlas/self`: the shrines you've found), overwritten, merged across devices. Read only

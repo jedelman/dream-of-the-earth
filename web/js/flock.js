@@ -11,7 +11,7 @@ import { highwayAltitude } from "./ride.js";
 
 const MAX = 24, LABEL_M = 600, WORLD_M = 16000;
 // A creature is rebuilt when any of this changes (genes come parsed, in a fixed key order).
-const keyOf = (c) => `${c.seed}:${Object.values(c.stats).join(",")}:${JSON.stringify(c.genes ?? null)}:${(c.worn ?? []).join(",")}`;
+const keyOf = (c) => `${c.seed}:${Object.values(c.stats).join(",")}:${JSON.stringify(c.genes ?? null)}:${(c.worn ?? []).join(",")}:${(c.looks ?? []).join(",")}`;
 
 export function buildFlock(scene, labelsEl) {
   const live = new Map(); // did -> { who, body, graph, key, pos, heading, label, seen }
@@ -19,7 +19,7 @@ export function buildFlock(scene, labelsEl) {
 
   function make(who) {
     const graph = generateCreature(who.intent.creature.seed, who.intent.creature.genes);
-    const body = buildCreature(graph, who.intent.creature.stats, who.intent.creature.worn ?? []);
+    const body = buildCreature(graph, who.intent.creature.stats, who.intent.creature.worn ?? [], who.intent.creature.looks ?? []);
     scene.add(body.group);
     const label = document.createElement("div");
     label.className = "who";
