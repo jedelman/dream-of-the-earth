@@ -46,6 +46,9 @@ its end. Shift or S steps off anywhere. Where two highways cross, A/D hops onto 
 ring of standing stones under its pillar of light: step in and press E, and the light lifts you, wings or not, to
 choose a lane (A/D, then E or W; Space or Shift lets go).
 
+**On a phone,** ☰ holds the menus, ▲▼ appear when they'd do something (and say what), and the HUD keeps quiet
+while you move. Tilt to steer is in ☰: tip the phone to turn, away to go; a shake squeaks.
+
 **A controller** works too (any pad in the browser's standard mapping): the left stick moves, A jumps, B crouches,
 X touches what glints, Y takes a picture, and the D-pad walks the menus (A presses, B closes).
 

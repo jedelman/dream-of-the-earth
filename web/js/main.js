@@ -16,6 +16,7 @@ import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount, linesNear, lanesAt, laneFacing } from "./ride.js";
 import { buildStones, CIRCLE_R } from "./stones.js";
 import { readPad, firstPad, stepFocus } from "./gamepad.js";
+import { screenTilt, tiltSteer, shakeDetector } from "./tilt.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
@@ -682,7 +683,7 @@ addEventListener("keydown", (e) => {
   if ((e.code === "Enter" || e.code === "NumpadEnter") && !e.repeat && document.activeElement?.tagName !== "BUTTON" && document.activeElement?.tagName !== "SELECT") { e.preventDefault(); openSay(); }
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
-const touch = { turn: 0, thrust: 0, up: 0, id: null, x: 0, y: 0 };
+const touch = { turn: 0, thrust: 0, up: 0, latch: 0, id: null, x: 0, y: 0 };
 
 // ---- Gamepads (gamepad.js; Jason, 11-09: "Then let's build in gamepad support.") ----
 // Polled each frame. The sticks and A/B merge into input() like the keys and the touch stick; X, Y, Start and Back act
@@ -796,15 +797,110 @@ canvas.addEventListener("pointerup", (e) => {
 canvas.addEventListener("pointercancel", endTouch);
 for (const [id, v] of [["up", 1], ["down", -1]]) {
   const b = document.getElementById(id);
-  b.addEventListener("pointerdown", (e) => { e.preventDefault(); touch.up = v; });
+  b.addEventListener("pointerdown", (e) => { e.preventDefault(); touch.up = v; touch.latch = v; }); // latched: a tap shorter than a frame still counts
   for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => { if (touch.up === v) touch.up = 0; });
+}
+
+// ---- Touch screens: a minimal HUD that follows what you're doing (Jason, 11-09: "Let's give the mobile HUD a makeover
+// as well. Minimalist and context driven. Maybe we can use the accelerometer?") ----
+const COARSE = matchMedia("(pointer: coarse)").matches;
+// One ☰ holds the menus; a dot on it says something new came (a find, a pigeon, an atlas place) while it was shut.
+const menuBtn = document.getElementById("menubtn");
+menuBtn.hidden = false; // the stylesheet shows it only on a touch screen
+function setMenu(open) {
+  cornerEl.classList.toggle("open", open);
+  menuBtn.setAttribute("aria-expanded", String(open));
+  if (open) menuBtn.classList.remove("news");
+}
+menuBtn.addEventListener("click", () => setMenu(!cornerEl.classList.contains("open")));
+cornerEl.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b && b !== menuBtn && b.parentElement === cornerEl && b.id !== "tiltbtn") setMenu(false); });
+canvas.addEventListener("pointerdown", () => setMenu(false));
+addEventListener("keydown", (e) => { if (e.key === "Escape") setMenu(false); });
+let newsSig = null;
+function menuNews() {
+  if (!COARSE) return;
+  const sig = ["bag", "atlas", "cairns", "saybtn", "me"].map((id) => { const b = document.getElementById(id); return b ? `${b.hidden ? "-" : ""}${b.textContent}` : ""; }).join("|");
+  if (newsSig !== null && sig !== newsSig && simT > 12 && !cornerEl.classList.contains("open")) menuBtn.classList.add("news"); // not the start-up syncs
+  newsSig = sig;
+}
+// ▲ and ▼ show only when they'd do something, and say what: jump, fly, climb, rise; crouch (near small creatures), down,
+// dive, step off, let go. Each lingers a moment after it's no longer needed, so a hop doesn't make it blink.
+const ctxBtn = { up: { el: document.getElementById("up"), v: 1, word: null, until: -1 }, down: { el: document.getElementById("down"), v: -1, word: null, until: -1 } };
+function contextButtons() {
+  if (!COARSE) return;
+  let up = null, down = null;
+  if (!world || rebuilding || editing) { /* nothing to do */ }
+  else if (state.gate) down = state.gate.phase === "sink" ? null : "LET GO";
+  else if (state.ride) down = state.ride.leaving ? null : "STEP OFF";
+  else if (state.mode === "ground") {
+    up = wings() > 0 ? "FLY" : "JUMP";
+    if (!state.realm && world.critters.near(state.pos.x, state.pos.z, 45).length) down = "CROUCH";
+  } else if (state.mode === "water") { up = wings() > 0 ? "FLY" : state.pos.y < -2.5 ? "RISE" : null; down = "DIVE"; }
+  else if (wings() > 0) { up = "CLIMB"; down = "DOWN"; }
+  for (const [key, word] of [["up", up], ["down", down]]) {
+    const c = ctxBtn[key];
+    if (word) { c.word = word; c.until = simT + 0.8; }
+    const on = simT < c.until;
+    c.el.classList.toggle("off", !on);
+    c.el.querySelector(".w").textContent = c.word ?? "";
+    c.el.setAttribute("aria-label", on && c.word ? c.word.toLowerCase() : key);
+    if (!on && touch.up === c.v) touch.up = 0; // a button that's gone can't be held
+  }
+}
+
+// Tilt to steer (tilt.js), from ☰: tip the phone to turn, away to go, toward you to slow, from however you held it when
+// you switched it on; a shake squeaks. Off by default; the phone's motion stays on the phone.
+const tilt = { on: false, turn: 0, thrust: 0, neutral: null, angle: 0, listening: false };
+const tiltBtn = document.getElementById("tiltbtn");
+const shook = shakeDetector();
+const tiltNow = (k) => (tilt.on && sheetEl.hidden ? tilt[k] : 0); // not while a menu is open
+const screenAngle = () => screen.orientation?.angle ?? (typeof window.orientation === "number" ? window.orientation : 0);
+function onOrient(e) {
+  if (!tilt.on || e.beta == null || e.gamma == null) return;
+  const angle = screenAngle(), now = screenTilt(e.beta, e.gamma, angle);
+  if (!tilt.neutral || angle !== tilt.angle) { tilt.neutral = now; tilt.angle = angle; } // level is how you held it
+  const s = tiltSteer(now, tilt.neutral);
+  tilt.turn += (s.turn - tilt.turn) * 0.35;
+  tilt.thrust += (s.thrust - tilt.thrust) * 0.35;
+  if (Math.abs(tilt.turn) < 0.02) tilt.turn = 0;
+  if (Math.abs(tilt.thrust) < 0.02) tilt.thrust = 0;
+}
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity;
+  if (!tilt.on || !a || a.x == null) return;
+  if (shook(Math.hypot(a.x, a.y, a.z), performance.now() / 1000) && world && !rebuilding) squeak();
+}
+async function setTilt(on, quiet = false) {
+  // iOS asks first, and only from a tap.
+  if (on && typeof DeviceOrientationEvent.requestPermission === "function") {
+    let ok = false;
+    try { ok = (await DeviceOrientationEvent.requestPermission()) === "granted"; } catch { ok = false; }
+    try { await DeviceMotionEvent?.requestPermission?.(); } catch { /* the shake is a nicety */ }
+    if (!ok) { if (!quiet) logLine("Tilting needs the phone's motion: allow it when asked (or in this site's settings).", "note"); on = false; }
+  }
+  tilt.on = on; tilt.neutral = null; tilt.turn = tilt.thrust = 0;
+  if (on && !tilt.listening) { addEventListener("deviceorientation", onOrient); addEventListener("devicemotion", onMotion); tilt.listening = true; }
+  try { localStorage.setItem("dream.tilt", on ? "on" : "off"); } catch { /* private mode */ }
+  tiltBtn.textContent = `TILT TO STEER · ${on ? "ON" : "OFF"}`;
+  tiltBtn.setAttribute("aria-pressed", String(on));
+  if (!quiet) logLine(on ? "Tilt to steer: tip the phone to turn, away to go, toward you to slow. However you're holding it now is level. A shake squeaks." : "Tilt to steer is off.", "note");
+}
+if (COARSE && typeof DeviceOrientationEvent !== "undefined") {
+  tiltBtn.hidden = false;
+  tiltBtn.addEventListener("click", () => setTilt(!tilt.on));
+  let wanted = false;
+  try { wanted = localStorage.getItem("dream.tilt") === "on"; } catch { /* private mode */ }
+  if (wanted) {
+    if (typeof DeviceOrientationEvent.requestPermission === "function") addEventListener("touchend", () => setTilt(true, true), { once: true }); // iOS: ask on the first tap
+    else setTilt(true, true);
+  }
 }
 function input() {
   const k = (...c) => c.some((x) => keys.has(x));
   return {
-    turn: (k("KeyD", "ArrowRight") ? 1 : 0) - (k("KeyA", "ArrowLeft") ? 1 : 0) || touch.turn || pad.turn,
-    thrust: (k("KeyW", "ArrowUp") ? 1 : 0) - (k("KeyS", "ArrowDown") ? 1 : 0) || touch.thrust || pad.thrust,
-    up: (k("Space") ? 1 : 0) - (k("ShiftLeft", "ShiftRight") ? 1 : 0) || touch.up || pad.up,
+    turn: (k("KeyD", "ArrowRight") ? 1 : 0) - (k("KeyA", "ArrowLeft") ? 1 : 0) || touch.turn || pad.turn || tiltNow("turn"),
+    thrust: (k("KeyW", "ArrowUp") ? 1 : 0) - (k("KeyS", "ArrowDown") ? 1 : 0) || touch.thrust || pad.thrust || tiltNow("thrust"),
+    up: (k("Space") ? 1 : 0) - (k("ShiftLeft", "ShiftRight") ? 1 : 0) || touch.up || touch.latch || pad.up,
   };
 }
 
@@ -1044,7 +1140,7 @@ const laneMarks = (() => {
 const GATE_KEYS_FINE = matchMedia("(hover: hover) and (pointer: fine)").matches;
 const gateKeys = () => (pad.using ? { pick: "the left stick", pickHud: "STICK ◀ ▶", go: "A", off: "B" }
   : GATE_KEYS_FINE ? { pick: "A/D", pickHud: "A/D", go: "E or W", off: "Space or Shift" }
-  : { pick: "the stick (left or right)", pickHud: "STICK ◀ ▶", go: "✦", off: "▲ or ▼" });
+  : { pick: "a drag left or right", pickHud: "DRAG ◀ ▶", go: "✦", off: "▼" });
 const bearingOfHeading = (h) => ((((-h * 180) / Math.PI) % 360) + 360) % 360;
 /** Into the stones: the light takes you up. */
 function enterStones(st) {
@@ -1142,6 +1238,11 @@ function laneMarksTick(t) {
     m.material.opacity = 0.35 + 0.65 * Math.max(0, Math.sin(t * 5 - k * 0.8));
   });
 }
+/** A node's name, kept to one class and a count on a touch screen ("Gravity wells, major +2"). */
+function shortNode(n) {
+  const names = CLASSES.filter((c) => n.classes.has(c.id)).map((c) => c.name);
+  return COARSE && names.length > 1 ? `${names[0]} +${names.length - 1}` : names.join(" + ");
+}
 /** The HUD's lines while held in the ring. */
 function gateLines() {
   const g = state.gate, l = g.lanes[g.pick], to = l.far, i = to ? network().nodes.indexOf(to) : -1;
@@ -1149,7 +1250,7 @@ function gateLines() {
   if (g.phase === "rise") return [`THE STONES OF ${nodeName(g.st.node).toUpperCase()} · RISING`, `${gateKeys().off.toUpperCase()}: LET GO`];
   if (g.phase === "sink") return [`THE STONES OF ${nodeName(g.st.node).toUpperCase()}`, ""];
   return [`LANE ${g.pick + 1} OF ${g.lanes.length} · ${l.line.cls.name.toUpperCase()} · ${dir} ${Math.round(l.bearing) % 360}°`,
-    `${Math.round(l.km).toLocaleString("en")} KM TO ${to ? nodeName(to).toUpperCase() : "A NODE"}${i >= 0 && been.nodes[i] != null ? " (BEEN)" : ""}`,
+    `${Math.round(l.km).toLocaleString("en")} KM TO ${to ? shortNode(to).toUpperCase() : "A NODE"}${i >= 0 && been.nodes[i] != null ? " (BEEN)" : ""}`,
     `${gateKeys().pickHud}: ANOTHER LANE · ${gateKeys().go.toUpperCase()}: GO · ${gateKeys().off.toUpperCase()}: LET GO`];
 }
 
@@ -2448,26 +2549,49 @@ function toggleHud() {
 hud.addEventListener("click", toggleHud);
 function updateHud() {
   const fold = hudMore ? " ▴" : " ▾", lines = [];
+  const sky = COARSE && !hudMore ? "" : clockLine(); // on a touch screen, the sky is behind a tap
   if (state.gate && world) {
     lines.push(...gateLines());
   } else if (state.ride) {
     const r = state.ride, ll = rideLatLon(r), near = r.leaving ? [] : crossings(r);
-    lines.push(`RIDING ${r.line.cls.name.toUpperCase()} · ${Math.round(r.speed / 1000)} KM/S${fold}`, clockLine(),
-      near.length ? `CROSSING ${near[0].line.cls.name.toUpperCase()} · A/D TO HOP` : "SHIFT OR S: STEP OFF");
+    lines.push(`RIDING ${r.line.cls.name.toUpperCase()} · ${Math.round(r.speed / 1000)} KM/S${fold}`, sky,
+      near.length ? `CROSSING ${near[0].line.cls.name.toUpperCase()} · ${pad.using ? "STICK" : COARSE ? "DRAG ◀ ▶" : "A/D"} TO HOP` : `${pad.using ? "B" : COARSE ? "▼" : "SHIFT OR S"}: STEP OFF`);
     if (hudMore) lines.push(`${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)} · NEXT NODE ${Math.round(remainingMeters(r) / 1000).toLocaleString("en")} KM`, statsLines());
   } else {
     const ll = world.frame.toLatLon(state.pos.x, state.pos.z), ground = world.terrain.heightAt(state.pos.x, state.pos.z);
     const k = koppenAt(ll.lat, ll.lon), biome = biomeFor(k, world.terrain.reliefAt(state.pos.x, state.pos.z), ll.lat, ground);
     const where = state.realm ? REALMS[state.realm.kind].name.toUpperCase() : ground < 0 ? `THE SEA · ${Math.round(-ground)} M DEEP` : biome.toUpperCase();
     const height = state.realm ? "DREAMING" : state.mode === "water" ? (state.pos.y < -3 ? `${Math.round(-state.pos.y)} M DOWN` : "AFLOAT") : state.mode === "air" ? `${Math.round(state.pos.y - Math.max(0, ground))} M UP` : "ON THE GROUND";
-    lines.push(`${where} · ${height}${fold}`, clockLine(), targetLine(), spellsLine(), zoomLine());
+    const quiet = placeQuiet(`${where}|${state.realm ? "dream" : state.mode}`);
+    lines.push(quiet ? "" : `${where} · ${height}${fold}`, sky, targetLine(), spellsLine(), COARSE ? zoomNote() : zoomLine());
     if (hudMore) {
       const { node, meters } = nearestNode(ll.lat, ll.lon), cls = CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
       lines.push(`${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)} · ${Math.round(state.pos.y)} M · ${k ? koppenCode(k) : "—"}`,
         `${detail.fps} FPS${detail.scale < DETAIL_MAX ? ` · FORESTS ${Math.round(detail.scale * 100)}%` : ""} · LEY NODE ${(meters / 1000).toFixed(1)} KM (${cls})`, statsLines());
     }
   }
-  hud.textContent = lines.filter(Boolean).join("\n");
+  const text = lines.filter(Boolean).join("\n");
+  // On a touch screen, nothing to say: fade out (keeping the last words, so they fade rather than vanish).
+  hud.classList.toggle("hush", COARSE && !text);
+  if (text || !COARSE) hud.textContent = text;
+  menuNews();
+  contextButtons();
+}
+// The place line on a touch screen: shown when you stop, or arrive somewhere new (a biome, the water, the air, a dream),
+// hushed after a moment on the move. Spells, a trip, a ride and the ring always show.
+const placeCtx = { key: "", until: 0, movingSince: null };
+function placeQuiet(key) {
+  if (!COARSE || hudMore) return false;
+  if (key !== placeCtx.key) { placeCtx.key = key; placeCtx.until = simT + 3.5; }
+  const moving = Math.abs(state.speed) > 1.5 || !!state.target;
+  placeCtx.movingSince = moving ? (placeCtx.movingSince ?? simT) : null;
+  return simT > placeCtx.until && placeCtx.movingSince != null && simT - placeCtx.movingSince > 1.2;
+}
+// The camera's distance on a touch screen: only while it's changing.
+let zoomSeen = { z: 1, at: -Infinity };
+function zoomNote() {
+  if (Math.abs(Math.log(zoom / zoomSeen.z)) > 0.02) zoomSeen = { z: zoom, at: simT };
+  return simT - zoomSeen.at < 2.5 ? zoomLine() : "";
 }
 function targetLine() {
   if (!state.target || !world) return "";
@@ -2561,12 +2685,15 @@ function openHelp() {
     h("h2", {}, "How to play"),
     ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space", "jump; with Wings, take off and climb (▲)"], ["Shift", "crouch, slow and quiet (small creatures don't start); flying, go down (▼)"], ["Tap anything", "go to it; close enough, it answers"], ["E at a ley node's stones", "the light lifts you to its ring: A/D chooses a lane, E or W sets off, Space or Shift lets go"], ["Wheel · + − · pinch", "the camera nearer or farther (about 500 m back; a far feather, or a shrine of the soaring eye, lifts it higher)"]]),
     ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
+    ...group("On a phone", [["Drag", "move and turn"], ["Tap", "go there; close enough, it answers"], ["Pinch", "the camera nearer or farther"], ["✦", "touch what glints"], ["▲ ▼", "show when they do something, and say what (jump, fly, climb; crouch, dive, step off, let go)"], ["☰", "the menus; a dot means something new came"], ["Tilt to steer (in ☰)", "tip the phone to turn, away to go, toward you to slow; a shake squeaks"]]),
     ...group("A controller", [["Left stick", "move and turn"], ["Right stick", "turn; up or down, the camera nearer or farther (or LB · RB)"], ["A", "jump; with Wings, take off and climb; in a ley node's ring, set off"], ["B", "crouch; flying, go down; on a highway, step off; in a ring, let go"], ["X · Y", "touch what glints · take a picture"], ["D-pad", "through the menus along the bottom and what they hold: A presses, B closes"], ["Start · Back", "this help · Esc"]]),
     ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: fly along one to ride it)"], ["ATLAS ▾", "places you've found, to travel back to"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
   ], { trigger: helpBtn, classes: ["help"] });
 }
 helpBtn.addEventListener("click", openHelp);
 // The hint at the bottom fades once you've moved or after half a minute; ? HELP keeps the rest.
+// On a touch screen the hint is the log's first line, fading with the rest (so the two never overlap).
+if (COARSE) setTimeout(() => logLine("Drag to move · tap to go there · ✦ touches what glints · ☰ for the rest", "note"), 1500);
 setTimeout(() => helpHint.classList.add("gone"), 30000);
 function movedOnce(e) {
   if (!["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) return;
@@ -2594,6 +2721,7 @@ function frame() {
   if (keys.has("Minus") || keys.has("NumpadSubtract") || keys.has("PageDown")) zoomBy(Math.exp(2.4 * dt));
   zoomTick(dt);
   const view = state.ride ? rideView(dt, t) : worldView(dt, t);
+  touch.latch = 0; // a tapped ▲▼ has had its frame
 
   // The real sun for this place and moment (refreshed every 10 s).
   const days = spells.world?.id === "days" ? spellNow("world") : null;
