@@ -57,6 +57,7 @@
   #sayform input { flex: 1; font: 13px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; color: #fff7e0; background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); padding: 8px 10px; }
   #sayform button { font: 12px ui-monospace, monospace; color: #120a20; background: var(--gold); border: 0; padding: 0 14px; }
   #log .say { color: #fff7e0; }
+  #log .shrine { color: #ffc6f2; text-shadow: 0 0 6px rgba(255, 122, 217, .55), 1px 1px 0 #000; }
   #whos .who { position: fixed; left: 0; top: 0; font: 10px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; color: #c9f6ff; text-shadow: 1px 1px 0 #000, -1px 0 0 #000; pointer-events: none; white-space: nowrap; will-change: transform; }
   .sheet { position: relative; min-height: 0; overflow-y: auto; width: min(calc(100vw - 20px), 380px); box-sizing: border-box; margin-top: 2px; padding: 14px 16px 12px; color: var(--ink); background: rgba(14, 8, 30, .92); border: 1px solid var(--gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 10px 30px rgba(0, 0, 0, .45); font: 12px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; z-index: 5; }
   .sheet h2 { margin: 0 0 8px; font-size: 13px; color: var(--gold); letter-spacing: .05em; font-weight: normal; }
@@ -110,7 +111,7 @@
 <div id="log" aria-live="polite"></div>
 <div id="whos" aria-hidden="true"><div id="mybubble" class="bubble" hidden></div></div>
 <form id="sayform" hidden autocomplete="off"><input id="saytext" maxlength="80" placeholder="Say something to mutuals nearby" aria-label="Say something" enterkeyhint="send"><button type="submit">Say</button></form>
-<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ENTER: SAY · YOUR CREATURE'S NAME ▾: CHANGE IT · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
+<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ENTER: SAY · YOUR CREATURE'S NAME ▾: CHANGE IT · SHRINES (COLUMNS OF LIGHT): A SPELL FOR A MINUTE, ESC LIFTS IT · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
 <button id="act" aria-hidden="true"><span class="key" aria-hidden="true">E</span><span class="what"></span></button>
 <button class="btn" id="up" aria-label="Up">▲</button>
 <button class="btn" id="down" aria-label="Down">▼</button>

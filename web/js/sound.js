@@ -133,6 +133,17 @@ export const sound = {
     const t = ctx.currentTime;
     noise(t, 0.35, 0.16, "bandpass", 1100, 700, 1.5);
   },
+  /** A shrine taking you: a rising shimmer, a different chord for each kind of spell. */
+  shrine(kind = "shape") {
+    if (!audio()) return;
+    const t = ctx.currentTime;
+    const root = { shape: 392, camera: 440, world: 349.2 }[kind] ?? 392;
+    noise(t, 1.6, 0.12, "bandpass", 1200, 5200, 2);
+    [1, 1.25, 1.5, 1.875, 2.5].forEach((m, i) => {
+      tone("sine", root * m, root * m * 1.003, t + i * 0.09, 1.8 - i * 0.15, 0.13);
+      tone("triangle", root * m * 2.002, root * m * 2, t + i * 0.09 + 0.02, 0.9, 0.03);
+    });
+  },
   /** Stepping onto a highway: a rising rush. */
   whoosh() {
     if (!audio()) return;

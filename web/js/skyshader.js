@@ -295,6 +295,7 @@ const raysShader = /* glsl */ `
   uniform vec2 uSunUV;
   uniform vec3 uSunCol;
   uniform float uRays;
+  uniform float uLinearOut;
   varying vec2 vUv;
   void main() {
     vec4 c = texture(tColor, vUv);
@@ -311,6 +312,8 @@ const raysShader = /* glsl */ `
       }
       col += uSunCol * uRays * sum / 12.0;
     }
+    // Drawn into a spell's (sRGB) target rather than the screen, it hands over linear colour like everything else.
+    if (uLinearOut > 0.5) col = mix(col / 12.92, pow((col + 0.055) / 1.055, vec3(2.4)), step(0.04045, col));
     gl_FragColor = vec4(col, 1.0);
   }`;
 
@@ -348,7 +351,7 @@ export function buildSkyShader() {
   pass.add(quad);
   // The sky pass draws here (its alpha is the open-sky mask), then the rays pass draws it to the screen.
   const rt2 = new THREE.WebGLRenderTarget(1, 1, { depthTexture: new THREE.DepthTexture(1, 1), minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
-  const raysUniforms = { tColor: U(rt2.texture), tDepth: U(rt2.depthTexture), uSunUV: U(new THREE.Vector2(0.5, 2)), uSunCol: uniforms.uSunCol, uRays: U(0) };
+  const raysUniforms = { tColor: U(rt2.texture), tDepth: U(rt2.depthTexture), uSunUV: U(new THREE.Vector2(0.5, 2)), uSunCol: uniforms.uSunCol, uRays: U(0), uLinearOut: U(0) };
   const raysQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ uniforms: raysUniforms, vertexShader, fragmentShader: raysShader, depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth }));
   raysQuad.frustumCulled = false;
   const raysPass = new THREE.Scene();
@@ -420,7 +423,8 @@ export function buildSkyShader() {
       uniforms.uSlab.value.set(CLOUD_BASE + o.min, CLOUD_BASE + o.max + 8500);
     },
     /** Opaque world into the texture; sky and clouds to the screen; then the transparent things. */
-    render(renderer, scene, camera) {
+    /** out: where the finished frame goes (null: the screen; a target when a spell redraws it). */
+    render(renderer, scene, camera, out = null) {
       renderer.getDrawingBufferSize(size);
       if (rt.width !== size.x || rt.height !== size.y) { rt.setSize(size.x, size.y); rt2.setSize(size.x, size.y); }
       camera.layers.set(0);
@@ -428,7 +432,8 @@ export function buildSkyShader() {
       renderer.render(scene, camera);
       renderer.setRenderTarget(rt2);
       renderer.render(pass, passCam);
-      renderer.setRenderTarget(null);
+      raysUniforms.uLinearOut.value = out ? 1 : 0;
+      renderer.setRenderTarget(out);
       renderer.render(raysPass, passCam);
       // three.js clears for a colour background even with autoClear off, so lift it for this pass.
       camera.layers.set(TRANSPARENT_LAYER);
