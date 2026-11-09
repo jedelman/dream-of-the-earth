@@ -617,6 +617,22 @@ them; flight becomes a sixth stat, from the same budget of 12, once Wings is lit
   ceilings); five and four still read. Looks travel in the intent as names. The map: tap a slot to set a gem (or, with
   a moonseed, take it out), tap a link to read it; framed on what you've grown toward.
 
+### Sharing a picture to Bluesky (built 11-09)
+Jason: "OMG Claude this is so gorgeous. Can we add a 'share screenshot to bluesky' button?" (`share.js`, `sharesheet.js`)
+- **SHARE ▾ (or P)** takes the frame just drawn, before it's shown (WebGL's buffer is cleared after), and makes it four
+  times bigger with hard pixels: the dream's own 224 lines, sharp (about 1,640 × 900, a PNG of ~100 KB; JPEG only if a
+  PNG would pass Bluesky's megabyte). No HUD, no buttons, no labels: they're page text, not the picture.
+- **The sheet:** the picture; your words, starting from who, where and when ("Nyo, in the rainforest, in the full day")
+  and the game's address with #DreamOfTheEarth; a description for people who can't see it (alt text, prefilled);
+  **Post to Bluesky**, or **Save the image**.
+- **The link:** the game's address in your words becomes a link to the very spot (lat, lon, heading, height above the
+  ground, zoom), so whoever taps it lands where you were, looking the way you looked (the time is theirs: the clock is
+  real). #tags become tags. Facets are counted in UTF-8 bytes.
+- **The permission:** two more scopes, create-only posts (`repo:app.bsky.feed.post?action=create`, never edit or
+  delete) and image uploads (`blob:image/*`); Bluesky's sign-in accepted both (checked at its pushed authorization
+  request). One more sign-in. Signed out, the sheet offers sign-in, and Save works for anyone.
+- **Not yet tried:** an actual post (it needs a real OAuth session).
+
 ### Pigeons: things carried between mutuals (built 11-09)
 Jason: "item exchange between repos - via pigeon", then "we should give people reasons to collaborate". The finds
 make the reason (each kind of creature finds easily what the other needs); pigeons carry it (`pigeons.js`,
