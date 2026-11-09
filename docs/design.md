@@ -456,21 +456,23 @@ Jason: "creature stat customization. Fly/swim/run/gleam (the last one just makes
   only changes how it moves itself.
 - **With no stat, you're slow, not stuck:** zero fly still glides and hops, zero swim still paddles, zero run
   still walks.
-- **The formula (11-09): a power law in each stat, `v = v0 · (1 + stat)^p`** (`speeds()` in `stats.js`). Every point
-  multiplies your speed, the first the most (×2^p) and the sixth the least (×(7/6)^p), so spreading points pays
-  better than piling them on. It replaced straight lines (run `8 + 10·run`, fly `30 + 28·fly`, swim `4 + 6·swim`).
+- **The formula (11-09): a power law in each stat, `v = v0 · (1 + stat)^√3`** (`speeds()` in `stats.js`). Jason first
+  asked for a power law ("What's the formula that translate run and fly to speed? Should be a power law"), then for
+  the exponent: "Let's aim for p=√3". Every point multiplies your speed, and the later ones add the most metres a
+  second: a maxed stat is 7^√3 ≈ 29× none. It replaced straight lines (run `8 + 10·run`, fly `30 + 28·fly`).
+- **Pinned at the middle:** a creature with 3 points in a stat (the average) moves as it did before p changed; fewer is
+  slower, more is much faster. (Pinning stat 0 instead would have sent a maxed runner to 146 m/s; pinning stat 6
+  would have left a creature with none crawling at 1.5.)
 
-  | | v0 (stat 0) | p | stat 6 |
-  |---|---|---|---|
-  | run | 5 m/s | 1.1 | 42.6 m/s |
-  | jump (off the ground) | 3.8 m/s | 0.71 | 15.2 m/s |
-  | swim | 2.5 m/s | 1.18 | 24.9 m/s |
-  | dive | 1.3 m/s | 1.65 | 32 m/s |
-  | fly | 30 m/s | 0.97 | 198 m/s |
-  | climb | 4 m/s | 1.18 | 39.6 m/s |
+  | stat | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+  |---|---|---|---|---|---|---|---|
+  | run (m/s, typical size) | 2.1 | 6.9 | 14 | 23 | 34 | 46 | 61 |
+  | swim | 1.2 | 3.9 | 7.8 | 12.8 | 19 | 26 | 34 |
+  | fly | 10 | 35 | 70 | 115 | 169 | 232 | 303 |
+  | jump (launch; height at g = 18) | 0.9 (2 cm) | 3.1 | 6.2 | 10.2 | 15 | 20.5 | 26.8 (20 m) |
 
-  The ends were kept where they were (ground ones scaled for the shrink), so p comes out near 1 and the curve is close
-  to the old line; p is the dial (below 1, each point gives less than the last; above 1, more).
+  Dive follows swim, climb follows fly (1.9 → 54 m/s). Nyo (fly 1, swim 5, run 4) now flies at 35 m/s (was 59) and
+  runs at 39 (with its size).
 - **Body-powered movement scales with size** as the square root of leg length (the same Froude number, v²/gL, keeps
   the same gait): running, jumping, swimming and diving multiply by √(scale / 1.2). So the editor's size gene matters
   a little (the smallest creature is about 0.82× typical, the biggest 1.15×), and shape spells matter a lot: a giant

@@ -30,25 +30,24 @@ export function parseStats(str) {
 }
 
 /**
- * Movement numbers, in metres per second. Each is a power law in its stat (Jason, 11-09: "Should be a power law"):
+ * Movement numbers, in metres per second. Each is a power law in its stat (Jason, 11-09: "Should be a power law",
+ * then "Let's aim for p=√3"):
  *
- *   v = v0 · (1 + stat)^p
+ *   v = v0 · (1 + stat)^√3
  *
- * so every point multiplies your speed, the first the most (×2^p) and the sixth the least (×(7/6)^p): spreading
- * points pays better than piling them on. Movement your body makes (running, jumping, swimming, diving) also scales
- * with your size the way animals' does, as the square root of leg length (the same Froude number, v²/gL, keeps the
- * same gait): `size` is your body's scale against a typical creature's (1 at scale 1.2; a giant is 6, so √6 ≈ 2.4×
- * faster). Shrinking every creature to 0.4 m per body unit (11-09) took ground speeds down by √0.4 ≈ 0.63. Wings are
- * the dream's: flying doesn't care how big you are. With no points you're slow, not stuck.
+ * so every point multiplies your speed, and the later points multiply it more in metres a second: a maxed stat
+ * (×29 over none) is far quicker than a middling one. The curves are pinned at the middle: a creature with 3 points
+ * in a stat (the average, 12 points over four stats) moves as it did before p changed; fewer is slower, more is much
+ * faster. Movement your body makes (running, jumping, swimming, diving) also scales with your size the way animals'
+ * does, as the square root of leg length (the same Froude number, v²/gL, keeps the same gait): `size` is your body's
+ * scale against a typical creature's (1 at scale 1.2; a giant is 6, so √6 ≈ 2.4× faster). Wings are the dream's:
+ * flying doesn't care how big you are. With no points you're slow, not stuck (except for jumping: a hop of 2 cm).
  */
-export const POWER = {
-  run: { v0: 5, p: 1.1 }, // 5 → 42.6 m/s (was 8 + 10·run: 8 → 68)
-  jump: { v0: 3.8, p: 0.71 }, // 3.8 → 15.2 m/s off the ground (was 6 + 3·run)
-  swim: { v0: 2.5, p: 1.18 }, // 2.5 → 24.9 m/s (was 4 + 6·swim)
-  dive: { v0: 1.3, p: 1.65 }, // 1.3 → 32 m/s down (was 2 + 8·swim)
-  fly: { v0: 30, p: 0.97 }, // 30 → 198 m/s (as before, now a power law)
-  climb: { v0: 4, p: 1.18 }, // 4 → 39.6 m/s up (as before)
-};
+export const P = Math.sqrt(3);
+/** What a creature with 3 points does (the curves' pin), m/s. */
+const MID = { run: 23, jump: 10.2, swim: 12.8, dive: 12.8, fly: 115.1, climb: 20.5 };
+/** v0 for each (its speed with no points), from the pin: v0 = MID / 4^√3. */
+export const POWER = Object.fromEntries(Object.entries(MID).map(([k, v3]) => [k, { v0: v3 / 4 ** P, p: P }]));
 /** A typical creature's scale, against which `size` is measured. */
 export const TYPICAL_SCALE = 1.2;
 const power = (k, stat) => POWER[k].v0 * (1 + stat) ** POWER[k].p;
