@@ -672,6 +672,27 @@ from his first list, "portal items (everyone starts with one) to travel to frien
   from the elevation tiles the game already uses (flow directions on a coarse global grid, offline, shipped as small
   tiles like the Köppen map).
 
+### The menus as a bar, and feet on the ground (built 11-09)
+Jason: "For desktop, let's run the menus across the bottom of the screen, WoW style. Once that's done, I'm getting some
+skidding for non-flying, where my creature rapidly goes from flying to non-flying state as I move. Can we pin state to
+running unless they explicitly take off? And can we have non-flying creatures jump with space and crouch with shift?"
+- **The bar:** on a desktop (wide, with a mouse) the menus are one bar along the bottom, centred, and each sheet opens
+  above it; the log, the fading hint and the prompt sit above the bar. Touch screens keep the column in the corner.
+  Sheets no longer print an empty optional row as "null".
+- **Why it skidded:** each frame decided ground or air from height alone, so running downhill left you a hair above
+  the ground, which counted as air: a wingless creature snapped to its glide speed, a winged one began holding its
+  altitude, and the next frame landed it again.
+- **Pinned to the ground:** once on the ground you stay on it, following it down slopes and over bumps (a step of
+  0.8 m a frame, more at speed), until you jump, take off, or walk off a real drop. Tested: 8 s of running over
+  Highland hills, no flips (it flickered before).
+- **Space:** without wings, a jump (one per press; holding doesn't bounce); with Wings, take off and climb.
+- **Shift:** on the ground, a crouch: low and wide, no faster than 5 m/s, so small creatures don't start (they start
+  at 10). Flying, it still takes you down.
+- **Jumps are gentle:** a jump rises 0.4 m with no run and 0.45 m more a point (3.1 m at six), times the square root of
+  your size. On the power curve it had been 20 m at run 6.
+- **No gliding without wings:** a jump or a fall keeps the speed it left with, falling up to 14 m/s (it was a 6 m/s
+  glide, forced forward, from the days everyone woke 350 m up).
+
 ### Pigeons: things carried between mutuals (built 11-09)
 Jason: "item exchange between repos - via pigeon", then "we should give people reasons to collaborate". The finds
 make the reason (each kind of creature finds easily what the other needs); pigeons carry it (`pigeons.js`,

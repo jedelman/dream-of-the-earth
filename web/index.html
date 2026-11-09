@@ -164,6 +164,20 @@
   @media (max-width: 640px) { .sheet.creature { position: fixed; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; max-height: 50vh; } }
   .sheet input:focus-visible, .sheet textarea:focus-visible, .sheet button:focus-visible, #me:focus-visible, #mine:focus-visible, #bag:focus-visible, #atlas:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   @media (hover: hover) and (pointer: fine) { .btn { display: none; } }
+  /* Desktop (Jason, 11-09: "For desktop, let's run the menus across the bottom of the screen, WoW style"): the menus are a
+     bar along the bottom, and each sheet opens above it; the log and the prompt sit above the bar. Touch screens keep the
+     column in the corner. */
+  @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+    #corner { top: auto; right: auto; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: max-content; max-width: calc(100vw - 20px); flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: stretch; gap: 3px; padding: 4px; background: linear-gradient(rgba(30, 18, 56, .78), rgba(10, 6, 24, .88)); border: 1px solid rgba(255, 211, 77, .45); box-shadow: 0 0 0 1px rgba(0, 0, 0, .7), 0 6px 18px rgba(0, 0, 0, .45); pointer-events: auto; }
+    #corner > button { min-width: 0; text-align: center; padding: 7px 11px; border-color: rgba(214, 205, 255, .28); }
+    #corner > button:hover { filter: brightness(1.25); }
+    #corner > button[aria-expanded="true"] { box-shadow: inset 0 -2px 0 var(--gold); }
+    #corner > .sheet { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); max-height: calc(100vh - 120px); margin: 0; }
+    #help { bottom: 64px; }
+    #log { bottom: 82px; }
+    #act { bottom: 62px; }
+    #hud { max-width: 72vw; }
+  }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>

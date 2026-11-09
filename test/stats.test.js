@@ -6,7 +6,7 @@ import { mulberry32 } from "../web/js/rng.js";
 const at = (n) => speeds({ climb: n, swim: n, run: n, gleam: 0, perception: 0, fly: n });
 
 test("every speed is a power law in its stat: v = v0 · (1 + stat)^p", () => {
-  for (const k of ["run", "jump", "swim", "dive", "fly", "climb"]) {
+  for (const k of ["run", "swim", "dive", "fly", "climb"]) {
     assert.equal(at(0)[k], POWER[k].v0, k);
     for (let n = 0; n < 6; n++) {
       // Each point multiplies by ((n + 2) / (n + 1))^p: the same rule all the way up, the first point the biggest.
@@ -65,4 +65,12 @@ test("perception: half the sight with none, as far as before at three, 1.3× at 
   assert.equal(sightOf(0), 0.5);
   assert.equal(sightOf(3), 1);
   assert.ok(Math.abs(sightOf(6) - Math.sqrt(7 / 4)) < 1e-12);
+});
+
+import { jumpHeight, JUMP_G } from "../web/js/stats.js";
+test("a jump rises gently with run, not on the power curve: 0.4 m at none, 3.1 m at six", () => {
+  const h = (n) => at(n).jump ** 2 / (2 * JUMP_G);
+  assert.ok(Math.abs(h(0) - 0.4) < 1e-9);
+  assert.ok(Math.abs(h(6) - 3.1) < 1e-9);
+  assert.ok(Math.abs(h(3) - jumpHeight(3)) < 1e-9);
 });
