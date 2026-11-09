@@ -443,6 +443,25 @@ Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
 - **Someone will build something obscene.** The tools are local: mute, plus an option to draw non-mutuals as a
   plain default shape. With no server, there's nowhere to report it.
 
+## The astrological clock (11-09)
+Jason: "Oh we should totally show the moon in the sky and exaggerated planets (5 degrees of orb) in their positions.
+Let's drop the time of day in url and pin to actual clock time so we can use an astrological clock for the game."
+- **The clock is always the real one.** `?t=` is gone (old links' `t` is ignored) and landmarks have no moments of
+  their own: you see each place at whatever hour it is there. The spinning-days spell still races the sky for you,
+  for a minute, and now the Moon and the planets race with the sun.
+- **Positions** (`astro.js`, tested against JPL Horizons at two dates five years apart, every body within 0.08°):
+  planets from JPL's "Approximate Positions of the Planets", Table 1 (Keplerian elements, J2000, valid 1800–2050;
+  Pluto from the older JPL row, as the current table dropped it); the Moon from the Astronomical Almanac's
+  low-precision series. Tropical zodiac (ecliptic of date), retrograde when a body's longitude falls over a day.
+- **In the sky** (drawn in the sky shader, so clouds pass in front): the Moon about 8° across, lit on the side toward
+  the sun, so its phase is the real one (earthshine on the rest); the planets as discs 5° across, Jupiter banded,
+  Saturn ringed (its ball smaller so the ring fits the 5°), each in its own colour (Mercury quicksilver, Venus pale
+  gold, Mars red, Jupiter tan, Saturn butter, Uranus cyan, Neptune deep blue, Pluto dusky rose). Faint by day, full at
+  night; hidden below the horizon. Each wears its glyph (☽ ☿ ♀ ♂ ♃ ♄ ⛢ ♆ ♇) just beneath.
+- **The HUD's clock line:** every body's sign and degree, ℞ for retrograde, and the Moon's phase, e.g.
+  "☉♏17 ☽♏20 ☿♏6℞ ♀♎23℞ ♂♌22 ♃♌25 ♄♈8℞ ⛢♊4℞ ♆♈1℞ ♇♒3 · NEW MOON" (9 November 2026). The respec windows
+  already follow the new moon; more of the game can key to this clock.
+
 ## Becoming a game (11-09)
 Jason: "Now let's make this more like a game. For starters: inventory and equipment (psychedelic of course);
 perception stat that expands what you can see - ley lines are invisible without the correct item, sky beings invisible
@@ -862,7 +881,8 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
      check"):** a select at the top right lists the biome check places plus a few sky views
      (`web/js/landmarks.js`). Choosing one regrows the world there, at that landmark's altitude, heading,
      zoom and moment, and rewrites the URL so the view can be shared. The clock now runs on from `?t=`
-     (or a landmark's moment) instead of freezing the sun there.
+     (or a landmark's moment) instead of freezing the sun there. (Since 11-09 there's no `?t=` and landmarks
+     have no moments: the clock is always the real one. See "The astrological clock".)
      - **Headless (CPU-rendered) frame rate fell from 60 to ~30–34 fps,** mostly the sea shader. Real GPUs should
        be well above that at 400×224 internal pixels **(unverified on a phone)**.
    - **Zoom for scale (11-08, Jason: "zoom way out of your creature to get a sense of scale"):**
