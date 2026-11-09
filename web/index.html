@@ -45,7 +45,7 @@
   .sheet.bag ul.items { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .sheet.bag ul.items li { display: grid; grid-template-columns: 22px 1fr auto; grid-template-areas: "ic what use" "ic about use"; column-gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid rgba(214, 205, 255, .2); }
   .sheet.bag .icon { grid-area: ic; width: 16px; height: 16px; align-self: start; margin-top: 2px; }
-  .sheet.bag .what { grid-area: what; color: #e6e1ff; } .sheet.bag .about { grid-area: about; font-size: 11px; opacity: .75; } .sheet.bag button { grid-area: use; }
+  .sheet.bag .what { grid-area: what; color: #e6e1ff; } .sheet.bag .about { grid-area: about; font-size: 11px; opacity: .75; } .sheet.bag li > button { grid-area: use; }
   /* A moonseed: dark, with a thin silver crescent catching the light */
   .item-moonseed { border-radius: 50%; background: #1d1830; box-shadow: inset -3px 1px 0 0 #e9e5ff, 0 0 6px rgba(201, 182, 255, .6); }
   /* A prism: a small rainbow diamond */
@@ -61,6 +61,11 @@
   .sheet.creature .birth { margin: 8px 0 4px; color: #f3d8ff; }
   .sheet.creature .stat.asleep .k, .sheet.creature .stat.asleep .bar { opacity: .5; }
   .sheet.bag .wearing { margin: 4px 0 0; color: #f3d8ff; }
+  .sheet.bag .acts { grid-area: use; display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+  .sheet.bag .acts .send { font-size: 10px; padding: 2px 6px; }
+  .sheet.bag .coming { color: #d9ecff; font-size: 11px; }
+  .sheet.pigeon label { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+  .sheet.pigeon label input { flex: 1; min-width: 0; }
   .sheet.bag li.worn .what { color: #fff6c9; }
   .sheet.bag button:disabled { opacity: .45; cursor: default; }
   .sheet.creature button.eat { margin-top: 6px; }

@@ -9,8 +9,8 @@ import { INTENT_NSID, INTENT_RKEY } from "./intents.js";
 import { CREATURE_NSID, CREATURE_RKEY } from "./creature-record.js";
 import { INVENTORY_NSID, INVENTORY_RKEY } from "./inventory.js";
 import { ATLAS_NSID, ATLAS_RKEY } from "./atlas-record.js";
-// Pigeons (items carried between mutuals' repos) come later; asked for now so a sign-in covers them when they land.
-export const PIGEON_NSID = "org.jason-edelman.dream.pigeon";
+import { PIGEON_NSID } from "./pigeons.js";
+export { PIGEON_NSID };
 
 // Six collections in your repo (the cairns you leave, your creature, what you carry, your atlas, the pigeons you send,
 // your one current intent), and reading your own mute list so muted accounts stay out of your world. Nothing else.
@@ -95,6 +95,30 @@ export const account = {
   putCreature: (record) => account.putOwn(CREATURE_NSID, CREATURE_RKEY, record),
   getInventory: () => account.getOwn(INVENTORY_NSID, INVENTORY_RKEY),
   putInventory: (record) => account.putOwn(INVENTORY_NSID, INVENTORY_RKEY, record),
+  /** Whether this sign-in covers sending pigeons (one from before moonseeds doesn't). */
+  canFly: () => covers(`repo:${PIGEON_NSID}`),
+  /** A pigeon off to a mutual: a new record in your repo. */
+  sendPigeon: (record) => xrpc("com.atproto.repo.createRecord", { repo: session.did, collection: PIGEON_NSID, record }),
+  /** Your own pigeons: [{ rkey, value }] (up to 300). */
+  async ownPigeons() {
+    if (!session) return [];
+    const out = [];
+    let cursor = "";
+    for (let page = 0; page < 3; page++) {
+      const q = `repo=${encodeURIComponent(session.did)}&collection=${PIGEON_NSID}&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+      const r = await session.fetchHandler(`/xrpc/com.atproto.repo.listRecords?${q}`, { headers: { accept: "application/json" } });
+      if (!r.ok) break;
+      const j = await r.json();
+      for (const x of j.records || []) if (x && typeof x.uri === "string") out.push({ rkey: x.uri.split("/").pop(), value: x.value });
+      if (!j.cursor) break;
+      cursor = j.cursor;
+    }
+    return out;
+  },
+  /** One of your own pigeons cleared away. */
+  async clearPigeon(rkey) {
+    try { await xrpc("com.atproto.repo.deleteRecord", { repo: session.did, collection: PIGEON_NSID, rkey }); } catch { /* gone already */ }
+  },
   getAtlas: () => account.getOwn(ATLAS_NSID, ATLAS_RKEY),
   putAtlas: (record) => account.putOwn(ATLAS_NSID, ATLAS_RKEY, record),
   /** Your one current intent, overwritten. */

@@ -32,8 +32,12 @@ the latest file in `conversations/`.
     (mutuals see your creature through your intent).
   - **What you carry (Jason, 11-09):** items live in the player's own repo: one record,
     `org.jason-edelman.dream.inventory/self` (counts by kind, and the last new moon that gave a moonseed), overwritten.
-    Read only from the player's own repo. Honour system: nothing referees it (no scores, no races). Pigeons, when they
-    come, will carry items between mutuals' repos (`org.jason-edelman.dream.pigeon`, already in the sign-in scope).
+    Read only from the player's own repo. Honour system: nothing referees it (no scores, no races).
+  - **Pigeons (Jason, 11-09):** "item exchange between repos - via pigeon", and "give people reasons to collaborate". A
+    pigeon is a record in the sender's repo (`org.jason-edelman.dream.pigeon/<tid>`: to whom, what, where it set off,
+    when), found by the recipient through the backlink index, only from mutuals (`allowed()`), parsed against hard caps
+    (`parsePigeon`). The recipient's inventory keeps which pigeons it has had; the sender's game clears its pigeons
+    after a lunar month. Nothing stored by our Worker.
     What you wear (at most two things) is in the same record, and travels in your intent as names, never geometry.
   - **Your atlas (Jason, 11-09):** "I'm okay with publishing the atlas to the repo! I guess it means bots can wall hack
     but what's the point of cheating at a cozy exploration game?" One record per player
