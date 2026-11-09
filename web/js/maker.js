@@ -21,7 +21,7 @@ export const h = (tag, attrs = {}, ...kids) => {
  */
 export function buildMaker(hooks) {
   const button = document.getElementById("me"), sheet = document.getElementById("sheet"), list = document.getElementById("cairns");
-  let person = { did: null, handle: null, signedIn: false }, open = null, sharing = { on: true, can: false }, counts = [0, 0];
+  let person = { did: null, handle: null, signedIn: false }, open = null, sharing = { on: true, can: false, keep: true }, counts = [0, 0];
   let custom = null; // another module's sheet in the same place: { trigger, onClose }
 
   const endCustom = () => {
@@ -68,7 +68,7 @@ export function buildMaker(hooks) {
       h("p", {}, "See what your Bluesky mutuals left in the dream, and leave cairns of your own."),
       h("form", { onsubmit: (e) => { e.preventDefault(); busy(go, msg, () => hooks.signIn(input.value)); } }, input, h("div", { class: "row" }, go, look)),
       msg,
-      h("p", { class: "small" }, "Signing in lets the game write two kinds of record to your Bluesky repo: the cairns you leave, and your creature's current plan (one record, overwritten, so your mutuals can see you fly; you can turn it off). It also reads your mute list, so muted accounts stay out of your world. Records are public on the network; the game only shows mutuals'. Just look only reads."));
+      h("p", { class: "small" }, "Signing in lets the game write three kinds of record to your Bluesky repo: the cairns you leave, your creature (one record, so it follows you to any device), and your creature's current plan (one record, overwritten, so your mutuals can see you fly; you can turn it off). It also reads your mute list, so muted accounts stay out of your world. Records are public on the network; the game only shows mutuals'. Just look only reads."));
   }
   function menuSheet() {
     const msg = h("p", { class: "msg", role: "status" });
@@ -77,9 +77,11 @@ export function buildMaker(hooks) {
         h("h2", {}, person.handle ? `@${person.handle}` : "Signed in"),
         h("div", { class: "col" },
           h("button", { class: "go", onclick: leaveSheet }, "Leave a cairn here"),
-          sharing.can
-            ? h("button", { onclick: async () => { await hooks.toggleShare(); menuSheet(); } }, sharing.on ? "Showing you to mutuals: turn off" : "Hidden from mutuals: show me")
-            : h("button", { onclick: () => signInSheet(person.handle || "") }, "Sign in again to show yourself to mutuals"),
+          sharing.can ? h("button", { onclick: async () => { await hooks.toggleShare(); menuSheet(); } }, sharing.on ? "Showing you to mutuals: turn off" : "Hidden from mutuals: show me") : null,
+          // A sign-in from before a permission existed doesn't cover it; signing in again asks for everything.
+          !sharing.can || sharing.keep === false
+            ? h("button", { onclick: () => signInSheet(person.handle || "") }, !sharing.can && sharing.keep === false ? "Sign in again: your creature follows you, and mutuals see it" : !sharing.can ? "Sign in again to show yourself to mutuals" : "Sign in again so your creature follows you")
+            : null,
           h("button", { onclick: (e) => busy(e.currentTarget, msg, async () => { await hooks.signOut(); close(); }) }, "Sign out")),
         msg);
     } else {
@@ -165,7 +167,7 @@ export function buildMaker(hooks) {
       list.textContent = `CAIRNS${n ? ` (${n})` : ""}${here ? ` \u00b7 ${here} HERE` : ""} \u25be`;
       if (open === "list") listSheet();
     },
-    /** Whether your creature is shown to mutuals: { on, can } (can: this sign-in covers it). */
+    /** Whether your creature is shown to mutuals: { on, can, keep } (can, keep: this sign-in covers showing and keeping it). */
     setSharing(s) {
       sharing = s;
       if (open === "menu") menuSheet();

@@ -333,14 +333,21 @@ customization." The design's editor verbs were randomize, mutate, edit; all thre
   trees are in the way (a rainforest had parked it behind a kapok trunk). The creature sits left of the sheet on a
   wide screen, above it on a phone (the sheet runs along the bottom there). Nothing else asks for you while editing:
   no glints, no prompt.
-- **Your creature is yours:** kept on the device (`dream.creature`). The first creature you meet is kept. A `?seed`
+- **Your creature is yours:** kept on the device (`dream.creature`), and in your repo when you're signed in (below). The first creature you meet is kept. A `?seed`
   in the URL shows that creature instead, with your changes if it's the one you keep; after an edit the URL follows.
   Your own creature lands somewhere new each visit (a seed in the URL still sets the spawn, so links reproduce).
 - **Mutuals see it:** genes ride in the intent (`creature.genes`), so a mutual's phone grows the same creature. A new
   look waits until you've stopped changing things for 3 seconds before it's written, so a burst of re-rolls is one
   write.
-- **Not yet:** voices (Operator Field patches), part-by-part editing beyond counts, a creature that follows you
-  between devices (that would mean one more record in your repo, Jason's call), and the plain-shape option for
+- **It follows you (11-09, Jason: "Yes! Your creature should follow you."):** signed in, your creature is also one
+  record in your repo, `org.jason-edelman.dream.creature/self` (seed, stats, genes, `updatedAt`), overwritten when
+  you change it (after 3 s settled, like the intent). On signing in, and when you come back to the tab, the game
+  brings the device and your repo into step: the newest creature you *chose* wins, and a creature you only happened
+  to meet on a new device always gives way, so a new phone never overwrites Nyo with a stranger. With nothing in your
+  repo yet, the creature this device keeps becomes yours. A creature from a link (`?seed=`) isn't yours until you
+  change it or press "Make this one mine". The record is read only from your own repo (mutuals see your creature
+  through your intent), so nothing indexes it. Needs a sign-in from 11-09 on; older ones are offered a fresh sign-in.
+- **Not yet:** voices (Operator Field patches), part-by-part editing beyond counts, and the plain-shape option for
   non-mutuals' creatures (only mutuals are shown, so it isn't needed yet).
 
 ## Avatars (completely unhinged, 256 triangles)

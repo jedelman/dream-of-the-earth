@@ -27,6 +27,7 @@ import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm, byDistance,
 import { account, isReturning, takeReturn } from "./account.js";
 import { buildMaker } from "./maker.js";
 import { buildEditor } from "./editor.js";
+import { makeCreatureRecord, parseCreatureRecord, reconcile } from "./creature-record.js";
 import { sound } from "./sound.js";
 import { logLine } from "./eventlog.js";
 import { buildBursts } from "./bursts.js";
@@ -44,14 +45,16 @@ import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
 const params = new URLSearchParams(location.search);
 // Back from signing in with Bluesky: the page reloaded at its bare address, so put back where you were.
 if (isReturning()) { const back = takeReturn(); if (back) for (const [k, v] of new URLSearchParams(back)) params.set(k, v); }
-// Your creature is yours: kept on this device (seed, genes, stats), made in the editor. A ?seed in the URL shows
-// that creature instead (with your changes, if it's the one you keep).
+// Your creature is yours: kept on this device (seed, genes, stats), made in the editor, and (signed in) in your repo
+// so it follows you to any device. A ?seed in the URL shows that creature instead (with your changes, if it's yours).
 const CREATURE_KEY = "dream.creature";
+/** { seed, genes, stats, at (ms, when you last changed it), chosen (false: one you only happened to meet) } or null. */
 function keptCreature() {
   try {
     const v = JSON.parse(localStorage.getItem(CREATURE_KEY) || "null");
     if (!v || !Number.isInteger(v.seed) || v.seed < 0 || v.seed > 0xffffffff) return null;
-    return { seed: v.seed, genes: parseGenes(v.genes), stats: Array.isArray(v.stats) ? parseStats(v.stats.join(",")) : null };
+    const stats = Array.isArray(v.stats) ? parseStats(v.stats.join(",")) : null;
+    return { seed: v.seed, genes: parseGenes(v.genes), stats, at: Number.isFinite(v.at) ? v.at : 0, chosen: v.chosen !== false };
   } catch { return null; }
 }
 const kept = keptCreature();
@@ -62,10 +65,12 @@ let seed = urlSeed ?? yours?.seed ?? (Math.random() * 2 ** 32) >>> 0;
 let genes = yours?.genes ?? null;
 let stats = parseStats(params.get("stats")) || yours?.stats || randomStats(mulberry32(hashString(`stats:${seed}`)));
 let sp = speeds(stats);
-function keepCreature() {
-  try { localStorage.setItem(CREATURE_KEY, JSON.stringify({ seed, genes, stats: STATS.map((k) => stats[k]) })); } catch { /* private mode */ }
+let showingMine = yours !== null || urlSeed === null; // the creature on screen is the one you keep
+function keepCreature(at = Date.now(), chosen = true) {
+  showingMine = true;
+  try { localStorage.setItem(CREATURE_KEY, JSON.stringify({ seed, genes, stats: STATS.map((k) => stats[k]), at, chosen })); } catch { /* private mode */ }
 }
-if (!kept && urlSeed === null) keepCreature(); // the first creature you meet is yours
+if (!kept && urlSeed === null) keepCreature(0, false); // the first creature you meet is yours (until you choose another)
 // Separate streams, so choosing your stats doesn't move your spawn. A creature named in the URL lands where its
 // seed says, so any spawn is reproducible; your own lands somewhere new each visit.
 const spawnRand = mulberry32(hashString(`spawn:${urlSeed ?? (Math.random() * 2 ** 32) >>> 0}`));
@@ -155,10 +160,11 @@ scene.add(creature.group);
 layerTransparent(creature.group);
 /** Your creature as it is: { seed, genes, stats }, and a key that changes when its look does. */
 const myCreature = () => ({ seed, genes, stats });
-const lookKey = () => `${seed}:${STATS.map((k) => stats[k]).join(",")}:${JSON.stringify(genes)}`;
+const keyOf = (c) => `${c.seed}:${STATS.map((k) => c.stats[k]).join(",")}:${JSON.stringify(parseGenes(c.genes))}`;
+const lookKey = () => keyOf(myCreature());
 let lookAt = -Infinity; // when the look last changed (real seconds), so mutuals get it once you've settled
-/** A new look (from the editor): regrow the creature where it stands, keep it, and tell mutuals once you've settled. */
-function setCreature(next) {
+/** A new look (from the editor, or your repo): regrow the creature where it stands, keep it, and tell mutuals once you've settled. */
+function setCreature(next, at = Date.now()) {
   const was = creature;
   seed = next.seed >>> 0;
   genes = parseGenes(next.genes);
@@ -177,7 +183,7 @@ function setCreature(next) {
   fadeCreature(o);
   eyeLocal = eyeOf(graph);
   myName = creatureName(seed);
-  keepCreature();
+  keepCreature(at);
   lookAt = realNow();
   // A URL that names a creature keeps naming this one.
   if (params.has("seed")) {
@@ -935,7 +941,7 @@ const maker = buildMaker({
     share.on = !share.on;
     try { localStorage.setItem("dream.share", share.on ? "on" : "off"); } catch { /* */ }
     if (!share.on) await stopSharing();
-    maker.setSharing({ on: share.on, can: share.can });
+    maker.setSharing({ on: share.on, can: share.can, keep: keep.can });
     logLine(share.on ? "Your mutuals can see your creature now." : "You're hidden from your mutuals now.", "note");
   },
   flock: () => {
@@ -1008,6 +1014,7 @@ const editor = buildEditor({
       if (newName) logLine(`Meet ${myName}.`, "creature");
     },
     name: creatureName,
+    isMine: () => showingMine,
     portrait: (on) => {
       editing = on;
       if (!on) { if (director.shot === "portrait") director.release(simT); return; }
@@ -1021,11 +1028,14 @@ const editor = buildEditor({
 editor.setName(myName);
 account.onChange(async (did) => {
   share.can = false;
+  keep.can = false;
+  keep.synced = "";
   if (did) {
     const name = (await handlesOf([did])).get(did) || null;
     setViewer(did, name);
-    share.can = await account.canShare();
-    maker.setSharing({ on: share.on, can: share.can });
+    [share.can, keep.can] = await Promise.all([account.canShare(), account.canKeep()]);
+    maker.setSharing({ on: share.on, can: share.can, keep: keep.can });
+    syncCreature();
     account.mutes().then((m) => { setMuted(m); refreshIntents(); refreshEverywhere(); artifactsAt = -Infinity; });
   } else if (people.viewer && people.viewer === account.did) setViewer(null, null);
   else maker.setPerson({ did: people.viewer, handle: people.handle, signedIn: false });
@@ -1117,6 +1127,7 @@ function hearMutuals(on) {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { hearMutuals(false); stopSharing(); }
   else if (people.viewer) { hearMutuals(true); refreshIntents(); }
+  if (!document.hidden && realNow() - keep.checkedAt > 20) syncCreature(); // changed on another device meanwhile?
 });
 addEventListener("pagehide", () => { stopSharing(); });
 /** Off to a mutual: arrive 40 m from where their creature is now. */
@@ -1218,8 +1229,46 @@ function shareTick() {
   }).catch((e) => {
     console.warn("intent:", e.message);
     share.lastAt = nowS; // don't hammer
-    if (/scope|forbidden|403/i.test(e.message)) { share.can = false; maker.setSharing({ on: share.on, can: false }); }
+    if (/scope|forbidden|403/i.test(e.message)) { share.can = false; maker.setSharing({ on: share.on, can: false, keep: keep.can }); }
   }).finally(() => { share.writing = false; });
+}
+// ---- Your creature in your repo, so it follows you (signed in, with a sign-in that covers it) ----
+const keep = { can: false, synced: "", busy: false, checkedAt: -Infinity };
+/** Bring this device and your repo into step: adopt the creature there, or put this one there. */
+async function syncCreature() {
+  if (!account.did || !keep.can || keep.busy) return;
+  keep.busy = true;
+  keep.checkedAt = realNow();
+  try {
+    const remote = parseCreatureRecord(await account.getCreature());
+    const local = keptCreature();
+    const which = reconcile(local, remote);
+    if (which === "remote") {
+      if (showingMine) {
+        const was = keyOf(myCreature());
+        setCreature(remote, remote.at);
+        editor.setName(myName);
+        if (keyOf(remote) !== was) logLine(`${myName} found you here.`, "creature");
+      } else {
+        try { localStorage.setItem(CREATURE_KEY, JSON.stringify({ seed: remote.seed, genes: remote.genes, stats: STATS.map((k) => remote.stats[k]), at: remote.at, chosen: true })); } catch { /* */ }
+      }
+      keep.synced = keyOf(remote);
+    } else if (which === "local") {
+      await account.putCreature(makeCreatureRecord(local, local.chosen ? local.at || Date.now() : Date.now()));
+      keep.synced = keyOf(local);
+    } else keep.synced = keyOf(remote);
+  } catch (e) { console.warn("creature:", e.message); }
+  finally { keep.busy = false; }
+}
+/** Once a second: after you've changed your creature here and settled, put it in your repo. */
+function keepTick() {
+  if (!account.did || !keep.can || keep.busy || !showingMine || people.viewer !== account.did) return;
+  const look = lookKey();
+  if (look === keep.synced || realNow() - lookAt < 3) return;
+  keep.busy = true;
+  account.putCreature(makeCreatureRecord(myCreature())).then(() => { keep.synced = look; })
+    .catch((e) => { console.warn("creature:", e.message); if (/scope|forbidden|403/i.test(e.message)) { keep.can = false; maker.setSharing({ on: share.on, can: share.can, keep: false }); } })
+    .finally(() => { keep.busy = false; });
 }
 async function stopSharing() {
   if (!share.last && share.lastAt === -Infinity) return;
@@ -1384,6 +1433,7 @@ function frame() {
   if (t - shareTickAt > 1) {
     shareTickAt = t;
     shareTick();
+    keepTick();
     const nowS = realNow();
     let gone = false;
     for (const [did, w] of who) if (nowS - w.intent.at > STALE_S) { who.delete(did); gone = true; } // stale: they've left

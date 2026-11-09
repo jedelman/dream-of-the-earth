@@ -87,6 +87,7 @@
   .sheet.creature .stat .k { min-width: 40px; color: var(--gold); }
   .sheet.creature .stat .bar { letter-spacing: -.05em; color: var(--gold); }
   .sheet.creature .left { margin-top: 6px; }
+  .sheet.creature .adopt[hidden] { display: none; } .sheet.creature .adopt button { margin-top: 4px; }
   /* A phone: the editor along the bottom, so the creature shows above it */
   @media (max-width: 640px) { .sheet.creature { position: fixed; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; max-height: 50vh; } }
   .sheet input:focus-visible, .sheet textarea:focus-visible, .sheet button:focus-visible, #me:focus-visible, #mine:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }

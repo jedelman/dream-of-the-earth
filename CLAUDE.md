@@ -26,6 +26,10 @@ the latest file in `conversations/`.
     ever show data from mutuals. Let's respect Bluesky mod and block norms. Should keep everything light." One
     record per player (`org.jason-edelman.dream.intent/self`), overwritten, deleted when they leave or switch it
     off; everyone computes where the creature is from it. Never accumulate intent records.
+  - **Your creature (Jason, 11-09):** "Yes! Your creature should follow you." One record per player
+    (`org.jason-edelman.dream.creature/self`: seed, stats, genes, when it was changed), overwritten, so a creature
+    follows its player to any device. It's read only from the player's own repo, never indexed or shown to others
+    (mutuals see your creature through your intent).
   - **Whose things we show:** `allowed()` in `intents.js`, for cairns and creatures alike: mutuals only, no block
     either way (direct or by list), accounts Bluesky still serves, nothing Bluesky's moderation hides
     (`!hide`/`!takedown`/`!suspend`), nothing you've muted.

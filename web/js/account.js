@@ -1,16 +1,17 @@
-// Signing in with Bluesky, to leave cairns and to let mutuals see your creature. The
+// Signing in with Bluesky, to leave cairns, to keep your creature with you, and to let mutuals see it. The
 // OAuth client (web/vendor, ~210 KB) loads only when someone signs in or comes back
-// signed in; its scope reaches two collections (artifacts, your one intent) and reading
+// signed in; its scope reaches three collections (artifacts, your creature, your one intent) and reading
 // your own mute list. Seeing what mutuals left needs none of this.
 // Writes go through the session's own fetch handler (DPoP-bound tokens), to the
 // player's own PDS.
 import { NSID } from "./artifacts.js";
 import { INTENT_NSID, INTENT_RKEY } from "./intents.js";
+import { CREATURE_NSID, CREATURE_RKEY } from "./creature-record.js";
 
-// Two collections in your repo (the cairns you leave, your one current intent), and reading your own mute list so
-// muted accounts stay out of your world. Nothing else.
+// Three collections in your repo (the cairns you leave, your creature, your one current intent), and reading your own
+// mute list so muted accounts stay out of your world. Nothing else.
 const MUTES = "rpc:app.bsky.graph.getMutes?aud=did:web:api.bsky.app%23bsky_appview";
-export const SCOPE = `atproto repo:${NSID} repo:${INTENT_NSID} ${MUTES}`;
+export const SCOPE = `atproto repo:${NSID} repo:${CREATURE_NSID} repo:${INTENT_NSID} ${MUTES}`;
 const HANDLE_RESOLVER = "https://bsky.social";
 const KEY = "dream.did", RETURN = "dream.return";
 
@@ -58,13 +59,28 @@ async function xrpc(method, body) {
   return j;
 }
 
+async function covers(scope) {
+  if (!session) return false;
+  try { const info = await session.getTokenInfo(false); return String(info.scope || "").split(" ").includes(scope); } catch { return false; }
+}
+
 export const account = {
   get did() { return session ? session.did : null; },
   /** Whether this sign-in covers sharing your intent (a sign-in from before intents existed doesn't). */
-  async canShare() {
-    if (!session) return false;
-    try { const info = await session.getTokenInfo(false); return String(info.scope || "").split(" ").includes(`repo:${INTENT_NSID}`); } catch { return false; }
+  canShare: () => covers(`repo:${INTENT_NSID}`),
+  /** Whether this sign-in covers keeping your creature in your repo (one from before 11-09 doesn't). */
+  canKeep: () => covers(`repo:${CREATURE_NSID}`),
+  /** Your creature's record, or null if there isn't one (or it can't be read). */
+  async getCreature() {
+    if (!session) return null;
+    const q = `repo=${encodeURIComponent(session.did)}&collection=${CREATURE_NSID}&rkey=${CREATURE_RKEY}`;
+    const r = await session.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${q}`, { headers: { accept: "application/json" } });
+    if (r.status === 400 || r.status === 404) return null; // none yet
+    if (!r.ok) throw new Error(`${r.status}`);
+    return (await r.json()).value ?? null;
   },
+  /** Your creature, overwritten. */
+  putCreature: (record) => xrpc("com.atproto.repo.putRecord", { repo: session.did, collection: CREATURE_NSID, rkey: CREATURE_RKEY, record }),
   /** Your one current intent, overwritten. */
   putIntent: (record) => xrpc("com.atproto.repo.putRecord", { repo: session.did, collection: INTENT_NSID, rkey: INTENT_RKEY, record }),
   /** Gone from your repo (it's fine if it already was). */
