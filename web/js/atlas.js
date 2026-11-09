@@ -17,7 +17,7 @@ export function buildAtlas({ maker, button, hooks }) {
       h("h2", {}, list.length ? `Shrines you've found (${list.length})` : "Shrines you've found"),
       list.length ? h("ul", { class: "cairns" }, rows) : h("p", {}, "None yet. Shrines are the columns of light; walk up to one and it goes in your atlas."),
       list.length ? h("div", { class: "row" }, h("button", { onclick: () => { maker.close(); hooks.globe(); } }, "Show on the globe")) : null,
-      h("p", { class: "small" }, "Places you've been, to travel back to. Your atlas is kept on this device."),
+      h("p", { class: "small" }, "Places you've been, to travel back to. Your atlas is kept on this device and, signed in, in your Bluesky repo, so it follows you."),
     ], { trigger: button, classes: ["atlas"] });
   }
   button.addEventListener("click", () => (maker.open === "atlas" ? maker.close() : open()));

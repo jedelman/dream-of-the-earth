@@ -63,6 +63,7 @@ export function buildGlobe() {
       for (const p of [pts[i], pts[i + 1]]) classLines.get(line.cls.id).pos.push(p[0] * R_EARTH * 1.012, p[1] * R_EARTH * 1.012, p[2] * R_EARTH * 1.012);
   }
   const leyMeshes = [];
+  let leyOn = true; // the ley grid shows only to someone wearing a prism
   for (const { rank, pos } of classLines.values()) {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -239,7 +240,7 @@ export function buildGlobe() {
     // Fewer, fainter lines the further out you are.
     const out = THREE.MathUtils.smoothstep(altitude, 2.5e6, 9e6);
     for (const m of leyMeshes) {
-      m.visible = m.userData.rank >= 2 || out < 0.95;
+      m.visible = leyOn && (m.userData.rank >= 2 || out < 0.95);
       m.material.opacity = (m.userData.rank >= 2 ? 0.85 : 0.6) * (1 - 0.55 * out);
     }
     // Camera: above you, tilted back along your heading when close, swinging to
@@ -259,5 +260,5 @@ export function buildGlobe() {
     camera.updateProjectionMatrix();
   }
 
-  return { scene, camera, update, load, setMarks, setFlock, setShrines, pick };
+  return { scene, camera, update, load, setMarks, setFlock, setShrines, pick, showLey: (on) => { leyOn = !!on; } };
 }

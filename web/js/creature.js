@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import { BREATH } from "./breath.js";
 import { TRIANGLE_CAP, sizeOf } from "./creature-graph.js";
+import { wearOn } from "./wearables.js";
 
 function geometryFor(part) {
   switch (part.prim) {
@@ -29,12 +30,13 @@ const triCount = (g) => (g.index ? g.index.count : g.attributes.position.count) 
 
 /**
  * Returns { group, update(t, motion), triangles, size (metres per body unit), foot (metres from its origin down to
- * its lowest point, so it can stand on the ground) }.
+ * its lowest point, so it can stand on the ground) }. worn: the things it wears (wearables.js), by kind.
  */
-export function buildCreature(graph, stats) {
+export function buildCreature(graph, stats, worn = []) {
   const group = new THREE.Group();
   const gleam = stats.gleam / 6;
   const animated = [];
+  const pivots = [];
   let triangles = 0;
 
   for (const part of graph.parts) {
@@ -62,6 +64,7 @@ export function buildCreature(graph, stats) {
     }
     pivot.add(mesh);
     group.add(pivot);
+    pivots.push(pivot);
     if (["wing", "leg", "tail"].includes(part.kind)) animated.push({ part, pivot, mat });
     if (gleam > 0) animated.push({ part, pivot, mat, gleamOnly: true, base: c });
   }
@@ -83,13 +86,14 @@ export function buildCreature(graph, stats) {
     group.add(sparkles);
   }
 
-  const size = sizeOf(graph);
-  group.scale.setScalar(size);
-  // Where its feet are: the lowest point of its parts (not its sparkles), at rest.
+  // Where its feet are: the lowest point of its parts (not its sparkles), at rest. Then what it wears, on its parts.
   group.updateMatrixWorld(true);
   const box = new THREE.Box3();
   group.traverse((o) => { if (o.isMesh) box.expandByObject(o); });
-  const foot = Math.max(0, -box.min.y);
+  const wornUpdate = wearOn(graph.parts, pivots, box, worn);
+  const size = sizeOf(graph);
+  group.scale.setScalar(size);
+  const foot = Math.max(0, -box.min.y) * size;
   // It breathes: slow at rest, quicker on the move. Animals breathe the most of anything in the dream.
   let breath = (graph.seed % 1000) / 159, lastT = null;
 
@@ -120,6 +124,7 @@ export function buildCreature(graph, stats) {
       }
     }
     if (sparkles) sparkles.rotation.y = t * 0.8;
+    wornUpdate(t, motion);
   }
 
   return { group, update, triangles, size, foot };

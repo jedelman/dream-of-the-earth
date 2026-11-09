@@ -34,6 +34,11 @@ the latest file in `conversations/`.
     `org.jason-edelman.dream.inventory/self` (counts by kind, and the last new moon that gave a moonseed), overwritten.
     Read only from the player's own repo. Honour system: nothing referees it (no scores, no races). Pigeons, when they
     come, will carry items between mutuals' repos (`org.jason-edelman.dream.pigeon`, already in the sign-in scope).
+    What you wear (at most two things) is in the same record, and travels in your intent as names, never geometry.
+  - **Your atlas (Jason, 11-09):** "I'm okay with publishing the atlas to the repo! I guess it means bots can wall hack
+    but what's the point of cheating at a cozy exploration game?" One record per player
+    (`org.jason-edelman.dream.atlas/self`: the shrines you've found), overwritten, merged across devices. Read only
+    from the player's own repo, never indexed or shown to others by the game.
   - **Whose things we show:** `allowed()` in `intents.js`, for cairns and creatures alike: mutuals only, no block
     either way (direct or by list), accounts Bluesky still serves, nothing Bluesky's moderation hides
     (`!hide`/`!takedown`/`!suspend`), nothing you've muted.

@@ -9,6 +9,7 @@
 import { WORLD_URL, metresBetween, cleanNote } from "./artifacts.js";
 import { STATS, statsFrom } from "./stats.js";
 import { parseGenes } from "./creature-graph.js";
+import { WEARABLE, WORN_MAX } from "./inventory.js";
 import { pointOn, rideSpeed, lineAt, lineCount } from "./ride.js";
 import { vecToLatLon } from "./geo.js";
 
@@ -24,10 +25,17 @@ export const ACTS = ["squeak"];
 const STEER_FOR_S = 90; // dead reckoning stops this long after the intent (the next one should have come)
 
 const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+/** What a creature wears, from an untrusted list: known kinds, no repeats, at most WORN_MAX. */
+export function parseWorn(v) {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  for (const k of v.slice(0, 8)) if (out.length < WORN_MAX && WEARABLE.includes(k) && !out.includes(k)) out.push(k);
+  return out;
+}
 const E6 = (x) => Math.round(x * 1e6);
 
 /**
- * My intent now. p: { lat, lon, alt (m, above sea level) }; creature: { seed, stats, genes? }; plus one of
+ * My intent now. p: { lat, lon, alt (m, above sea level) }; creature: { seed, stats, genes?, worn? }; plus one of
  * goto: { pts: [{ lat, lon }], speed (m/s), fly, cruise (m) }, ride: { line, t (0..1), dir }, steer: { heading (rad), speed, climb }.
  */
 export function makeIntent({ kind, p, creature, goto, ride, steer, say, act, now = new Date() }) {
@@ -41,6 +49,8 @@ export function makeIntent({ kind, p, creature, goto, ride, steer, say, act, now
   };
   const genes = parseGenes(creature.genes);
   if (genes) v.creature.genes = genes;
+  const worn = parseWorn(creature.worn);
+  if (worn.length) v.creature.worn = worn;
   if (kind === "goto") v.goto = { pts: goto.pts.slice(0, MAX_POINTS).map((q) => [E6(q.lat), E6(q.lon)]), speedCm: Math.round(goto.speed * 100), fly: !!goto.fly, cruiseDm: Math.round((goto.cruise ?? 0) * 10) };
   if (kind === "ride") v.ride = { line: ride.line, tE6: Math.round(ride.t * 1e6), dir: ride.dir > 0 ? 1 : -1 };
   if (kind === "steer") v.steer = { headingMdeg: Math.round(((((steer.heading * 180) / Math.PI) % 360) + 360) % 360 * 1000), speedCm: Math.round(steer.speed * 100), climbCm: Math.round(steer.climb * 100) };
@@ -51,8 +61,9 @@ export function makeIntent({ kind, p, creature, goto, ride, steer, say, act, now
 }
 
 /**
- * Someone's intent, checked: { kind, at, lat, lon, alt, creature: { seed, stats, genes }, goto?, ride?, steer? } or null
- * (bad, or stale). Bad genes are dropped, not the creature: it shows as its seed made it.
+ * Someone's intent, checked: { kind, at, lat, lon, alt, creature: { seed, stats, genes, worn }, goto?, ride?, steer? } or
+ * null (bad, or stale). Bad genes are dropped, not the creature: it shows as its seed made it. Worn things are words
+ * (unknown ones dropped): the phone builds them.
  */
 export function parseIntent(v, nowS = Date.now() / 1000) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
@@ -65,7 +76,7 @@ export function parseIntent(v, nowS = Date.now() / 1000) {
   if (!c || !int(c.seed, 0, 0xffffffff)) return null;
   const stats = statsFrom(c.stats); // five, or the four from before perception
   if (!stats) return null;
-  const out = { kind: v.kind, at, lat: v.latE6 / 1e6, lon: v.lonE6 / 1e6, alt: v.altDm / 10, creature: { seed: c.seed, stats, genes: parseGenes(c.genes) } };
+  const out = { kind: v.kind, at, lat: v.latE6 / 1e6, lon: v.lonE6 / 1e6, alt: v.altDm / 10, creature: { seed: c.seed, stats, genes: parseGenes(c.genes), worn: parseWorn(c.worn) } };
   if (v.kind === "goto") {
     const g = v.goto;
     if (!g || !Array.isArray(g.pts) || g.pts.length < 1 || g.pts.length > MAX_POINTS) return null;

@@ -80,7 +80,7 @@ export function buildMaker(hooks) {
           sharing.can ? h("button", { onclick: async () => { await hooks.toggleShare(); menuSheet(); } }, sharing.on ? "Showing you to mutuals: turn off" : "Hidden from mutuals: show me") : null,
           // A sign-in from before a permission existed doesn't cover it; signing in again asks for everything.
           !sharing.can || sharing.keep === false
-            ? h("button", { onclick: () => signInSheet(person.handle || "") }, !sharing.can && sharing.keep === false ? "Sign in again: your creature and what you carry follow you, and mutuals see you" : !sharing.can ? "Sign in again to show yourself to mutuals" : "Sign in again so your creature and what you carry follow you")
+            ? h("button", { onclick: () => signInSheet(person.handle || "") }, !sharing.can && sharing.keep === false ? "Sign in again: your creature, what you carry and your atlas follow you, and mutuals see you" : !sharing.can ? "Sign in again to show yourself to mutuals" : "Sign in again so your creature, what you carry and your atlas follow you")
             : null,
           h("button", { onclick: (e) => busy(e.currentTarget, msg, async () => { await hooks.signOut(); close(); }) }, "Sign out")),
         msg);

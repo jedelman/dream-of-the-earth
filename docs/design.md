@@ -387,8 +387,8 @@ Jason: "Whoa yes brilliant (we should have fewer shrines and allow fast travel t
   wakes) and Go; found shrines are dots on the globe too, and tapping one goes there. You arrive 22 m south of it,
   facing it. This is the first of the plan's "fast travel only to places you've been"; ley nodes join the atlas next,
   and the landmarks menu will fold into it.
-- **Kept on the device,** not your repo: a list of shrines is a map of where you've been, and Jason kept the repo's
-  record of that small (touched ley nodes only).
+- **Kept on the device,** at first, not your repo: a list of shrines is a map of where you've been. Jason then put it
+  in the repo (below, "Wearing things").
 
 ### The shrines keep the astrological clock (11-09)
 Asked whether shrines should wake to moon phases or signs, Jason: "Yes! (｡•̀ᴗ-)✧🔮". It also does the plan's "shrines
@@ -506,6 +506,29 @@ realms are a great idea, reachable by shrines."
   (5) pigeons; (6) watersheds as regions, with compasses and goal sequences.
 - **Honour system:** with no server to referee, anyone could write any item or stat into their own repo. With no
   scores or races, that only spoils their own fun.
+
+### Wearing things, and the prism (built 11-09)
+Jason: "Keep going on items - it'd be cool to alter the player's creature based on what's equipped. We should have
+limited equip slots too so we have to choose between abilites, and we should give people reasons to collaborate."
+And on the atlas: "I'm okay with publishing the atlas to the repo! I guess it means bots can wall hack but what's the
+point of cheating at a cozy exploration game?"
+- **Two things at once** (`WORN_MAX`): some things you carry are worn. What you wear is kept in the inventory record
+  (`worn`, in the order put on, only things you carry), changed from the BAG (Wear, Take off). You change them on the
+  ground or in the water, not in the air or riding a highway, so the choice is made before you set off; a flyer lands
+  (holds down) first.
+- **Worn things change your creature** (`wearables.js`): each is built on the body's own parts, from its name, so a
+  mutual's come over the wire as words in their intent (`creature.worn`, at most two known names), never geometry:
+  nothing untrusted to cap. They're small (the prism is 8 triangles) and outside the 256-triangle body cap.
+- **The prism,** the first thing to wear: it hangs over your head, turning, cycling through the colours. While you
+  wear it the ley lines exist for you: the highways and their pillars of light, their glints, boarding them by tap, E
+  or flying into one, and the gold grid on the globe. Take it off and they're gone, as if they'd never been (a mutual
+  riding one is seen flying along nothing). Every creature starts with one, worn; a pouch from before is given one
+  once (`kit`, the starting kit's version).
+- **Your atlas in your repo** (`atlas-record.js`): one record, `org.jason-edelman.dream.atlas/self`, the shrines you've
+  found (key, place, spell, when), overwritten. Devices merge: a place found on any device is found, at its first
+  finding. Read only from your own repo. It needs one more scope, so one more sign-in, which also covers what you wear.
+- **Next:** being born of land or sea (run or swim, the other behind something to wear), and finds out in the world
+  that give the things to wear; then pigeons, to send them to mutuals.
 
 ### Moonseeds: respecs you carry (built 11-09)
 Jason: "Let's grant respecs at the new moon but have them be an item so they can be spent or saved."

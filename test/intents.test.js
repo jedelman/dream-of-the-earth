@@ -105,3 +105,14 @@ test("stats from before perception (four numbers, fly first) read as climb, swim
   assert.deepEqual(old.creature.stats, { climb: 3, swim: 3, run: 3, gleam: 3, perception: 0 });
   assert.equal(parseIntent({ ...v, creature: { ...v.creature, stats: [3, 3, 3, 3, 1] } }, t0), null, "13 points is over the budget");
 });
+
+test("what a creature wears travels as words; unknown ones and extras are dropped", () => {
+  const t0 = Date.parse("2026-11-09T12:00:00Z") / 1000, now = new Date(t0 * 1000);
+  const v = makeIntent({ kind: "rest", p: { lat: 1, lon: 2, alt: 10 }, creature: { ...creature, worn: ["prism"] }, now });
+  assert.deepEqual(v.creature.worn, ["prism"]);
+  assert.deepEqual(parseIntent(v, t0).creature.worn, ["prism"]);
+  assert.equal(makeIntent({ kind: "rest", p: { lat: 1, lon: 2 }, creature, now }).creature.worn, undefined, "nothing worn, no field");
+  const odd = parseIntent({ ...v, creature: { ...v.creature, worn: ["prism", "prism", "<script>", "crown", 7] } }, t0);
+  assert.deepEqual(odd.creature.worn, ["prism"]);
+  assert.deepEqual(parseIntent({ ...v, creature: { ...v.creature, worn: "prism" } }, t0).creature.worn, []);
+});
