@@ -565,6 +565,33 @@ large - dive depth is the unlock." The second, with the first's spirit (`birth.j
   landmarks menu still teleports anywhere. Both undercut the sea's gate until the quest and the atlas's fast travel
   replace them.
 
+### Dream realms and the rhizome (11-09)
+Jason: "Yep, dream realms next. I think we're looking at a skill tree here." Then, asked about the tree's shape: "A
+rhizome - an expanding network of slots. Topology Generated from a seed per player. Dream quests give gems, links between
+slotted gems produce the effects. They can be stat boosts, stat ceiling increases," and, completing that, powers, deeper
+realms, looks, and more slots. His other calls: a link's effect is the link's own (seeded per player); the network is
+revealed as you fill it; a dream quest is "gather the lights"; gems are spent where you choose; a moonseed lets you move
+them; flight becomes a sixth stat, from the same budget of 12, once Wings is lit.
+
+**Dream realms (built 11-09, `realm.js`, `realmfx.js`):**
+- **The way in:** touch an awake shrine and its minute-long spell takes you, as before; while the spell holds, touch it
+  again ("Enter the dream of the taffy shrine") and you're in its dream. Once a waking: a dream you've finished stays
+  closed until the shrine has slept and woken again (kept on the device, like the spells' rests).
+- **A dream** hangs 2,400 m over the shrine, over the weather, with the land and sea gone and the air its own colour:
+  islands of stone with rocky roots hanging beneath them, joined by bridges no steeper than a creature with no climb can
+  walk (rise over run 0.25 at most), thirteen islands at the first tier. Seeded by the shrine and the moon: the same
+  dream for everyone who goes in this moon, a new one at the next.
+- **Gather the lights:** three lights turn over the furthest islands, out past the first ring and apart; walk into one
+  to gather it. With all three, a gem appears at the heart; take it and the dream lets you go, back beside the shrine.
+  Fall off and you land back on the heart. Escape wakes you early (the dream stays open while the shrine's awake).
+- **Each colour dreams its own way:** rose (shape) islands breathe, rising and sinking under you; cyan (sight) islands
+  are lost in mist (70 m of sight, times your perception's sight, so perception matters there); gold (world) islands
+  turn round the heart like a slow clock, carrying you with them.
+- **Dreams are slow:** nothing runs faster than 9 m/s in a dream (a runner with run 5 does about 50 on land and would
+  sail off the islands).
+- **Gems:** rose, cyan and gold, one per dream finished, in the shrine's colour, kept in your pouch (24 of each fit) and
+  sendable by pigeon. They go in the rhizome (next).
+
 ### Pigeons: things carried between mutuals (built 11-09)
 Jason: "item exchange between repos - via pigeon", then "we should give people reasons to collaborate". The finds
 make the reason (each kind of creature finds easily what the other needs); pigeons carry it (`pigeons.js`,

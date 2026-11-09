@@ -23,6 +23,8 @@ import { buildCairns } from "./cairns.js";
 import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted, isBot, pigeonsFor } from "./atproto.js";
 import { PIGEON_NSID, makePigeon, parsePigeon, arrivalOf, flownOff } from "./pigeons.js";
 import { buildPigeonFx } from "./pigeonfx.js";
+import { realmLayout, floorAt, lowest, REALMS, GATHER_M, REALM_ALT, TURN } from "./realm.js";
+import { buildRealmFx, FOG as REALM_FOG } from "./realmfx.js";
 import { makeIntent, parseIntent, driftOf, whereAt, fresh, INTENT_NSID, HEARTBEAT_S, STALE_S, MOMENT_S } from "./intents.js";
 import { listen } from "./presence.js";
 import { buildFlock } from "./flock.js";
@@ -378,14 +380,16 @@ function castSpell(sh) {
   }
   if (cur && cur.id === sh.spell && cur.endAt === null) {
     if (sh.spell !== "turning" && sh.spell !== "days") cur.t0 = Math.max(cur.t0, simT - EASE_S); // another minute, at full strength
+    cur.key = sh.key;
   } else {
     if (cur) endSpell(def.kind, true);
-    spells[def.kind] = { id: sh.spell, t0: simT, endAt: null };
+    spells[def.kind] = { id: sh.spell, t0: simT, endAt: null, key: sh.key };
     if (sh.spell === "mask") swapBody(generateCreature(hashString(`${sh.key}:${masks++}`))); // the same masks, in the same order, for everyone
   }
   sound.shrine(def.kind);
   bursts.emit({ at: new THREE.Vector3(sh.x, sh.y, sh.z), colors: [new THREE.Color(KIND_COLOUR[def.kind]), new THREE.Color(0xffffff)], n: 26, spread: 2.5, up: 3, fall: 0.5, life: 2.2 });
   logLine(def.line, "shrine");
+  if (sh.key !== "test" && !dreamtNow(sh)) logLine("Its dream is open while the spell holds: touch the shrine again to go in.", "shrine");
 }
 /** Escape: every spell eases off. */
 function endSpells() {
@@ -453,6 +457,7 @@ function spellsLine() {
 // Escape lifts the spells, unless it's closing a sheet or the say box (those listeners run after this one).
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !document.getElementById("sheet").hidden || !document.getElementById("sayform").hidden) return;
+  if (state.realm) { logLine("You wake before the dream is done. It stays open while the shrine is awake.", "shrine"); exitDream(); return; }
   if (endSpells()) logLine("You shake off the spells.", "shrine");
 }, { capture: true });
 let sunInfo = { dir: null, gold: 0 };
@@ -602,15 +607,112 @@ function input() {
   };
 }
 
+// ---- Dreams (realm.js): behind an awake shrine, while its spell holds; gather three lights for a gem ----
+/** The floor under (x, z): the land, or in a dream its islands and bridges (no higher than a small step over y). */
+function floorUnder(x, z, y = Infinity) {
+  const r = state.realm;
+  if (!r) return world.terrain.heightAt(x, z);
+  const f = floorAt(r.L, x - r.anchor.x, z - r.anchor.z, y - r.anchor.y, simT - r.t0);
+  return f === -Infinity ? -Infinity : r.anchor.y + f;
+}
+const DREAMS_KEY = "dream.dreams";
+/** When you last finished each shrine's dream (s), on this device; forgotten after two moons. */
+const dreamt = (() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(DREAMS_KEY) || "{}") || {}, old = Date.now() / 1000 - 60 * 86400;
+    for (const k of Object.keys(v)) if (!(v[k] > old)) delete v[k];
+    return v;
+  } catch { return {}; }
+})();
+/** Whether you've had this shrine's dream in its present waking. */
+function dreamtNow(home) {
+  const done = dreamt[home.key];
+  if (done == null || !shrineClock.state) return false;
+  let c = wokeCache[home.spell];
+  if (!c || c.until < shrineClock.t) c = wokeCache[home.spell] = { woke: wokeAt(home.spell, shrineClock.t, shrineClock.sky) ?? Infinity, until: shrineClock.t + 600 };
+  return done >= c.woke;
+}
+/** Its dream is open while its spell holds, once a waking. */
+function canDream(home) {
+  const s = spells[SPELLS[home.spell].kind];
+  return !!s && s.key === home.key && s.endAt === null && home.key !== "test" && !state.realm && !dreamtNow(home);
+}
+let realmFx = null;
+function enterDream(sh) {
+  const kind = SPELLS[sh.spell].kind, L = realmLayout(sh.key, kind, realNow());
+  endSpells(); // the spell becomes the dream
+  clearTarget();
+  const anchor = new THREE.Vector3(sh.x, REALM_ALT, sh.z);
+  state.realm = { L, anchor, shrine: sh, kind, t0: simT, got: new Set(), gemOut: false, woke: null };
+  realmFx = buildRealmFx(L, anchor);
+  scene.add(realmFx.group);
+  state.pos.set(anchor.x, anchor.y + L.islands[0].y + 0.5, anchor.z);
+  state.vy = 0; state.speed = 0;
+  world.group.visible = false;
+  sound.shrine(kind);
+  establishing();
+  logLine(`You step into ${REALMS[kind].name}. Three lights are hidden on its far islands.`, "shrine");
+}
+/** Out of the dream, back at the shrine (with the gem, or without: Escape wakes you). */
+function exitDream() {
+  const r = state.realm;
+  if (!r) return;
+  state.realm = null;
+  scene.remove(realmFx.group);
+  realmFx.dispose();
+  realmFx = null;
+  world.group.visible = true;
+  const sh = r.shrine;
+  state.pos.set(sh.x, world.terrain.heightAt(sh.x, sh.z - 22) + 1, sh.z - 22);
+  state.heading = Math.PI; // facing the shrine (it's to the south... of where you stand, so look back at it)
+  state.vy = 0; state.speed = 0;
+  establishing();
+  setStatus("");
+}
+/** Each frame in a dream: gather lights by walking into them, then the gem; fall too far and you're back at the heart. */
+function realmTick() {
+  const r = state.realm;
+  if (!r || r.woke) return;
+  const t = simT - r.t0, here = state.pos.clone().sub(r.anchor);
+  if (state.pos.y < r.anchor.y + lowest(r.L) - 40) {
+    state.pos.set(r.anchor.x, r.anchor.y + r.L.islands[0].y + 4, r.anchor.z);
+    state.vy = 0; state.speed = 0;
+    logLine("You fall, and fall, and land back on the heart of the dream.", "note");
+  }
+  r.L.lights.forEach((_, k) => {
+    if (r.got.has(k) || realmFx.lightAt(k, t).distanceTo(here) > GATHER_M) return;
+    r.got.add(k);
+    sound.chime();
+    bursts.emit({ at: realmFx.lightAt(k, t).add(r.anchor), colors: [new THREE.Color(REALM_FOG[r.kind]), new THREE.Color(0xffffff)], n: 22, spread: 2, up: 3, fall: 0.5, life: 1.6 });
+    logLine(r.got.size < r.L.lights.length ? `A light (${r.got.size} of ${r.L.lights.length}).` : "The last light. Something waits at the heart of the dream.", "shrine");
+  });
+  if (!r.gemOut && r.got.size >= r.L.lights.length) r.gemOut = true;
+  if (r.gemOut && realmFx.gemAt(t).distanceTo(here) < GATHER_M) {
+    const kind = REALMS[r.kind].gem, n = countOf(inv, kind);
+    if (n < ITEMS[kind].max) keepInventory({ ...inv, items: { ...inv.items, [kind]: n + 1 } });
+    dreamt[r.shrine.key] = realNow();
+    try { localStorage.setItem(DREAMS_KEY, JSON.stringify(dreamt)); } catch { /* private mode */ }
+    sound.shrine(r.kind);
+    bursts.emit({ at: realmFx.gemAt(t).add(r.anchor), colors: [new THREE.Color(REALM_FOG[r.kind]), new THREE.Color(0xffffff)], n: 40, spread: 3, up: 4, fall: 0.4, life: 2.2 });
+    logLine(n < ITEMS[kind].max ? `You take the ${ITEMS[kind].name}. The dream lets you go.` : `Your pouch holds no more ${ITEMS[kind].plural}. The dream lets you go.`, "shrine");
+    r.woke = simT;
+    setTimeout(exitDream, 1800);
+  }
+  setStatus(r.woke ? "waking…" : `dreaming · ${r.got.size} of ${r.L.lights.length} lights${r.gemOut ? " · the gem waits at the heart" : ""} · Esc wakes you`);
+}
+
+/** The fastest anything runs in a dream (m/s): the islands are small, and dreams are slow. */
+const DREAM_PACE = 9;
 // ---- Movement: fly, run, swim; the stats set the numbers ----
 const GRAVITY = 18;
 function step(dt) {
   // Speeds from your stats, and your legs: your body's scale, and any shape spell's (a giant strides, a tiny thing patters).
   sp = speeds(body(), (graph.scale / TYPICAL_SCALE) * spellLegs);
+  if (state.realm) sp.run = Math.min(sp.run, DREAM_PACE); // in a dream you move as in a dream: no faster than a trot
   const manual = input();
   if (manual.turn || manual.thrust || manual.up) { director.input(simT); if (state.target) clearTarget(); } // your hands back on the controls
   const { turn, thrust, up } = (!manual.turn && !manual.thrust && !manual.up && autopilot()) || manual;
-  const ground = world.terrain.heightAt(state.pos.x, state.pos.z);
+  const ground = floorUnder(state.pos.x, state.pos.z, state.pos.y);
   const p = state.pos;
   state.heading -= turn * 1.7 * dt;
 
@@ -631,7 +733,7 @@ function step(dt) {
         // Hands off the climb: keep the clearance you let go at (4 to 30 m) over the land ahead,
         // so rising ground lifts you instead of landing you. Higher up, you keep your altitude.
         const hx = -Math.sin(state.heading), hz = -Math.cos(state.heading), look = Math.max(0, state.speed) * 1.2;
-        const ahead = Math.max(0, ground, world.terrain.heightAt(p.x + hx * look * 0.5, p.z + hz * look * 0.5), world.terrain.heightAt(p.x + hx * look, p.z + hz * look));
+        const ahead = Math.max(0, ground, floorUnder(p.x + hx * look * 0.5, p.z + hz * look * 0.5, p.y + 3), floorUnder(p.x + hx * look, p.z + hz * look, p.y + 3));
         if (state.clear == null) state.clear = Math.min(30, Math.max(4, p.y - Math.max(0, ground)));
         const short = ahead + state.clear - p.y;
         if (short > 0) vyTarget = Math.min(sp.climb + 0.3 * Math.max(0, state.speed), short * 1.5);
@@ -652,7 +754,7 @@ function step(dt) {
   let stride = 1;
   if (state.mode === "ground" && Math.abs(state.speed) > 0.1) {
     const dir = Math.sign(state.speed), d = 3;
-    const rise = (world.terrain.heightAt(p.x + fx * d * dir, p.z + fz * d * dir) - Math.max(0, ground)) / d;
+    const rise = (floorUnder(p.x + fx * d * dir, p.z + fz * d * dir, p.y + 2) - Math.max(0, ground)) / d;
     if (rise > 0) {
       const k = rise / sp.maxSlope;
       if (k >= 1) { stride = 0; state.speed *= 0.5; tooSteep(); }
@@ -663,7 +765,14 @@ function step(dt) {
   p.z += fz * state.speed * dt * stride;
   p.y += state.vy * dt;
 
-  const g2 = world.terrain.heightAt(p.x, p.z);
+  const g2 = floorUnder(p.x, p.z, p.y);
+  // The gold dream turns like a clock, and carries you round with it while you stand on it.
+  if (state.realm && REALMS[state.realm.L.kind].twist === "turn" && state.mode === "ground") {
+    const a = TURN * dt, c = Math.cos(a), sn = Math.sin(a), ax = state.realm.anchor.x, az = state.realm.anchor.z;
+    const x = p.x - ax, z = p.z - az;
+    p.x = ax + x * c - z * sn; p.z = az + x * sn + z * c;
+    state.heading -= a;
+  }
   if (state.mode === "water") {
     if (p.y > -1.5 && !(up > 0 && wings() > 0)) { p.y = -1.5; state.vy = Math.min(state.vy, 0); } // float at the surface
     if (p.y < g2 + 2) p.y = g2 + 2;
@@ -676,7 +785,7 @@ function step(dt) {
   if (g2 < 0 && p.y < g2 + 2) p.y = g2 + 2;
 
   // Pillars of light at the nodes lift any creature up to the ring, wings or not.
-  for (const pl of seesLey() ? world.highways.pillars : []) {
+  for (const pl of seesLey() && !state.realm ? world.highways.pillars : []) {
     if (Math.hypot(p.x - pl.x, p.z - pl.z) > 300) continue;
     if (p.y < pl.top) p.y = Math.min(pl.top, p.y + 160 * dt);
     else if (up <= 0) p.y = pl.top;
@@ -687,14 +796,14 @@ function step(dt) {
 
   // Fly along a highway, inside its ribbon, and it takes you.
   state.captureCooldown -= dt;
-  if (state.captureCooldown <= 0 && state.speed > 5 && !state.target && seesLey()) { // not on a trip you tapped for: a highway you cross shouldn't take you
+  if (state.captureCooldown <= 0 && state.speed > 5 && !state.target && seesLey() && !state.realm) { // not on a trip you tapped for: a highway you cross shouldn't take you
     const ll = world.frame.toLatLon(p.x, p.z);
     const c = chooseCapture(ll.lat, ll.lon, { e: fx, n: -fz });
     if (c && Math.abs(p.y - highwayAltitude(world.terrain.heightAt(p.x, p.z))) < captureRadius(c.line.cls.rank)) boardRide(c);
   }
 
   // Travel far enough and the world is regrown around us.
-  if (!rebuilding && !state.ride && Math.hypot(p.x, p.z) > 15000) {
+  if (!rebuilding && !state.ride && !state.realm && Math.hypot(p.x, p.z) > 15000) {
     const ll = world.frame.toLatLon(p.x, p.z);
     setStatus("the dream shifts…");
     regrow(ll.lat, ll.lon, (w) => { swapWorld(w); setStatus(""); });
@@ -863,6 +972,7 @@ function pick(clientX, clientY) {
   return found[0] || null;
 }
 function onTap(clientX, clientY) {
+  if (state.realm) { logLine("In a dream there's no going by taps: walk (W A S D, or drag) to the lights.", "note"); return; }
   if (zoom > GLOBE_AT && !state.ride && !rebuilding) {
     // The globe is a map: tap a cairn's dot to go there.
     const r = canvas.getBoundingClientRect(), hit = globe.pick(clientX - r.left, clientY - r.top, r.width, r.height);
@@ -890,7 +1000,7 @@ function onTap(clientX, clientY) {
     return flat(f.x, f.z) < RANGE.find ? act() : moveTo({ x: f.x, z: f.z, h: Math.max(f.y, world.terrain.heightAt(f.x, f.z)) }, { range: RANGE.find * 0.6, act });
   }
   if (hit.kind === "shrine") {
-    const s = hit.s, act = () => castSpell(s);
+    const s = hit.s, act = () => (canDream(s) ? enterDream(s) : castSpell(s));
     return flat(s.x, s.z) < RANGE.shrine ? act() : moveTo({ x: s.x, z: s.z, h: world.terrain.heightAt(s.x, s.z) }, { range: RANGE.shrine * 0.6, act });
   }
   if (hit.kind === "critter") {
@@ -1086,7 +1196,7 @@ function inReach() {
     if (d < RANGE.find) add({ kind: "find", key: f.key, name: ITEMS[f.holds].name, d, range: RANGE.find, f }, f.x, f.z);
   }
   for (const s of world.shrines.near(p.x, p.z, RANGE.shrine)) {
-    add({ kind: "shrine", key: s.key, name: SPELLS[s.spell].name, state: s.state, d: Math.hypot(s.x - p.x, s.z - p.z), range: RANGE.shrine, s }, s.x, s.z);
+    add({ kind: "shrine", key: s.key, name: SPELLS[s.spell].name, state: s.state, dream: canDream(s), d: Math.hypot(s.x - p.x, s.z - p.z), range: RANGE.shrine, s }, s.x, s.z);
   }
   for (const c of world.critters.near(p.x, p.z, RANGE.critter + 4)) {
     const d = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z);
@@ -1130,7 +1240,7 @@ function glintSpot(c, v, bs) {
   return v.set(c.x, c.alt, c.z);
 }
 function updateReach(t, dt) {
-  const on = !!world && !rebuilding && !state.ride && zoom < REACH_ZOOM && !editing; // in the editor, nothing else asks for you
+  const on = !!world && !rebuilding && !state.ride && !state.realm && zoom < REACH_ZOOM && !editing; // in the editor, nothing else asks for you
   if (!on) { reach = lit = []; focus = null; }
   else if (t >= scanAt) {
     scanAt = t + 0.15;
@@ -1171,7 +1281,7 @@ function interact() {
   if (c.kind === "tree") return shakeTree(c.rec);
   if (c.kind === "butterfly") { const b = world.insects.butterflies().find((q) => q.seed === c.seed); return b ? chirp(b.k) : squeak(); }
   if (c.kind === "find") return pickUp(c.f);
-  if (c.kind === "shrine") return castSpell(c.s);
+  if (c.kind === "shrine") return canDream(c.s) ? enterDream(c.s) : castSpell(c.s);
   if (c.kind === "critter") return touchCritter(c.key);
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "highway") return boardTapped(c.line);
@@ -1568,7 +1678,7 @@ async function sendPigeon(kind, handle, note) {
 }
 /** Once a second: a pigeon whose flight is done comes down to you with its gift (one at a time). */
 function pigeonTick() {
-  if (!world || state.ride || flying.landing || !account.did || people.viewer !== account.did) return;
+  if (!world || state.ride || state.realm || flying.landing || !account.did || people.viewer !== account.did) return;
   if (realNow() - flying.polledAt > 180) pollPigeons();
   const ll = world.frame.toLatLon(state.pos.x, state.pos.z), now = realNow();
   const p = flying.list.find((q) => !hadPigeon(inv, q.uri) && !(q.waitUntil > now) && arrivalOf(q, ll.lat, ll.lon) <= now);
@@ -1781,7 +1891,7 @@ function placeMyBubble() {
 /** What I'm doing now, as an intent: a ride, a trip, steering, or resting. */
 function myIntent() {
   const p = state.pos, ll = world.frame.toLatLon(p.x, p.z), nowS = realNow();
-  const base = { p: { lat: ll.lat, lon: ll.lon, alt: p.y }, creature: { ...myCreature(), worn: wornOf(inv) }, say: fresh(share.say, nowS) ? share.say : null, act: fresh(share.act, nowS) ? share.act : null };
+  const base = { p: { lat: ll.lat, lon: ll.lon, alt: state.realm ? state.realm.shrine.y : p.y }, creature: { ...myCreature(), worn: wornOf(inv) }, say: fresh(share.say, nowS) ? share.say : null, act: fresh(share.act, nowS) ? share.act : null };
   if (state.ride) {
     const r = state.ride, rl = rideLatLon(r);
     return { ...base, p: { lat: rl.lat, lon: rl.lon, alt: p.y }, kind: "ride", key: `ride:${r.line.i}:${r.dir}`, ride: { line: r.line.i, t: r.t, dir: r.dir } };
@@ -1982,7 +2092,11 @@ function frame() {
   // Above water the fog is aerial perspective, not a wall: it thickens only
   // toward the real horizon, which recedes as you climb.
   if (underwater) { scene.fog.color.setHex(0x0b3b6e); scene.fog.near = 5; scene.fog.far = 700; }
-  else {
+  else if (state.realm) { // a dream's own air: the cyan dream is lost in mist, the others hazy at their edges
+    scene.fog.color.setHex(REALM_FOG[state.realm.kind]);
+    scene.fog.far = (REALMS[state.realm.kind].twist === "mist" ? 70 : 420) * sightOf(body().perception);
+    scene.fog.near = scene.fog.far * 0.2;
+  } else {
     const h = Math.max(30, camera.position.y);
     const horizonM = Math.sqrt(2 * 6371008.8 * h + h * h);
     scene.fog.color.copy(horizon);
@@ -1994,6 +2108,7 @@ function frame() {
   sea.underwater = underwater;
   scene.background = scene.fog.color;
 
+  sea.mesh.visible = !state.realm; // a dream hangs over no sea
   sea.mesh.position.set(camera.position.x, 0, camera.position.z); // its waves are keyed to world position
   sea.update(t, dir, day, horizon);
   // The shared clock: the real one, or ?t= when it's fixed. Sky beings and
@@ -2058,7 +2173,7 @@ function frame() {
     renderer.render(globe.scene, globe.camera);
   } else {
     curveUniform.value.copy(camera.position); // the Earth curves away from the eye
-    skyPass.update({ frame: world ? world.frame : makeFrame(view.ll.lat, view.ll.lon), camera, unix, sun: { altitude: sunState.altitude, dir }, day, fog: scene.fog, clouds: !underwater && !state.ride && !!world, underwater, steps: 20 + 44 * detail.scale, sky: skyNow(unix + (days ? sunAhead(days.age) * days.fade : 0), view.ll, t) });
+    skyPass.update({ frame: world ? world.frame : makeFrame(view.ll.lat, view.ll.lon), camera, unix, sun: { altitude: sunState.altitude, dir }, day, fog: scene.fog, clouds: !underwater && !state.ride && !state.realm && !!world, underwater: underwater || !!state.realm, steps: 20 + 44 * detail.scale, sky: skyNow(unix + (days ? sunAhead(days.age) * days.fade : 0), view.ll, t) });
     placeSkyLabels(day);
     worldSpell();
     if (worldview.active) { skyPass.render(renderer, scene, camera, worldview.target(renderer)); worldview.render(renderer, t); }
@@ -2079,6 +2194,7 @@ function cameraRig() {
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
 function worldView(dt, t) {
   step(dt);
+  if (state.realm) { realmFx.update(simT - state.realm.t0, state.realm.got, state.realm.gemOut); realmTick(); }
   breathUniforms.uBreathT.value = t; // the land's swell rolls out from you
   breathUniforms.uBreathCentre.value.x = state.pos.x;
   breathUniforms.uBreathCentre.value.y = state.pos.z;
@@ -2129,7 +2245,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, inv: () => inv, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, inv: () => inv, realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

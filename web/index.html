@@ -54,6 +54,11 @@
   .item-tidefin { clip-path: polygon(10% 100%, 70% 0, 90% 100%); background: linear-gradient(160deg, #b9fff3, #3fcfb9); }
   .item-mossfoot { border-radius: 50% 50% 40% 40%; background: radial-gradient(circle at 70% 30%, #ff9ad5 0 18%, transparent 20%), #6fbf4a; }
   .item-owleye { border-radius: 50%; background: radial-gradient(ellipse 18% 40% at 50% 50%, #140c05 0 90%, transparent 100%), radial-gradient(circle, #ffd27a, #e08a1a); }
+  /* Gems: a faceted diamond in the shrine's colour */
+  .item-rosegem, .item-cyangem, .item-goldgem { clip-path: polygon(50% 0, 100% 40%, 50% 100%, 0 40%); }
+  .item-rosegem { background: linear-gradient(160deg, #ffd1ef, #ff7ad9 55%, #a8327f); }
+  .item-cyangem { background: linear-gradient(160deg, #d8fdff, #7af0ff 55%, #2b8fa8); }
+  .item-goldgem { background: linear-gradient(160deg, #fff4c4, #ffd34d 55%, #a87a12); }
   .sheet.birth .births { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
   .sheet.birth .births button { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 10px 12px; }
   .sheet.birth .births button b { font-size: 14px; letter-spacing: .04em; }
@@ -144,7 +149,7 @@
 <div id="log" aria-live="polite"></div>
 <div id="whos" aria-hidden="true"><div id="mybubble" class="bubble" hidden></div></div>
 <form id="sayform" hidden autocomplete="off"><input id="saytext" maxlength="80" placeholder="Say something to mutuals nearby" aria-label="Say something" enterkeyhint="send"><button type="submit">Say</button></form>
-<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ENTER: SAY · YOUR CREATURE'S NAME ▾: CHANGE IT · SHRINES (COLUMNS OF LIGHT): A SPELL FOR A MINUTE, ESC LIFTS IT · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · BAG ▾: WHAT YOU CARRY AND WEAR (WEAR THE PRISM TO SEE THE GOLD HIGHWAYS; FLY ALONG ONE TO RIDE IT)</div>
+<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ENTER: SAY · YOUR CREATURE'S NAME ▾: CHANGE IT · SHRINES (COLUMNS OF LIGHT): A SPELL FOR A MINUTE (TOUCH AGAIN WHILE IT HOLDS TO ENTER ITS DREAM), ESC LIFTS IT · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · BAG ▾: WHAT YOU CARRY AND WEAR (WEAR THE PRISM TO SEE THE GOLD HIGHWAYS; FLY ALONG ONE TO RIDE IT)</div>
 <button id="act" aria-hidden="true"><span class="key" aria-hidden="true">E</span><span class="what"></span></button>
 <button class="btn" id="up" aria-label="Up">▲</button>
 <button class="btn" id="down" aria-label="Down">▼</button>
