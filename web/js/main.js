@@ -28,6 +28,9 @@ import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm, byDistance,
 import { account, isReturning, takeReturn } from "./account.js";
 import { buildMaker } from "./maker.js";
 import { buildEditor } from "./editor.js";
+import { buildBag } from "./bag.js";
+import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt } from "./inventory.js";
+import { whenText } from "./moon.js";
 import { buildShrines } from "./shrines.js";
 import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf } from "./shrinelore.js";
 import { buildWorldview } from "./worldview.js";
@@ -77,6 +80,27 @@ function keepCreature(at = Date.now(), chosen = true) {
   try { localStorage.setItem(CREATURE_KEY, JSON.stringify({ seed, genes, stats: STATS.map((k) => stats[k]), at, chosen })); } catch { /* private mode */ }
 }
 if (!kept && urlSeed === null) keepCreature(0, false); // the first creature you meet is yours (until you choose another)
+// ---- What you carry (inventory.js): kept on this device and, signed in, in your repo ----
+const INVENTORY_KEY = "dream.inventory";
+/** { items, lunation, at (ms, when it last changed here), changed (false: a pouch this device only started) } */
+function keptInventory() {
+  try {
+    const v = JSON.parse(localStorage.getItem(INVENTORY_KEY) || "null");
+    if (!v) return null;
+    const p = parseInventoryRecord({ items: v.items, lunation: v.lunation });
+    return p && { items: p.items, lunation: p.lunation, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
+  } catch { return null; }
+}
+let inv = keptInventory() || { ...firstInventory(Date.now() / 1000), at: 0, changed: false }; // one moonseed to begin with
+let invAt = -Infinity; // when it last changed (s), so your repo gets it once things settle
+let bagView = null;
+function keepInventory(next, { changed = true, at = Date.now() } = {}) {
+  inv = { items: next.items, lunation: next.lunation, at, changed };
+  invAt = Date.now() / 1000;
+  try { localStorage.setItem(INVENTORY_KEY, JSON.stringify(inv)); } catch { /* private mode */ }
+  bagView?.refresh(); // the BAG button, once it exists
+}
+keepInventory(inv, { changed: inv.changed, at: inv.at });
 // Separate streams, so choosing your stats doesn't move your spawn. A creature named in the URL lands where its
 // seed says, so any spawn is reproducible; your own lands somewhere new each visit.
 const spawnRand = mulberry32(hashString(`spawn:${urlSeed ?? (Math.random() * 2 ** 32) >>> 0}`));
@@ -1216,6 +1240,14 @@ const editor = buildEditor({
     },
     name: creatureName,
     isMine: () => showingMine,
+    respec: () => ({ open: respec.open, seeds: countOf(inv, "moonseed"), next: nextSeedAt(inv, realNow()) - realNow() }),
+    eatMoonseed,
+    settle: () => {
+      if (!respec.open) return;
+      respec.open = false;
+      if (statsList(stats).join(",") === respec.before) { keepInventory(refund(inv, "moonseed")); logLine("Nothing changed, so the moonseed is still yours.", "note"); }
+      else logLine("Your new stats settle in.", "shrine");
+    },
     portrait: (on) => {
       editing = on;
       if (!on) { if (director.shot === "portrait") director.release(simT); return; }
@@ -1227,16 +1259,73 @@ const editor = buildEditor({
   },
 });
 editor.setName(myName);
+// Respecs are moonseeds (11-09): eat one and your stats loosen until you close the editor.
+const respec = { open: false, before: "" };
+function eatMoonseed() {
+  const next = spend(inv, "moonseed");
+  if (!next) return false;
+  keepInventory(next);
+  respec.open = true;
+  respec.before = statsList(stats).join(",");
+  sound.chime();
+  logLine("You eat a moonseed. Your points loosen: move them, then close the editor.", "shrine");
+  return true;
+}
+const bag = buildBag({
+  maker,
+  button: document.getElementById("bag"),
+  hooks: {
+    inventory: () => inv,
+    use: (kind) => { if (kind === "moonseed" && (respec.open || eatMoonseed())) editor.open(); },
+    nextSeed: () => whenText(nextSeedAt(inv, realNow()), realNow()),
+  },
+});
+bagView = bag;
+bag.refresh();
+// A moonseed falls for you at each new moon, once (checked once a second).
+function seedTick() {
+  const r = moonseedFor(inv, realNow());
+  if (!r.fell) return;
+  keepInventory(r.inv);
+  sound.chime();
+  logLine("The new moon leaves a moonseed for you. (BAG \u25be)", "shrine");
+}
+// Your pouch in your repo, like your creature: brought into step on sign-in and when you come back; written once things settle.
+const carry = { can: false, synced: "", busy: false };
+const invKey = () => JSON.stringify([inv.items, inv.lunation]);
+async function syncInventory() {
+  if (!account.did || !carry.can || carry.busy) return;
+  carry.busy = true;
+  try {
+    const remote = parseInventoryRecord(await account.getInventory());
+    const which = reconcileInventory(inv, remote);
+    if (which === "remote") keepInventory(remote, { changed: true, at: remote.at });
+    else if (which === "local") await account.putInventory(makeInventoryRecord(inv, inv.changed ? inv.at || Date.now() : Date.now()));
+    carry.synced = invKey();
+  } catch (e) { console.warn("inventory:", e.message); }
+  finally { carry.busy = false; }
+}
+function carryTick() {
+  if (!account.did || !carry.can || carry.busy || people.viewer !== account.did) return;
+  const k = invKey();
+  if (k === carry.synced || Date.now() / 1000 - invAt < 2) return;
+  carry.busy = true;
+  account.putInventory(makeInventoryRecord(inv, inv.at || Date.now())).then(() => { carry.synced = k; })
+    .catch((e) => console.warn("inventory:", e.message)).finally(() => { carry.busy = false; });
+}
 account.onChange(async (did) => {
   share.can = false;
   keep.can = false;
   keep.synced = "";
+  carry.can = false;
+  carry.synced = "";
   if (did) {
     const name = (await handlesOf([did])).get(did) || null;
     setViewer(did, name);
-    [share.can, keep.can] = await Promise.all([account.canShare(), account.canKeep()]);
-    maker.setSharing({ on: share.on, can: share.can, keep: keep.can });
+    [share.can, keep.can, carry.can] = await Promise.all([account.canShare(), account.canKeep(), account.canCarry()]);
+    maker.setSharing({ on: share.on, can: share.can, keep: keep.can && carry.can });
     syncCreature();
+    syncInventory();
     account.mutes().then((m) => { setMuted(m); refreshIntents(); refreshEverywhere(); artifactsAt = -Infinity; });
   } else if (people.viewer && people.viewer === account.did) setViewer(null, null);
   else maker.setPerson({ did: people.viewer, handle: people.handle, signedIn: false });
@@ -1328,7 +1417,7 @@ function hearMutuals(on) {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { hearMutuals(false); stopSharing(); }
   else if (people.viewer) { hearMutuals(true); refreshIntents(); }
-  if (!document.hidden && realNow() - keep.checkedAt > 20) syncCreature(); // changed on another device meanwhile?
+  if (!document.hidden && realNow() - keep.checkedAt > 20) { syncCreature(); syncInventory(); } // changed on another device meanwhile?
 });
 addEventListener("pagehide", () => { stopSharing(); });
 /** Off to a mutual: arrive 40 m from where their creature is now. */
@@ -1645,6 +1734,8 @@ function frame() {
     shareTickAt = t;
     shareTick();
     keepTick();
+    seedTick();
+    carryTick();
     const nowS = realNow();
     let gone = false;
     for (const [did, w] of who) if (nowS - w.intent.at > STALE_S) { who.delete(did); gone = true; } // stale: they've left

@@ -30,6 +30,10 @@ the latest file in `conversations/`.
     (`org.jason-edelman.dream.creature/self`: seed, stats, genes, when it was changed), overwritten, so a creature
     follows its player to any device. It's read only from the player's own repo, never indexed or shown to others
     (mutuals see your creature through your intent).
+  - **What you carry (Jason, 11-09):** items live in the player's own repo: one record,
+    `org.jason-edelman.dream.inventory/self` (counts by kind, and the last new moon that gave a moonseed), overwritten.
+    Read only from the player's own repo. Honour system: nothing referees it (no scores, no races). Pigeons, when they
+    come, will carry items between mutuals' repos (`org.jason-edelman.dream.pigeon`, already in the sign-in scope).
   - **Whose things we show:** `allowed()` in `intents.js`, for cairns and creatures alike: mutuals only, no block
     either way (direct or by list), accounts Bluesky still serves, nothing Bluesky's moderation hides
     (`!hide`/`!takedown`/`!suspend`), nothing you've muted.

@@ -3,7 +3,7 @@
   "client_name": "Dream of the Earth",
   "client_uri": "https://dream-of-the-earth.jason-edelman.org/",
   "redirect_uris": ["https://dream-of-the-earth.jason-edelman.org/"],
-  "scope": "atproto repo:org.jason-edelman.dream.artifact repo:org.jason-edelman.dream.creature repo:org.jason-edelman.dream.intent rpc:app.bsky.graph.getMutes?aud=did:web:api.bsky.app%23bsky_appview",
+  "scope": "atproto repo:org.jason-edelman.dream.artifact repo:org.jason-edelman.dream.creature repo:org.jason-edelman.dream.inventory repo:org.jason-edelman.dream.pigeon repo:org.jason-edelman.dream.intent rpc:app.bsky.graph.getMutes?aud=did:web:api.bsky.app%23bsky_appview",
   "grant_types": ["authorization_code", "refresh_token"],
   "response_types": ["code"],
   "token_endpoint_auth_method": "none",
