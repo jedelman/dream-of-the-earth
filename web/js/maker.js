@@ -45,7 +45,7 @@ export function buildMaker(hooks) {
     if (open === "leave" && name !== "leave") hooks.preview(null);
     if (custom && name !== open) endCustom();
     open = name;
-    sheet.replaceChildren(h("button", { class: "x", "aria-label": "Close", onclick: close }, "×"), ...kids);
+    sheet.replaceChildren(h("button", { class: "x", "aria-label": "Close", onclick: close }, "×"), ...kids.filter((k) => k != null)); // an empty optional row is left out, not written "null"
     sheet.hidden = false;
     button.setAttribute("aria-expanded", "true");
     sheet.querySelector("input, textarea, .go")?.focus();

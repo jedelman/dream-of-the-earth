@@ -54,7 +54,7 @@ import { logLine } from "./eventlog.js";
 import { buildBursts } from "./bursts.js";
 import { buildDirector, squeakShot, treeShot, butterflyShot, beingShot, arriveShot, boardShot, cairnShot, portraitShot, portraitAngle, portraitDistance } from "./director.js";
 import { buildSkyBeings } from "./skybeings.js";
-import { randomStats, parseStats, speeds, STATS, MAX, TYPICAL_SCALE, statsList, sightOf, SEE_BEINGS } from "./stats.js";
+import { randomStats, parseStats, speeds, STATS, MAX, TYPICAL_SCALE, statsList, sightOf, SEE_BEINGS, JUMP_G } from "./stats.js";
 import { biomeFor, koppenCode } from "./biome.js";
 import { buildPlants } from "./plants.js";
 import { buildInsects } from "./insects.js";
@@ -793,10 +793,14 @@ function realmTick() {
   setStatus(r.woke ? "waking…" : `dreaming · ${r.got.size} of ${r.L.lights.length} lights${r.gemOut ? " · the gem waits at the heart" : ""} · Esc wakes you`);
 }
 
+/** How far the ground can fall away under you in a frame and still be followed (m): a step, more at speed. */
+const groundStick = () => 0.8 + Math.abs(state.speed) * 0.05;
+/** The fastest a crouch goes (m/s): slow enough that small creatures don't start (they start at 10). */
+const CROUCH_PACE = 5;
 /** The fastest anything runs in a dream (m/s): the islands are small, and dreams are slow. */
 const DREAM_PACE = 9;
 // ---- Movement: fly, run, swim; the stats set the numbers ----
-const GRAVITY = 18;
+const GRAVITY = JUMP_G; // the same as a jump assumes, so it lands where it should
 function step(dt) {
   // Speeds from your stats, and your legs: your body's scale, and any shape spell's (a giant strides, a tiny thing patters).
   sp = speeds(body(), (graph.scale / TYPICAL_SCALE) * spellLegs);
@@ -808,14 +812,23 @@ function step(dt) {
   const p = state.pos;
   state.heading -= turn * 1.7 * dt;
 
+  // Pinned to the ground (Jason, 11-09: "pin state to running unless they explicitly take off"): once on the ground you
+  // stay on it, following it over bumps and down slopes, until you jump or take off (Space) or walk off a real drop.
+  const pressed = up > 0 && !state.upWas;
+  state.upWas = up > 0;
+  const wasGround = state.mode === "ground";
   if (p.y <= 0 && ground < 0) state.mode = "water";
-  else if (p.y <= ground + 0.3 && ground >= 0) state.mode = "ground";
+  else if (ground >= 0 && state.vy <= 0 && (p.y <= ground + 0.3 || (wasGround && p.y - ground < groundStick()))) { state.mode = "ground"; p.y = ground; }
   else state.mode = "air";
+  state.airT = state.mode === "air" ? (state.airT ?? 0) + dt : 0;
+  // Shift (or ▼) on the ground: a crouch, slow and low (slow enough that small creatures don't start).
+  state.crouch = state.mode === "ground" && up < 0;
 
-  const max = state.mode === "air" ? sp.fly : state.mode === "water" ? sp.swim : sp.run;
+  const max = state.mode === "air" ? sp.fly : state.mode === "water" ? sp.swim : state.crouch ? Math.min(0.3 * sp.run, CROUCH_PACE) : sp.run;
   let target = thrust > 0 ? max * thrust : thrust < 0 ? -0.3 * max : 0;
-  if (state.mode === "air" && wings() === 0) target = Math.max(target, 0.6 * sp.fly); // a glide, not a hover
-  state.speed += (target - state.speed) * Math.min(1, dt * 1.8);
+  // Without wings you don't glide: a jump or a fall keeps the speed it left with.
+  if (state.mode === "air" && wings() === 0) target = state.speed;
+  state.speed += (target - state.speed) * Math.min(1, dt * (state.crouch ? 4 : 1.8));
 
   if (state.mode !== "air" || up !== 0) state.clear = null;
   if (state.mode === "air") {
@@ -835,7 +848,10 @@ function step(dt) {
       state.vy = Math.max(state.vy - GRAVITY * dt, -sp.glideSink); // zero fly: glide down
     }
   } else if (state.mode === "ground") {
-    state.vy = up > 0 ? sp.jump : 0;
+    // Space: with wings, take off (hold it to climb); without, a jump (one each press).
+    if (up > 0 && wings() > 0) { state.vy = sp.climb; state.mode = "air"; state.clear = null; }
+    else if (pressed && wings() === 0) { state.vy = Math.max(sp.jump, 2); state.mode = "air"; state.airT = 0; }
+    else state.vy = 0;
   } else {
     const vyTarget = up > 0 ? sp.swim : up < 0 ? -sp.dive : 0.4;
     state.vy += (vyTarget - state.vy) * Math.min(1, dt * 3);
@@ -874,6 +890,8 @@ function step(dt) {
   }
   // Land only on purpose: a flyer not heading down skims a slope too steep to climb, still flying.
   if (g2 >= 0 && p.y < g2) { p.y = state.mode === "air" && wings() > 0 && up >= 0 ? g2 + 0.5 : g2; state.vy = Math.max(0, state.vy); }
+  // On the ground and not jumping: follow it down (a slope, a bump), unless it falls away further than a stride can step.
+  if (state.mode === "ground" && state.vy <= 0 && g2 >= 0 && p.y > g2 && p.y - g2 < groundStick()) p.y = g2;
   if (g2 < 0 && p.y < g2 + 2) p.y = g2 + 2;
 
   // Pillars of light at the nodes lift any creature up to the ring, wings or not.
@@ -2295,7 +2313,7 @@ function openHelp() {
   const group = (title, rows) => [h("h3", {}, title), h("dl", {}, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]))];
   maker.custom("help", [
     h("h2", {}, "How to play"),
-    ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space · Shift", "up and down (▲ ▼)"], ["Tap anything", "go to it; close enough, it answers"], ["Wheel · + − · pinch", "the camera nearer or farther"]]),
+    ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space", "jump; with Wings, take off and climb (▲)"], ["Shift", "crouch, slow and quiet (small creatures don't start); flying, go down (▼)"], ["Tap anything", "go to it; close enough, it answers"], ["Wheel · + − · pinch", "the camera nearer or farther"]]),
     ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
     ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: fly along one to ride it)"], ["ATLAS ▾", "places you've found, to travel back to"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
   ], { trigger: helpBtn, classes: ["help"] });
@@ -2474,6 +2492,14 @@ function worldView(dt, t) {
   const sh = shapeOf(spells.shape?.id, spellNow("shape").w);
   creature.group.scale.multiply(sh);
   creature.group.position.y += footLift * (sh.y - 1);
+  // Crouched: low and wide, feet still on the ground.
+  state.crouchK = (state.crouchK ?? 0) + ((state.crouch ? 1 : 0) - (state.crouchK ?? 0)) * Math.min(1, dt * 10);
+  if (state.crouchK > 0.01) {
+    const k = state.crouchK, sy = 1 - 0.38 * k;
+    creature.group.scale.y *= sy;
+    creature.group.scale.x *= 1 + 0.12 * k; creature.group.scale.z *= 1 + 0.12 * k;
+    creature.group.position.y += footLift * sh.y * (sy - 1);
+  }
   spellZoom = sh.zoom;
   spellLegs = sh.y;
 

@@ -76,7 +76,8 @@ export const SEE_BEINGS = 3;
  * faster. Movement your body makes (running, jumping, swimming, diving) also scales with your size the way animals'
  * does, as the square root of leg length (the same Froude number, v²/gL, keeps the same gait): `size` is your body's
  * scale against a typical creature's (1 at scale 1.2; a giant is 6, so √6 ≈ 2.4× faster). Wings are the dream's:
- * flying doesn't care how big you are. With no points you're slow, not stuck (except for jumping: a hop of 2 cm).
+ * flying doesn't care how big you are. With no points you're slow, not stuck. Jumping isn't on the curve (it was: run 6
+ * leapt 20 m): a jump rises 0.4 m with no run and 0.45 m more a point (3.1 m at six), times your size's √.
  */
 export const P = Math.sqrt(3);
 /** What a creature with 3 points does (the curves' pin), m/s. */
@@ -87,16 +88,20 @@ export const POWER = Object.fromEntries(Object.entries(MID).map(([k, v3]) => [k,
 export const TYPICAL_SCALE = 1.2;
 const power = (k, stat) => POWER[k].v0 * (1 + stat) ** POWER[k].p;
 
+/** Gravity for a jump (m/s², the game's own: a little more than Earth's, for snappy hops). */
+export const JUMP_G = 18;
+/** How high a jump rises at a creature's typical size (m): 0.4 m with no run, 0.45 m more a point. */
+export const jumpHeight = (run) => 0.4 + 0.45 * run;
 /** wings: the stat your flight runs on: fly (0 without the rhizome's Wings, which leaves only a slow glide down). */
 export function speeds(s, size = 1, wings = s.fly ?? 0) {
   const leg = Math.sqrt(Math.max(0.01, size));
   return {
     fly: power("fly", wings), // cruise in the air
     climb: power("climb", wings), // straight up, flying
-    glideSink: wings === 0 ? 6 : 0, // no wings to speak of: a slow glide down
+    glideSink: wings === 0 ? 14 : 0, // no wings: you fall (a little slower than a stone: it's a dream)
     maxSlope: Math.tan((maxSlopeDeg(s.climb) * Math.PI) / 180), // rise over run, on foot
     run: power("run", s.run) * leg,
-    jump: power("jump", s.run) * leg,
+    jump: Math.sqrt(2 * JUMP_G * jumpHeight(s.run)) * leg, // take-off speed for that height
     swim: power("swim", s.swim) * leg,
     dive: power("dive", s.swim) * leg, // how fast you can go down (oceans keep their real depth)
     gleam: s.gleam / MAX, // 0..1, purely visual
