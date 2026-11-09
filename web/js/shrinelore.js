@@ -20,16 +20,22 @@ export const SPELLS = {
   upturned: { short: "UPTURNED SKY", kind: "camera", name: "the shrine of the upturned sky", line: "The sky swings down beneath you. You hang from the land." },
   fisheye: { short: "FISHEYE", kind: "camera", name: "the fisheye shrine", line: "The world bulges round you like the inside of a bubble." },
   turning: { short: "TURNING", kind: "camera", name: "the shrine of turning", line: "The horizon begins to turn, slow as a millwheel." },
+  // Jason, 11-09: "let's limit zoom out distance. We can have shrines and items that temporarily boost it and zoom way out."
+  soaring: { short: "SOARING", kind: "camera", name: "the shrine of the soaring eye", line: "Your eye lets go of you and rises, and rises, until the whole Earth turns below." },
   colours: { short: "COLOURS", kind: "world", name: "the shrine of colours", line: "Every colour starts to slide along the rainbow." },
   kaleido: { short: "KALEIDOSCOPE", kind: "world", name: "the kaleidoscope shrine", line: "The world folds itself into six mirrors." },
   melt: { short: "MELTING", kind: "world", name: "the melting shrine", line: "Everything begins to melt and run, gently." },
   days: { short: "SPINNING DAYS", kind: "world", name: "the shrine of spinning days", line: "The sun races round the sky: a day goes by in a minute." },
 };
 export const SPELL_IDS = Object.keys(SPELLS);
+/** The spells shrines held before the soaring eye: each shrine keeps its own (one in twelve became a soaring eye). */
+const HELD = SPELL_IDS.filter((id) => id !== "soaring");
+/** Of every twelve shrines, about one is a soaring eye. */
+export const SOARING_SHARE = 1 / 12;
 
 // ---- The shrines keep the astrological clock (11-09) ----
 // Each wakes under part of the real sky, matched to its spell: the Moon's phase for your shape, the Moon's element for
-// the world's look, and for the camera, Mercury turning back, the Moon being up where the shrine stands, or night.
+// the world's look, and for the camera, Mercury turning back, the Moon being up where the shrine stands, night, or day.
 // Asleep it's dark; awake it glows; used, it rests for you until it has slept and woken again.
 const ELEMENT = ["fire", "earth", "air", "water"]; // ♈ fire, ♉ earth, ♊ air, ♋ water, and round again
 export const WAKES = {
@@ -44,11 +50,12 @@ export const WAKES = {
   turning: { when: "when Mercury turns retrograde", test: (s) => s.mercuryRetro },
   upturned: { when: "while the Moon is up", test: (s) => s.moonUp },
   fisheye: { when: "at night", test: (s) => s.night },
+  soaring: { when: "by day, while the Sun is up", test: (s) => s.day },
 };
 
 /**
  * The parts of the sky the shrines wake to, at t (s) for a place: { phase (0 new, 0.5 full), element (the Moon's),
- * mercuryRetro, moonUp, night }. sky: { moonLon, sunLon, mercuryLon(t) } and alt(t, which) come from astro.js and
+ * mercuryRetro, moonUp, night, day }. sky: { moonLon, sunLon, mercuryLon(t) } and alt(t, which) come from astro.js and
  * sun.js through the caller, so this stays pure and cheap to test.
  */
 export function skyState(t, sky) {
@@ -60,6 +67,7 @@ export function skyState(t, sky) {
     mercuryRetro: ((m1 - m0 + 540) % 360) - 180 < 0,
     moonUp: sky.moonAlt(t) > 0,
     night: sky.sunAlt(t) < -6,
+    day: sky.sunAlt(t) > 0,
   };
 }
 /** Whether a spell's shrine is awake at t. */
@@ -88,7 +96,7 @@ export function shrineHomes(lat, lon, at) {
     const s = at(c);
     if (!s) continue;
     const g = hash2(c.h, 3);
-    out.push({ key: `shrine${c.h}`, x: s.p.x, z: s.p.z, h: s.h, lat: c.lat, lon: c.lon, seed: unit(g, 5), spell: SPELL_IDS[g % SPELL_IDS.length] });
+    out.push({ key: `shrine${c.h}`, x: s.p.x, z: s.p.z, h: s.h, lat: c.lat, lon: c.lon, seed: unit(g, 5), spell: unit(g, 9) < SOARING_SHARE ? "soaring" : HELD[g % HELD.length] });
     if (out.length >= SHRINE.max) break;
   }
   return out;

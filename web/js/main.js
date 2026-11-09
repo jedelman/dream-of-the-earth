@@ -45,6 +45,7 @@ import { buildAtlas } from "./atlas.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem, portalFor, nextPortalAt } from "./inventory.js";
 import { whenText, lunationOf } from "./moon.js";
 import { buildShrines } from "./shrines.js";
+import { zoomReach, zoomStep, ZOOM_REACH, FEATHER_S, LIFT_TO } from "./zoomreach.js";
 import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf, WAKES, skyState, wokeAt } from "./shrinelore.js";
 import { buildWorldview } from "./worldview.js";
 import { skyClock, horizontal, zodiac, PLANETS, GLYPH, moonEcliptic, planetEcliptic, sunLongitude } from "./astro.js";
@@ -457,6 +458,7 @@ function castSpell(sh) {
     spells[def.kind] = { id: sh.spell, t0: simT, endAt: null, key: sh.key };
     if (sh.spell === "mask") swapBody(generateCreature(hashString(`${sh.key}:${masks++}`))); // the same masks, in the same order, for everyone
   }
+  if (sh.spell === "soaring") zoomGoal = LIFT_TO.soaring; // up, and up, to the whole Earth
   sound.shrine(def.kind);
   bursts.emit({ at: new THREE.Vector3(sh.x, sh.y, sh.z), colors: [new THREE.Color(KIND_COLOUR[def.kind]), new THREE.Color(0xffffff)], n: 26, spread: 2.5, up: 3, fall: 0.5, life: 2.2 });
   logLine(def.line, "shrine");
@@ -525,7 +527,10 @@ function placeSkyLabels(day) {
 }
 /** The HUD's line for spells in force: "GIANT 42 S · TURNING 12 S". */
 function spellsLine() {
-  return Object.values(spells).filter(Boolean).map((s) => `${SPELLS[s.id].short} ${Math.max(0, Math.ceil(SPELL_S - (simT - s.t0)))} S`).join("  ·  ");
+  const out = Object.values(spells).filter(Boolean).map((s) => `${SPELLS[s.id].short} ${Math.max(0, Math.ceil(SPELL_S - (simT - s.t0)))} S`);
+  const f = Math.ceil(featherLeft());
+  if (f > 0) out.push(`FAR FEATHER ${Math.floor(f / 60)}:${String(f % 60).padStart(2, "0")}`);
+  return out.join("  ·  ");
 }
 // Escape lifts the spells, unless it's closing a sheet or the say box (those listeners run after this one).
 addEventListener("keydown", (e) => {
@@ -606,22 +611,53 @@ function meterFrame(dtMs, t, governing) {
 // ---- Zoom: from just behind you out to the whole planet ----
 // Below GLOBE_AT the camera orbits in the world; beyond it, the globe.
 // The camera scales with the creature (CREATURE_M): close and low behind a creature now about 5 m long.
-const ZOOM_MIN = 6, ZOOM_MAX = 4e7, GLOBE_AT = 400000, ZOOM_HOME = 34;
-/** Without the rhizome's high view, the camera pulls back no further than this (Jason, 11-09: "infinite zoom out should be tied to a shrine or an item"). */
-const ZOOM_CAP = 60000;
-const zoomMax = () => (hasPower("highview") ? ZOOM_MAX : ZOOM_CAP);
-let zoom = params.get("zoom") ? Math.min(zoomMax(), Math.max(ZOOM_MIN, Number(params.get("zoom")))) : ZOOM_HOME;
-let capSaidAt = -Infinity;
+const ZOOM_MIN = 6, GLOBE_AT = 400000, ZOOM_HOME = 34;
+// How far back your eye goes (zoomreach.js): about 500 m, unless a far feather or a shrine of the soaring eye lifts it
+// for a while, or the rhizome's high view for good. A boost carries the eye up by itself (zoomGoal); ended, it sinks home.
+const FEATHER_KEY = "dream.feather";
+let featherUntil = 0; // when your far feather's lift ends (real seconds); kept on this device, so a reload keeps it
+try { featherUntil = Number(localStorage.getItem(FEATHER_KEY)) || 0; } catch { /* private mode */ }
+const featherLeft = () => (featherUntil > 0 ? featherUntil - realNow() : 0);
+const soaringNow = () => { const c = spellNow("camera"); return c.id === "soaring" ? c.w : 0; };
+const zoomMax = () => zoomReach({ highview: hasPower("highview"), soaring: soaringNow(), feather: featherLeft() });
+// (realNow isn't set up yet here, so a zoom in the address is held to the plain reach, or the high view's.)
+let zoom = params.get("zoom") ? Math.min(zoomReach({ highview: hasPower("highview") }), Math.max(ZOOM_MIN, Number(params.get("zoom")))) : ZOOM_HOME;
+let zoomGoal = null, capSaidAt = -Infinity;
 const zoomBy = (factor) => {
   const max = zoomMax();
-  if (factor > 1 && zoom * factor > max && zoom >= max * 0.98 && simT - capSaidAt > 15) { capSaidAt = simT; logLine("This is as far back as you can see. The high view (a power in your rhizome) goes further.", "note"); }
-  zoom = Math.min(max, Math.max(ZOOM_MIN, zoom * factor));
+  zoomGoal = null; // you have the camera now
+  if (factor > 1 && zoom * factor > max && zoom >= max * 0.98 && simT - capSaidAt > 45) {
+    capSaidAt = simT;
+    logLine(max >= GLOBE_AT ? "This is as far as the eye goes." : max > ZOOM_REACH ? "Your eye is as high as the feather lifts it." : "This is as far back as your eye goes. A far feather, or a shrine of the soaring eye, lifts it higher for a while.", "note");
+  }
+  // Sinking back after a boost, you can come in faster, but not go out.
+  zoom = factor > 1 ? Math.min(Math.max(max, zoom), zoom * factor) : Math.max(ZOOM_MIN, zoom * factor);
 };
-/** The whole Earth, if you have the high view. */
+/** The whole Earth, while the soaring eye holds you (or with the high view). */
 function toGlobe(words) {
-  if (!hasPower("highview")) { logLine("The whole Earth is the high view's: a power in your rhizome. Your atlas lists what you've found.", "note"); return; }
-  zoom = 16e6;
+  if (zoomMax() < GLOBE_AT) { logLine("The whole Earth is the soaring eye's: a shrine of it lifts you there for a minute (the high view, a power in your rhizome, for good). Your atlas lists what you've found.", "note"); return; }
+  zoom = 16e6; zoomGoal = null;
   logLine(words, "note");
+}
+/** Holding up a far feather: your eye's reach is 60 km for three minutes (more, if one is already lifting you). */
+function holdFeather() {
+  const next = spend(inv, "farfeather");
+  if (!next) return;
+  keepInventory(next);
+  featherUntil = Math.max(realNow(), featherUntil) + FEATHER_S;
+  try { localStorage.setItem(FEATHER_KEY, String(Math.round(featherUntil))); } catch { /* private mode */ }
+  if (zoom < LIFT_TO.feather) zoomGoal = LIFT_TO.feather;
+  sound.chime();
+  logLine(`You hold up the far feather, and your eye goes up with it: ${Math.round(featherLeft() / 60)} minutes of seeing far (${countOf(next, "farfeather")} left).`, "shrine");
+}
+/** Each frame: a feather that's run out lets go; the eye rises to a boost's height or sinks back home. */
+function zoomTick(dt) {
+  if (featherUntil > 0 && featherLeft() <= 0) {
+    featherUntil = 0;
+    try { localStorage.removeItem(FEATHER_KEY); } catch { /* private mode */ }
+    logLine("The far feather's lift is spent. Your eye sinks back to you.", "note");
+  }
+  ({ zoom, goal: zoomGoal } = zoomStep(zoom, zoomGoal, zoomMax(), dt));
 }
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0018)); }, { passive: false });
 const globe = buildGlobe();
@@ -1621,7 +1657,7 @@ const bag = buildBag({
   button: document.getElementById("bag"),
   hooks: {
     inventory: () => inv,
-    use: (kind) => { if (kind === "moonseed" && (respec.open || eatMoonseed())) editor.open(); },
+    use: (kind) => { if (kind === "moonseed" && (respec.open || eatMoonseed())) editor.open(); else if (kind === "farfeather") holdFeather(); },
     nextSeed: () => whenText(nextSeedAt(inv, realNow()), realNow()),
     wear: (kind) => changeWorn(kind, true),
     takeOff: (kind) => changeWorn(kind, false),
@@ -1674,7 +1710,6 @@ function setGem(i) {
     respec.open = true; respec.free = true; respec.before = `${statsList(stats).join(",")}:${born}`;
     logLine("Your points loosen (free, this once): open your creature's sheet and move some into fly.", "shrine");
   }
-  if (!fx.powers.has("highview") && zoom > ZOOM_CAP) zoom = ZOOM_CAP;
   return null;
 }
 /** Slot i's gem back to your pouch (with a moonseed working): words if it can't, else null. */
@@ -1685,7 +1720,6 @@ function takeGem(i) {
   const next = unslotGem({ ...inv, rhizome: { ...inv.rhizome, slots: z.filled } }, i);
   if (!next) return "Your pouch has no room for it.";
   keepInventory(next);
-  if (zoom > zoomMax()) zoom = zoomMax();
   logLine("You take the gem out. What it woke sleeps again.", "note");
   return null;
 }
@@ -2313,7 +2347,7 @@ function openHelp() {
   const group = (title, rows) => [h("h3", {}, title), h("dl", {}, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]))];
   maker.custom("help", [
     h("h2", {}, "How to play"),
-    ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space", "jump; with Wings, take off and climb (▲)"], ["Shift", "crouch, slow and quiet (small creatures don't start); flying, go down (▼)"], ["Tap anything", "go to it; close enough, it answers"], ["Wheel · + − · pinch", "the camera nearer or farther"]]),
+    ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space", "jump; with Wings, take off and climb (▲)"], ["Shift", "crouch, slow and quiet (small creatures don't start); flying, go down (▼)"], ["Tap anything", "go to it; close enough, it answers"], ["Wheel · + − · pinch", "the camera nearer or farther (about 500 m back; a far feather, or a shrine of the soaring eye, lifts it higher)"]]),
     ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
     ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: fly along one to ride it)"], ["ATLAS ▾", "places you've found, to travel back to"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
   ], { trigger: helpBtn, classes: ["help"] });
@@ -2344,6 +2378,7 @@ function frame() {
   // +/- (or PageUp/PageDown) zoom smoothly while held.
   if (keys.has("Equal") || keys.has("NumpadAdd") || keys.has("PageUp")) zoomBy(Math.exp(-2.4 * dt));
   if (keys.has("Minus") || keys.has("NumpadSubtract") || keys.has("PageDown")) zoomBy(Math.exp(2.4 * dt));
+  zoomTick(dt);
   const view = state.ride ? rideView(dt, t) : worldView(dt, t);
 
   // The real sun for this place and moment (refreshed every 10 s).
@@ -2401,7 +2436,7 @@ function frame() {
     world.finds.update(state.pos.x, state.pos.z, t);
     world.finds.group.visible = zoom < 6000;
     if (t - shrineTickAt > 5) { shrineTickAt = t; shrineTick(); }
-    world.shrines.group.visible = zoom < 60000;
+    world.shrines.group.visible = zoom < 120000; // seen from as high as a far feather lifts you
     const life = zoom < 6000;
     world.plants.group.visible = world.insects.group.visible = world.critters.group.visible = life;
     if (life) {

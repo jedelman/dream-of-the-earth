@@ -65,9 +65,11 @@ test("finds: beaches, seabeds, meadows and summits hold what each kind of creatu
   const finds = findsAround(20, 0, { toLocal, height });
   const by = (p) => finds.filter((f) => f.place === p);
   assert.ok(by("seabed").length > 3 && by("seabed").every((f) => f.y <= -SEABED_MIN && f.holds === "tidefin"));
-  assert.ok(by("meadow").length > 3 && by("meadow").every((f) => f.y >= 3 && f.holds === "mossfoot"));
+  assert.ok(by("meadow").length > 3 && by("meadow").every((f) => f.y >= 3 && (f.holds === "mossfoot" || f.holds === "farfeather")));
+  assert.ok(by("meadow").some((f) => f.holds === "mossfoot"), "meadows mostly hold mossfeet");
   assert.ok(by("shore").length >= 1 && by("shore").every((f) => f.y >= 0.5 && f.y <= 6 && Math.abs(f.x) < 120), JSON.stringify(by("shore")));
-  assert.ok(by("summit").length === 1 && by("summit")[0].y >= SUMMIT_MIN && Math.hypot(by("summit")[0].x - 6000, by("summit")[0].z) < 60, "one eye on the one peak");
+  assert.ok(by("summit").length === 1 && by("summit")[0].y >= SUMMIT_MIN && Math.hypot(by("summit")[0].x - 6000, by("summit")[0].z) < 60, "one find on the one peak");
+  assert.ok(["owleye", "farfeather"].includes(by("summit")[0].holds));
   assert.deepEqual(findsAround(20, 0, { toLocal, height }), finds, "the same finds every time");
   assert.equal(new Set(finds.map((f) => f.key)).size, finds.length);
 });

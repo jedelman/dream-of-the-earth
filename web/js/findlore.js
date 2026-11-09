@@ -5,7 +5,8 @@
 //   tidefins on the seabed, 20 m down and more: easy for the sea-born, out of reach of a swim that sleeps (3 m);
 //   mossfeet in meadows inland: easy for the land-born, a long crawl for the sea-born;
 //   on beaches, now and then, one or the other, washed up: how anyone gets one alone;
-//   owl's eyes on high summits, for climbers.
+//   owl's eyes on high summits, for climbers;
+//   far feathers, now and then, wherever something flying very high would drop one: a summit, a beach, a meadow.
 // So each kind of creature finds easily what the other needs. Pure, so Node can test it.
 import { cellsAround, unit, hash2 } from "./plantforms.js";
 
@@ -19,6 +20,9 @@ export const FIND = {
 export const SEABED_MIN = 20;
 /** And summits are at least this high (m), and the top of their hill. */
 export const SUMMIT_MIN = 700;
+
+/** Of finds on summits, beaches and meadows, this share are far feathers instead. */
+export const FEATHER_SHARE = { summit: 1 / 3, shore: 1 / 6, meadow: 1 / 5 };
 
 const STEP8 = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
 
@@ -78,6 +82,7 @@ export function findsAround(lat, lon, { toLocal, height }) {
         holds = "owleye";
       }
       if (!at) continue;
+      if (FEATHER_SHARE[place] && unit(g, 11) < FEATHER_SHARE[place]) holds = "farfeather";
       out.push({ key: `${place}${c.h}`, place, holds, x: at.x, y: at.y, z: at.z, seed });
       n++;
     }

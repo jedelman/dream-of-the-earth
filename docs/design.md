@@ -611,11 +611,31 @@ them; flight becomes a sixth stat, from the same budget of 12, once Wings is lit
 - **Flight:** fly is a sixth stat from the same 12 points, shut until Wings is woken; nothing flies without it (a slow
   glide down), which closes the sea's gate. Waking Wings loosens your points once, free, so some can go into fly.
   Anything without wings now wakes 40 m up, not 350, and steps off a highway near the ground.
-- **The high view:** without it the camera pulls back 60 km at most, and the globe (the whole Earth) is its; the atlas
+- **The high view:** the camera pulls back without limit, for good (see "How far you see" for everyone else); the atlas
   still lists what you've found.
 - **Records:** stats are six numbers now (each up to nine for others' parsing; the editor holds yours to your
   ceilings); five and four still read. Looks travel in the intent as names. The map: tap a slot to set a gem (or, with
   a moonseed, take it out), tap a link to read it; framed on what you've grown toward.
+
+### How far you see (built 11-09)
+Jason: "let's limit zoom out distance. We can have shrines and items that temporarily boost it and zoom way out."
+(`zoomreach.js`)
+- **Your eye's reach:** the camera pulls back about 500 m at most (was 60 km). The land is something you cross, not
+  a map, and the pitch at the reach is about 30°, still looking along the land, not down on it.
+- **A far feather** (a new thing to carry, nine fit): held up from the pouch, your reach is 60 km for three minutes
+  (another feather adds three more), and the eye rises to 20 km on its own. The HUD counts it down (`FAR FEATHER
+  2:41`); the end time is kept on this device, so a reload keeps it. They lie on a third of summits (the rest stay
+  owl's eyes), a sixth of beaches and a fifth of meadows (the rest stay as they were), never on the seabed. Pigeons
+  carry them like anything else.
+- **The shrine of the soaring eye** (a twelfth spell, a cyan one: it changes how you see): for its minute the reach is
+  the whole Earth, and the eye rises there by itself in about eight seconds; the globe's dots (cairns, mutuals) can
+  be tapped while it holds. It wakes by day, while the Sun is up where it stands (the fisheye shrine's opposite).
+  About one shrine in twelve is one. **Every other shrine keeps the spell it held:** the spell was `g % 11`, and
+  adding a twelfth that way would have reshuffled nearly every shrine (and every atlas); instead a separate hash
+  picks the soaring eyes, and the rest keep `g % 11` over the old eleven (tested).
+- **Ending:** when a boost runs out (or Escape lifts the spell) the eye sinks home over a few seconds, never snapping;
+  you can zoom in faster, not out. While the soaring eye eases out, its reach falls smoothly in log distance.
+- **The rhizome's high view** stays what it was, the whole Earth for good: earned, not temporary.
 
 ### Sharing a picture to Bluesky (built 11-09)
 Jason: "OMG Claude this is so gorgeous. Can we add a 'share screenshot to bluesky' button?" (`share.js`, `sharesheet.js`)
@@ -1133,7 +1153,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
        be well above that at 400×224 internal pixels **(unverified on a phone)**.
    - **Zoom for scale (11-08, Jason: "zoom way out of your creature to get a sense of scale"):**
      - **Controls:** the wheel, +/− or PageUp/PageDown, or a pinch zooms from 15 m (6 m since creatures shrank, 11-09) to 40,000 km (`&zoom=`
-       metres).
+       metres). Since 11-09 the reach is about 500 m unless something lifts it: see "How far you see".
      - **In the world (to 400 km):** the camera pulls back and tilts down, from 18° to 70°. Past ~6 km up the
        highways also draw as thin gold lines, since the ribbons go sub-pixel, and a sparkle marks you. Fog is
        capped inside the outer terrain ring, so its edge melts into haze.

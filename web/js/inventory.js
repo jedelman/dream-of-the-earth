@@ -62,6 +62,11 @@ export const ITEMS = {
     on: "The owl's eye opens on your brow. The world comes from further off.",
     off: "You take the owl's eye off. The distance closes in.",
   },
+  // Jason, 11-09: "let's limit zoom out distance. We can have shrines and items that temporarily boost it and zoom way out."
+  farfeather: {
+    name: "far feather", plural: "far feathers", max: 9,
+    about: "A feather from something that flies higher than anything. Hold one up and your eye rises with it: for three minutes you can see out to 60 km. They drift down onto summits, beaches and meadows, now and then.",
+  },
 };
 export const ITEM_KINDS = Object.keys(ITEMS);
 export const WEARABLE = ITEM_KINDS.filter((k) => ITEMS[k].wear);
