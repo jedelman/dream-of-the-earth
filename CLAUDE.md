@@ -43,7 +43,7 @@ the latest file in `conversations/`.
     grown from the seed (`cleanFilled`), and its looks travel in the intent as names.
   - **Your atlas (Jason, 11-09):** "I'm okay with publishing the atlas to the repo! I guess it means bots can wall hack
     but what's the point of cheating at a cozy exploration game?" One record per player
-    (`org.jason-edelman.dream.atlas/self`: the shrines you've found), overwritten, merged across devices. Read only
+    (`org.jason-edelman.dream.atlas/self`: the shrines, ley nodes and landmarks you've been to), overwritten, merged across devices. Read only
     from the player's own repo, never indexed or shown to others by the game.
   - **Whose things we show:** `allowed()` in `intents.js`, for cairns and creatures alike: mutuals only, no block
     either way (direct or by list), accounts Bluesky still serves, nothing Bluesky's moderation hides

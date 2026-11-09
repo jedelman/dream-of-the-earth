@@ -648,6 +648,30 @@ bottom of the screen.
 - **One column of buttons,** all the same width, words to the right; SHARE after ATLAS. On a phone the HUD is a size
   smaller and wraps short of the buttons.
 
+### The atlas grows: ley nodes, landmarks, and portals to friends (built 11-09)
+Jason: "continue on those open items" (the landmarks menu still went anywhere; ley nodes weren't in the atlas yet; and
+from his first list, "portal items (everyone starts with one) to travel to friends").
+- **Ley nodes** (Jason's "places you've been = ley nodes you've touched"): coming within 2 km of one, or arriving at one
+  on a highway, puts it in your atlas ("This ley node (Gravity wells, minor) is in your atlas now"). Go takes you there.
+- **Landmarks:** the LANDMARKS menu (top right, which went anywhere) is gone. The landmarks are in the atlas: the ones
+  you've been within 3 km of have Go; the rest are listed under "Still to find", nearest first, without it. (A
+  `?lat=&lon=` link still opens anywhere: that's a shared view, not the menu.)
+- **The atlas sheet** has three sections (shrines, ley nodes, landmarks); the globe shows them all as dots (shrines in
+  their colours, nodes pale gold, landmarks pale blue), tapping one goes there; the record (`nodes`, `landmarks`) merges
+  across devices like the shrines.
+- **Portals:** travelling to a mutual (their creature, from the list or the globe) or to a cairn a mutual left takes a
+  portal, used up as you step through. Everyone starts with one (an older pouch is given one once: the starting kit's
+  version 2), one opens for you at each full moon (a day either side; once a moon, like the moonseed at the new moon),
+  five fit, and they can be sent by pigeon. Your own cairns, and everything in your atlas, stay free. With none: "You
+  have no portal. One opens for you at each full moon (the next in 14 days), and a friend can send you one by pigeon."
+- **Still to come:** watersheds as regions, with compasses and goal sequences. **Not HydroBASINS:** read on 11-09 in
+  the HydroSHEDS Technical Documentation v1.4 (April 2022), Appendix A, which HydroBASINS shares, its licence is WWF's
+  own: distribution only inside a derivative work "to End Users, subject to the terms and conditions of an end user
+  license agreement with terms that are at least as protective" (2.1.2), and records of "the identity and address of
+  each End User" (10.7). A free web game with anonymous players can't keep either. So the basins will be worked out
+  from the elevation tiles the game already uses (flow directions on a coarse global grid, offline, shipped as small
+  tiles like the Köppen map).
+
 ### Pigeons: things carried between mutuals (built 11-09)
 Jason: "item exchange between repos - via pigeon", then "we should give people reasons to collaborate". The finds
 make the reason (each kind of creature finds easily what the other needs); pigeons carry it (`pigeons.js`,

@@ -36,7 +36,7 @@ test("spend and refund", () => {
 test("the record: integers, known kinds only, round-trips", () => {
   const v = makeInventoryRecord({ items: { moonseed: 2 }, lunation: 333 }, Date.parse("2026-11-09T22:00:00Z"));
   assert.equal(v.$type, INVENTORY_NSID);
-  assert.deepEqual(parseInventoryRecord(v), { items: { moonseed: 2 }, worn: [], kit: 0, lunation: 333, took: { lunation: -1, keys: [] }, got: [], rhizome: { seed: null, slots: {} }, at: Date.parse("2026-11-09T22:00:00Z") });
+  assert.deepEqual(parseInventoryRecord(v), { items: { moonseed: 2 }, worn: [], kit: 0, lunation: 333, portalMoon: -1, took: { lunation: -1, keys: [] }, got: [], rhizome: { seed: null, slots: {} }, at: Date.parse("2026-11-09T22:00:00Z") });
   assert.deepEqual(parseInventoryRecord({ ...v, items: { moonseed: 99, sword: 1, x: "y" } }).items, { moonseed: 13 });
   assert.deepEqual(parseInventoryRecord({ ...v, items: { moonseed: -2 } }).items, {});
   assert.equal(parseInventoryRecord({ ...v, $type: "app.bsky.feed.post" }), null);
@@ -89,4 +89,22 @@ test("wearing things: only what you carry, each once, and only so many at once",
   assert.deepEqual(v.worn, ["prism"]);
   assert.deepEqual(parseInventoryRecord({ ...v, worn: ["prism"], items: {} }).worn, []);
   assert.ok(!sameInventory(on, inv), "what you wear is part of the pouch");
+});
+
+import { portalFor, nextPortalAt } from "../web/js/inventory.js";
+import { nearestFullMoon, portalFalls } from "../web/js/moon.js";
+test("portals: everyone starts with one (older pouches are given one, once); one opens at each full moon", () => {
+  assert.equal(countOf(firstInventory(fullMoon), "portal"), 1);
+  const old = kitUp({ items: { moonseed: 1, prism: 1 }, worn: ["prism"], kit: 1, lunation: 333 });
+  assert.equal(countOf(old, "portal"), 1);
+  assert.equal(countOf(kitUp(old), "portal"), 1, "only once");
+  const full = nearestFullMoon(newMoon + SYNODIC_S / 2);
+  assert.ok(portalFalls(full) && !portalFalls(newMoon));
+  let inv = { items: {}, lunation: -1, portalMoon: -1 };
+  assert.equal(portalFor(inv, newMoon).fell, false, "not at the new moon");
+  ({ inv } = portalFor(inv, full - 3600));
+  assert.equal(countOf(inv, "portal"), 1);
+  assert.equal(portalFor(inv, full + 3600).fell, false, "once a moon");
+  assert.ok(portalFor(inv, full + SYNODIC_S).fell, "and the next");
+  assert.ok(Math.abs(nextPortalAt(inv, full + 3 * 86400) - (full + SYNODIC_S - 86400)) < 2);
 });

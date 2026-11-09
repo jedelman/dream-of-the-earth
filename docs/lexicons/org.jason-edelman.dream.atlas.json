@@ -66,6 +66,8 @@
               }
             }
           },
+          "nodes": { "type": "array", "maxLength": 2000, "description": "Ley nodes you've been to (within 2 km, or arrived at on a highway), by their index in the network, earliest first.", "items": { "type": "object", "required": ["i", "at"], "properties": { "i": { "type": "integer", "minimum": 0 }, "at": { "type": "integer", "minimum": 0 } } } },
+          "landmarks": { "type": "array", "maxLength": 2000, "description": "Landmarks you've been to (within 3 km), by name, earliest first.", "items": { "type": "object", "required": ["name", "at"], "properties": { "name": { "type": "string", "maxLength": 120 }, "at": { "type": "integer", "minimum": 0 } } } },
           "updatedAt": {
             "type": "string",
             "format": "datetime"

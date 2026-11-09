@@ -17,6 +17,14 @@ export const lunationOf = (t) => Math.round((t - NEW_MOON_2000) / SYNODIC_S);
 /** Whether t is within a day of a new moon: when a moonseed falls (11-09: respecs became an item). */
 export const canRespec = (t) => Math.abs(t - nearestNewMoon(t)) <= RESPEC_S;
 export const seedFalls = canRespec;
+/** The nearest full moon to t (s): half a month after its new moon. */
+export const nearestFullMoon = (t) => NEW_MOON_2000 + SYNODIC_S / 2 + Math.round((t - NEW_MOON_2000 - SYNODIC_S / 2) / SYNODIC_S) * SYNODIC_S;
+/** The next full moon at or after t (s). */
+export const nextFullMoon = (t) => NEW_MOON_2000 + SYNODIC_S / 2 + Math.ceil((t - NEW_MOON_2000 - SYNODIC_S / 2) / SYNODIC_S) * SYNODIC_S;
+/** Whether t is within a day of a full moon: when a portal opens for you (11-09). */
+export const portalFalls = (t) => Math.abs(t - nearestFullMoon(t)) <= RESPEC_S;
+/** Which month's full moon is nearest t (the number of the new moon before it). */
+export const fullLunationOf = (t) => Math.floor((nearestFullMoon(t) - NEW_MOON_2000) / SYNODIC_S);
 /** When the window around the coming (or current) new moon opens and closes: { opens, closes } (s). */
 export function respecWindow(t) {
   const m = canRespec(t) ? nearestNewMoon(t) : nextNewMoon(t);
