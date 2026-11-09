@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lineAt, lineCount, pointOn, tangentEN, chooseCapture, startRide, advance, hop, linesNear, rideSpeed, RIDE_BASE } from "../web/js/ride.js";
-import { vecToLatLon, R_EARTH } from "../web/js/geo.js";
+import { lineAt, lineCount, pointOn, tangentEN, chooseCapture, startRide, advance, hop, linesNear, rideSpeed, RIDE_BASE, lanesAt, laneFacing, rideLatLon, remainingMeters } from "../web/js/ride.js";
+import { vecToLatLon, latLonToVec, R_EARTH } from "../web/js/geo.js";
+import { network, angle } from "../web/js/ley.js";
+
+const angleBetween = (node, ll) => angle(node.vec, latLonToVec(ll.lat, ll.lon)) * R_EARTH;
 
 const at = (line, t) => vecToLatLon(pointOn(line, t));
 
@@ -61,3 +64,26 @@ test("at a crossing, A/D hops onto the other line", () => {
 });
 
 test("line count", () => assert.equal(lineCount(), 724));
+
+test("the lanes out of every node: each line that ends there, leaving it, clockwise, ending at another node", () => {
+  for (const node of network().nodes) {
+    const lanes = lanesAt(node);
+    assert.ok(lanes.length >= 3, `${lanes.length} lanes at ${node.lat.toFixed(2)},${node.lon.toFixed(2)}`);
+    for (let i = 1; i < lanes.length; i++) assert.ok(lanes[i].bearing >= lanes[i - 1].bearing);
+    for (const l of lanes) {
+      assert.ok(l.far && l.far !== node, "ends at another node");
+      // A moment along it, you've left the node and are heading for the far one.
+      const r = startRide(l);
+      advance(r, 0.5);
+      const here = rideLatLon(r);
+      assert.ok(!r.done && remainingMeters(r) < l.km * 1000);
+      assert.ok(Math.abs(l.km * 1000 - remainingMeters(r) - angleBetween(node, here)) < 2000, "moving away from the node along the lane");
+    }
+  }
+});
+
+test("the lane you're facing is the one picked first", () => {
+  const node = network().nodes[0], lanes = lanesAt(node);
+  for (const [i, l] of lanes.entries()) assert.equal(laneFacing(lanes, l.bearing + 3), i);
+  assert.equal(laneFacing(lanes, lanes[0].bearing - 2 + 360), 0, "bearings wrap");
+});
