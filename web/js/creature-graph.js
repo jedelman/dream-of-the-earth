@@ -26,6 +26,15 @@ export const PRIM_TRIS = {
   wing2: 2, // a flat quad
 };
 
+/**
+ * Metres per unit of a creature's body. Jason, 11-09: "lets make everything bigger relative to the player by
+ * shrinking the player." At 1 a creature like Nyo was about 13 m long; at 0.4, about 5 m, with trees three to ten
+ * times its height. Every creature (yours, your mutuals') shrinks together; the graph itself is unchanged.
+ */
+export const CREATURE_M = 0.4;
+/** A creature's size in metres per body unit: its own scale times CREATURE_M. */
+export const sizeOf = (graph) => graph.scale * CREATURE_M;
+
 /** The traits that can be re-rolled, in the order they grow. */
 export const TRAITS = ["palette", "body", "heads", "eyes", "wings", "legs", "tail", "spikes"];
 /** How many of each part a player may choose (wings and legs in pairs). */

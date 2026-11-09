@@ -350,6 +350,28 @@ customization." The design's editor verbs were randomize, mutate, edit; all thre
 - **Not yet:** voices (Operator Field patches), part-by-part editing beyond counts, and the plain-shape option for
   non-mutuals' creatures (only mutuals are shown, so it isn't needed yet).
 
+## A smaller you, and a breathing world (11-09)
+Jason: "lets make everything bigger relative to the player by shrinking the player. Two, lets make everything
+breathe. Animals more, plants less, landscapes even less."
+- **Every creature shrank** (`CREATURE_M` = 0.4 metres per body unit, in `creature-graph.js`): Nyo went from about
+  13 m long to about 5, so a kapok stands ten times its height. Yours and your mutuals' shrink together; the graph
+  (and so every gene, and the snapshot test) is unchanged, only how big a body unit is.
+- **The camera came with it:** the home zoom is 34 m (was 85), the closest 6 m (was 15), and the eye view starts at 14 m
+  (was 34). Close-ups, the editor's portrait, name tags, hops and puffs all use the creature's size in metres.
+- **On its feet:** a creature now stands on its lowest point (legs and all) instead of its middle, which had left
+  bodies half in the ground; in water it floats as before.
+- **Speeds are unchanged,** so near the ground the world goes by faster than it did. Jason's call whether ground
+  speeds shrink too.
+- **Small creatures shrank less** (0.6×), so a bunny comes up to about half of you.
+- **Breathing** (`breath.js`): animals the most, plants less, land least.
+  - Creatures, yours and your mutuals': 5% up and down, 2.5% around, about every 3.6 s at rest and 1.4 s at full speed.
+  - Bunnies (6%, quick), frogs (9%, slow), birds (6%, quickest); sky beings, vast and slow (4%, every 8 s).
+  - Plants: a crown swells 3% (and 1.2% in height) about every 6 s, each tree out of step with its neighbours.
+  - Land: a swell of 0.3% of its height plus half a metre, rolling outward from you every 9 s; nothing within 300 m
+    of you (where you walk, drawing and physics agree), full strength past 4 km. Mountains far off rise and settle by
+    a few metres, and coastlines with them.
+  - A system set to reduce motion gets half the animal breath, a third of the plants', and still land.
+
 ## Small creatures: bunnies, frogs and little birds (built 11-09)
 Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
 - **Where they live:** homes on the global cell grid, by biome (`critterlife.js`, tested). Bunnies like open country
@@ -357,8 +379,8 @@ Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
   savanna; none in rainforest). Frogs like it wet (bright tree frogs in rainforest and subtropics; frogs and toads in
   temperate places; none in deserts, on ice, or above 1,200 m). Little birds live wherever plants do, bright in the
   tropics, brown, grey, blue and black elsewhere, a snow bird in the tundra. Nothing at sea or on ice.
-- **Dream-sized,** like the butterflies: bunnies 3.5–5 m, frogs 2.4–3.4 m, birds 2.2–3 m, small beside Nyo (about
-  13 m) but readable from the camera. At first they were real-ish sizes (1–2 m) and a bunny was a speck.
+- **Dream-sized,** like the butterflies. First 3.5–5 m bunnies beside a 13 m Nyo (at real-ish sizes, 1–2 m, a bunny
+  was a speck); since creatures shrank (11-09), bunnies 2.1–3 m, frogs 1.4–2 m, birds 1.3–1.8 m beside a 5 m Nyo.
 - **Low poly:** a bunny is 26 triangles (a loaf with high haunches, head on its chest, leaf ears, a cotton tail), a frog
   20 (eyes on top, legs splayed), a bird 13 (wings that flap in the shader, folded along its back at rest). One
   instanced mesh per kind; each creature's two colours ride as instance attributes.
@@ -761,7 +783,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
      - **Headless (CPU-rendered) frame rate fell from 60 to ~30–34 fps,** mostly the sea shader. Real GPUs should
        be well above that at 400×224 internal pixels **(unverified on a phone)**.
    - **Zoom for scale (11-08, Jason: "zoom way out of your creature to get a sense of scale"):**
-     - **Controls:** the wheel, +/− or PageUp/PageDown, or a pinch zooms from 15 m to 40,000 km (`&zoom=`
+     - **Controls:** the wheel, +/− or PageUp/PageDown, or a pinch zooms from 15 m (6 m since creatures shrank, 11-09) to 40,000 km (`&zoom=`
        metres).
      - **In the world (to 400 km):** the camera pulls back and tilts down, from 18° to 70°. Past ~6 km up the
        highways also draw as thin gold lines, since the ribbons go sub-pixel, and a sparkle marks you. Fog is

@@ -3,6 +3,7 @@
 // zoom 7 to the edge of sight. Coarse on purpose: elevation is cut into big
 // flat-shaded facets, so the data's limits read as the look.
 import * as THREE from "three";
+import { breathingLand } from "./breath.js";
 import { terrariumHeight, lonLatToTile, tileToLonLat } from "./geo.js";
 import { curved } from "./curvature.js";
 import { biomeFor, BIOMES } from "./biome.js";
@@ -174,7 +175,7 @@ async function buildRing(frame, lat, lon, { zoom, cells, smooth }, hole) {
   geo.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
   geo.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
   geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, curved(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })));
+  const mesh = new THREE.Mesh(geo, curved(breathingLand(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })), "-land"));
   mesh.frustumCulled = false; // curvature moves vertices after culling would have run
 
   // Height of the facet under a local point (planar interpolation on the same

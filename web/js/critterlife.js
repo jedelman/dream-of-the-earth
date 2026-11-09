@@ -8,12 +8,13 @@
 // bird), then comes back to its day.
 import { cellsAround, unit, hash2 } from "./plantforms.js";
 
-// Dream-sized, like the butterflies (3-5 m wingspans): small beside a creature the size of Nyo (13 m or so), but
-// big enough to read from the camera. range: how far from home it wanders (m); startle: how near you can rush (m).
+// Dream-sized, like the butterflies (3-5 m wingspans). Since creatures shrank (11-09: Nyo about 5 m long), a bunny
+// comes up to half of you, which is bigger for its size than before. range: how far from home it wanders (m);
+// startle: how near you can rush (m).
 export const KINDS = {
-  bunny: { cell: 55, radius: 260, salt: 811, max: 48, size: [3.5, 5], range: 14, startle: 30 },
-  frog: { cell: 45, radius: 200, salt: 823, max: 40, size: [2.4, 3.4], range: 8, startle: 18 },
-  bird: { cell: 50, radius: 260, salt: 837, max: 60, size: [2.2, 3], range: 16, startle: 32 },
+  bunny: { cell: 55, radius: 260, salt: 811, max: 48, size: [2.1, 3], range: 12, startle: 24 },
+  frog: { cell: 45, radius: 200, salt: 823, max: 40, size: [1.4, 2], range: 7, startle: 14 },
+  bird: { cell: 50, radius: 260, salt: 837, max: 60, size: [1.3, 1.8], range: 14, startle: 26 },
 };
 export const CRITTER_TRIANGLES = { bunny: 26, frog: 20, bird: 13 };
 /** How likely a home cell is to hold each, by biome (0 = never). Frogs like it wet, bunnies open, birds everywhere with plants. */
