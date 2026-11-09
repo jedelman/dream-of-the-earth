@@ -31,6 +31,7 @@ import { buildEditor } from "./editor.js";
 import { buildShrines } from "./shrines.js";
 import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf } from "./shrinelore.js";
 import { buildWorldview } from "./worldview.js";
+import { skyClock, horizontal, zodiac, PLANETS, GLYPH } from "./astro.js";
 import { makeCreatureRecord, parseCreatureRecord, reconcile } from "./creature-record.js";
 import { sound } from "./sound.js";
 import { logLine } from "./eventlog.js";
@@ -80,7 +81,9 @@ if (!kept && urlSeed === null) keepCreature(0, false); // the first creature you
 // seed says, so any spawn is reproducible; your own lands somewhere new each visit.
 const spawnRand = mulberry32(hashString(`spawn:${urlSeed ?? (Math.random() * 2 ** 32) >>> 0}`));
 // The clock: the real one, or from ?t= (or a landmark) onward. Sun, clouds and sky beings all follow it.
-const clock = { base: params.get("t") ? Date.parse(params.get("t")) / 1000 : Date.now() / 1000, at: 0 };
+// The clock is the real one, always (Jason, 11-09: "pin to actual clock time so we can use an astrological clock for the
+// game"); no ?t= any more, so the sun, the Moon, the planets and everything keyed to them are where they really are.
+const clock = { base: Date.now() / 1000, at: 0 };
 const unixAt = (sessionSeconds) => clock.base + (sessionSeconds - clock.at);
 
 let spawn;
@@ -275,6 +278,44 @@ function worldSpell() {
   worldview.uniforms.uKaleido.value = w.id === "kaleido" ? w.w : 0;
   worldview.uniforms.uMelt.value = w.id === "melt" ? w.w : 0;
   worldview.uniforms.uBarrel.value = c ? c.w * 0.8 : 0;
+}
+// ---- The astrological clock (astro.js): the Moon and the planets where they really are ----
+let skyCache = null;
+/** Directions to the Moon and the planets from here, at time t (unix s), refreshed once a second (or every frame while
+ * the spinning days race the whole sky). { moon, planets: [8], clock } in the local frame. */
+function skyNow(t, ll, simTime) {
+  if (skyCache && Math.abs(t - skyCache.t) < 1 && Math.abs(ll.lat - skyCache.lat) < 0.05 && Math.abs(ll.lon - skyCache.lon) < 0.05) return skyCache;
+  const clockNow = skyClock(t), dir = (b) => sunDirection(horizontal(b, t, ll.lat, ll.lon));
+  const by = Object.fromEntries(clockNow.bodies.map((b) => [b.body, b]));
+  skyCache = { t, lat: ll.lat, lon: ll.lon, clock: clockNow, moon: dir(by.moon), planets: PLANETS.map((p) => dir(by[p])) };
+  return skyCache;
+}
+/** "☉♏17 ☽♏19 ☿♏6℞ …": where each body is in the tropical zodiac, ℞ when it's retrograde. */
+function clockLine() {
+  if (!skyCache) return "";
+  const c = skyCache.clock, phase = c.moonLit < 0.03 ? "NEW MOON" : c.moonLit > 0.97 ? "FULL MOON" : `MOON ${Math.round(c.moonLit * 100)}% ${c.waxing ? "WAXING" : "WANING"}`;
+  return `${c.bodies.map((b) => { const z = zodiac(b.lon); return `${b.glyph}${z.glyph}${Math.floor(z.deg)}${b.retro ? "℞" : ""}`; }).join(" ")}  ·  ${phase}`;
+}
+// Small glyphs under the Moon and each planet when they're up and on screen.
+const skyLabels = Object.fromEntries(["moon", ...PLANETS].map((b) => {
+  const el = document.createElement("div");
+  el.className = "skyglyph";
+  el.textContent = GLYPH[b];
+  el.hidden = true;
+  document.getElementById("whos").append(el);
+  return [b, el];
+}));
+function placeSkyLabels(day) {
+  const r = canvas.getBoundingClientRect(), v = new THREE.Vector3();
+  const show = (el, d, below) => {
+    if (!d || d.y < 0.02 || zoom > GLOBE_AT) { el.hidden = true; return; }
+    v.set(d.x, d.y - below, d.z).multiplyScalar(1e5).add(camera.position).project(camera);
+    el.hidden = v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05;
+    if (!el.hidden) { el.style.transform = `translate(${((v.x + 1) / 2) * r.width + r.left}px, ${((1 - v.y) / 2) * r.height + r.top}px) translate(-50%, 0)`; el.style.opacity = String(0.45 + 0.55 * (1 - day)); }
+  };
+  if (!skyCache) return;
+  show(skyLabels.moon, skyCache.moon, 0.08);
+  PLANETS.forEach((p, i) => show(skyLabels[p], skyCache.planets[i], 0.05));
 }
 /** The HUD's line for spells in force: "GIANT 42 S · TURNING 12 S". */
 function spellsLine() {
@@ -584,7 +625,6 @@ places.addEventListener("change", () => {
 function teleport(l) {
   clearTarget();
   if (state.ride) { state.ride = null; rideFx.group.visible = false; if (world) world.group.visible = true; }
-  if (l.t) { clock.base = Date.parse(l.t) / 1000; clock.at = (performance.now() - t0) / 1000; lastSun = -Infinity; }
   zoom = l.zoom ?? ZOOM_HOME;
   if (l.heading !== undefined) state.heading = (-l.heading * Math.PI) / 180;
   state.speed = 0; state.vy = 0; state.captureCooldown = 3;
@@ -1000,7 +1040,7 @@ const mine = new Map(); // uri -> artifact you made or renewed this session (the
 const gone = new Set(); // uris you took down this session
 let artifacts = [], artifactsAt = -Infinity, discovering = false, cairnsWorld = null;
 let everywhere = [], everywhereAt = -Infinity, listing = false; // every mutual's cairn, anywhere (the list and the globe)
-const realNow = () => (film?.manual ? film.base + film.ms : Date.now()) / 1000; // artifacts fade on the real clock, whatever ?t= says
+const realNow = () => (film?.manual ? film.base + film.ms : Date.now()) / 1000; // the real clock (film mode steps it exactly)
 async function refreshArtifacts() {
   if (!people.viewer || !world || discovering) return;
   discovering = true;
@@ -1500,6 +1540,7 @@ function updateHud() {
     zoomLine(),
     targetLine(),
     spellsLine(),
+    clockLine(),
   ].join("\n").replace(/\n+$/, "");
 }
 function targetLine() {
@@ -1623,7 +1664,8 @@ function frame() {
     renderer.render(globe.scene, globe.camera);
   } else {
     curveUniform.value.copy(camera.position); // the Earth curves away from the eye
-    skyPass.update({ frame: world ? world.frame : makeFrame(view.ll.lat, view.ll.lon), camera, unix, sun: { altitude: sunState.altitude, dir }, day, fog: scene.fog, clouds: !underwater && !state.ride && !!world, underwater, steps: 20 + 44 * detail.scale });
+    skyPass.update({ frame: world ? world.frame : makeFrame(view.ll.lat, view.ll.lon), camera, unix, sun: { altitude: sunState.altitude, dir }, day, fog: scene.fog, clouds: !underwater && !state.ride && !!world, underwater, steps: 20 + 44 * detail.scale, sky: skyNow(unix + (days ? sunAhead(days.age) * days.fade : 0), view.ll, t) });
+    placeSkyLabels(day);
     worldSpell();
     if (worldview.active) { skyPass.render(renderer, scene, camera, worldview.target(renderer)); worldview.render(renderer, t); }
     else skyPass.render(renderer, scene, camera);

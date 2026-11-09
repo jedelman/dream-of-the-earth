@@ -46,9 +46,10 @@ its end. Shift or S steps off anywhere. Where two highways cross, A/D hops onto 
 pillar of light that lifts any creature up to the network, wings or not.
 
 URL parameters make any spawn reproducible: `?seed=42` (creature, stats and spawn), `&stats=6,2,2,2`
-(fly, swim, run, gleam; 12 points, 0–6 each), `&t=2026-11-07T15:00:00Z` (start the clock at a moment), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north), `&alt=` (metres up), `&zoom=` (camera distance in
+(climb, swim, run, gleam, perception; 12 points, 0–6 each; the old four still read), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north), `&alt=` (metres up), `&zoom=` (camera distance in
 metres, up to 40,000,000), `&ride=N` (start out riding highway N, 0–723), and `&detail=` (0.25–1: pin how far
-forests reach; otherwise each device finds its own, and the HUD shows its FPS).
+forests reach; otherwise each device finds its own, and the HUD shows its FPS). There's no time parameter: the clock is
+always the real one, so the sun, the Moon and the planets are where they really are (the game's astrological clock).
 
 ## Develop
 ```bash

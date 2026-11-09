@@ -51,6 +51,8 @@ const fragmentShader = /* glsl */ `
   uniform float uLat0, uLon0, uKx, uKz, uWindKm;
   uniform vec3 uSunDir, uSunCol, uAmbTop, uAmbBot, uZenith, uHorizon, uHalo, uSunDisc, uFogCol;
   uniform float uFogNear, uFogFar, uStars, uSunUp, uClouds, uUnder, uSteps, uTime;
+  uniform vec3 uMoonDir; uniform float uMoonUp;
+  uniform vec4 uPlanets[8]; uniform vec3 uPlanetCols[8]; uniform float uPlanetDay;
   uniform float uShadow;
   varying vec2 vUv;
 
@@ -231,6 +233,42 @@ const fragmentShader = /* glsl */ `
       float hs = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
       if (hs > 0.9975) c = mix(c, vec3(1.0, 0.97, 0.88), uStars * (0.6 + 0.4 * sin(uTime * 2.0 + hs * 100.0)));
     }
+    // The planets, where they really are, as discs 5° across (the dream exaggerates them), behind the Moon.
+    for (int i = 0; i < 8; i++) {
+      vec4 P = uPlanets[i];
+      float cp = dot(d, P.xyz);
+      if (P.w <= 0.0 || cp < 0.99905) continue; // 2.5° radius
+      vec3 off = d - P.xyz * cp;
+      float r = length(off) / 0.043619;
+      vec3 u = normalize(cross(P.xyz, vec3(0.0, 1.0, 0.0)) + vec3(1e-4, 0.0, 0.0)), v = cross(u, P.xyz);
+      vec2 q = vec2(dot(off, u), dot(off, v)) / 0.043619; // -1..1 across the disc
+      float ball = i == 4 ? 0.58 : 1.0; // Saturn's ball is smaller, to fit its ring inside the 5°
+      vec3 col = uPlanetCols[i];
+      if (i == 3) col *= 0.82 + 0.18 * step(0.0, sin(q.y * 15.0)); // Jupiter's bands
+      float a = 0.0;
+      if (r < ball) {
+        float rr = r / ball;
+        vec3 n = -P.xyz * sqrt(max(0.0, 1.0 - rr * rr)) + normalize(off + 1e-6) * rr;
+        col *= 0.55 + 0.6 * max(0.0, dot(n, uSunDir));
+        a = smoothstep(1.0, 0.86, rr);
+      }
+      if (i == 4) { // Saturn's ring: a tilted ellipse, in front of the ball below its middle
+        float e = length(vec2(q.x, q.y / 0.36));
+        if (e > 0.72 && e < 0.98 && (r >= ball || q.y < 0.0)) { col = uPlanetCols[i] * vec3(0.95, 0.88, 0.7); a = 0.85; }
+      }
+      c = mix(c, col, a * P.w);
+    }
+    // The Moon, about 8° across, lit on the side toward the sun (its real phase), the rest faint with earthshine.
+    float cm = dot(d, uMoonDir);
+    if (uMoonUp > 0.0 && cm > 0.99756) {
+      vec3 off = d - uMoonDir * cm;
+      float r = length(off) / 0.069756;
+      vec3 n = -uMoonDir * sqrt(max(0.0, 1.0 - r * r)) + normalize(off + 1e-6) * r;
+      float lit = smoothstep(-0.04, 0.06, dot(n, uSunDir));
+      float mare = step(0.62, fract(sin(dot(floor(n * 5.0), vec3(7.1, 3.7, 9.3))) * 4375.85)) * 0.12; // a few darker seas
+      vec3 mc = mix(vec3(0.16, 0.14, 0.27), vec3(0.97, 0.95, 1.0) * (1.0 - mare), lit);
+      c = mix(c, mc, smoothstep(1.0, 0.95, r) * uMoonUp);
+    }
     return c;
   }
 
@@ -342,6 +380,10 @@ export function buildSkyShader() {
     uSunDir: U(new THREE.Vector3(0, 1, 0)), uSunCol: U(new THREE.Color()), uAmbTop: U(new THREE.Color()), uAmbBot: U(new THREE.Color()),
     uZenith: U(new THREE.Color()), uHorizon: U(new THREE.Color()), uHalo: U(new THREE.Color(1, 0.86, 0.62)), uSunDisc: U(new THREE.Color(1, 0.945, 0.659)), uFogCol: U(new THREE.Color()),
     uFogNear: U(1), uFogFar: U(2), uStars: U(0), uSunUp: U(1), uClouds: U(1), uUnder: U(0), uSteps: U(48), uTime: U(0), uShadow: U(0),
+    uMoonDir: U(new THREE.Vector3(0, -1, 0)), uMoonUp: U(0), uPlanetDay: U(0),
+    uPlanets: U(Array.from({ length: 8 }, () => new THREE.Vector4(0, -1, 0, 0))),
+    // Mercury quicksilver, Venus pale gold, Mars red, Jupiter tan, Saturn butter, Uranus cyan, Neptune deep blue, Pluto dusky rose.
+    uPlanetCols: U([0xb9b4d6, 0xfff1c4, 0xff5a3c, 0xe8b886, 0xf3dc8a, 0x8ff3ff, 0x4f6dff, 0xc98bb3].map((h) => new THREE.Color(h))),
     tOro: U(null), uOro: U(new THREE.Vector4(0, 0, 1, 0)), uSlab: U(new THREE.Vector2(CLOUD_BASE, CLOUD_BASE + 8500)),
   };
   const mat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, depthTest: true, depthWrite: true, depthFunc: THREE.AlwaysDepth });
@@ -366,7 +408,13 @@ export function buildSkyShader() {
      * frame: the world frame; sun: { altitude, dir }; day 0..1; fog: { near, far, color (linear) };
      * clouds: whether to draw them; steps: march steps (the detail governor's).
      */
-    update({ frame, camera, unix, sun, day, fog, clouds, underwater, steps }) {
+    update({ frame, camera, unix, sun, day, fog, clouds, underwater, steps, sky = null }) {
+      // The Moon and the planets (astro.js, through main): directions, and how much they show (faint by day).
+      if (sky) {
+        uniforms.uMoonDir.value.copy(sky.moon);
+        uniforms.uMoonUp.value = sky.moon.y > -0.07 ? 1 : 0;
+        sky.planets.forEach((p, i) => uniforms.uPlanets.value[i].set(p.x, p.y, p.z, p.y > -0.05 ? 0.4 + 0.6 * (1 - day) : 0));
+      }
       const { zenith, horizon } = skyColors(sun.altitude);
       uniforms.uZenith.value.copy(zenith); // the dream's palette, shown as-is
       uniforms.uHorizon.value.copy(horizon);
