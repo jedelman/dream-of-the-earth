@@ -4,7 +4,7 @@
 import { hash2 } from "./plantforms.js";
 
 /** How close you need to be (metres) before a tapped thing answers. */
-export const RANGE = { tree: 20, butterfly: 30, being: 3000, highway: 170, artifact: 30 };
+export const RANGE = { tree: 20, butterfly: 30, being: 3000, highway: 170, artifact: 30, critter: 26 };
 
 export const TREE_NAMES = {
   ceiba: "kapok", ficus: "banyan", cocos: "coconut palm", adansonia: "baobab", vachellia: "umbrella thorn",
@@ -41,6 +41,18 @@ export function treeLine(species, seed, blossom = false, n = 0) {
 
 const HUES = [[0.03, "red"], [0.1, "orange"], [0.17, "golden"], [0.3, "lime"], [0.5, "teal"], [0.66, "blue"], [0.8, "violet"], [0.97, "pink"], [1.01, "red"]];
 const hueName = (hue) => HUES.find(([h]) => hue < h)[1];
+// Small creatures answering a gentle touch, and running from a rush. A binky is the twisting jump of a happy rabbit.
+const CRITTER_LINES = {
+  bunny: (n, me) => [`The ${n} sniffs ${me}'s nose and decides you're all right.`, `The ${n} does a little twisting jump. That's a binky: it's happy.`, `The ${n} flicks its ears at you and goes back to nibbling.`, `The ${n} leans into the pat, eyes half shut.`],
+  frog: (n) => [`The ${n} puffs out its throat: ribbit.`, `The ${n} blinks at you, very slowly.`, `Boop. The ${n} croaks, unbothered.`, `The ${n} sits up a little taller, pleased.`],
+  bird: (n) => [`The ${n} sings three notes back.`, `The ${n} tilts its head, then answers.`, `The ${n} hops closer to listen, and trills.`, `The ${n} fluffs up and sings a little louder.`],
+};
+export function critterLine(kind, name, me, seed, n = 0) {
+  return pickOf(CRITTER_LINES[kind](name, me), hash2(seed, n, 47));
+}
+const FLED = { bunny: (n) => `Too fast for the ${n}: it bolts.`, frog: (n) => `The ${n} leaps away from you.`, bird: (n) => `The ${n} takes off in a flurry.` };
+/** Running from you. The first time, a hint: tap one, and you'll walk up gently. */
+export const fledLine = (kind, name, first) => FLED[kind](name) + (first ? " Tap one to walk up gently." : "");
 export function butterflyLine(hue, seed, n = 0) {
   const c = hueName(hue);
   return pickOf([`The ${c} butterfly squeaks and loops around you.`, `A ${c} butterfly squeaks hello and lands on your nose.`, `The ${c} butterfly squeaks, then pretends it didn't.`], hash2(seed, n, 41));
@@ -76,6 +88,7 @@ export function promptFor(c) {
     return `Shake the ${TREE_NAMES[c.species] ?? c.species}`;
   }
   if (c.kind === "butterfly") return `Greet the ${hueName(c.hue)} butterfly`;
+  if (c.kind === "critter") return c.species === "bunny" ? `Pet the ${c.name}` : c.species === "frog" ? `Boop the ${c.name}` : `Whistle to the ${c.name}`;
   if (c.kind === "being") return "Hum to the sky being";
   if (c.kind === "highway") return "Board the highway";
   if (c.kind === "ride") return "Step off";
@@ -85,7 +98,7 @@ export function promptFor(c) {
 
 // Small things close at hand come before big things far off: under a highway,
 // beside a tree, with a sky being on the horizon, the tree is what you meant.
-const BIAS = { artifact: -0.05, butterfly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
+const BIAS = { artifact: -0.05, critter: -0.02, butterfly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
 
 /**
  * How much a thing in reach wants the prompt (lower wins). c: { kind, d, range, facing, species? },

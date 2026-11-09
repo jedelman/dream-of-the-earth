@@ -16,7 +16,7 @@ import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, cr
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
-import { RANGE, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
+import { RANGE, critterLine, fledLine, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
 import { buildGlints } from "./glints.js";
 import { buildCairns } from "./cairns.js";
 import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted, isBot } from "./atproto.js";
@@ -38,6 +38,7 @@ import { biomeFor, koppenCode } from "./biome.js";
 import { koppenAt } from "./koppen.js";
 import { buildPlants } from "./plants.js";
 import { buildInsects } from "./insects.js";
+import { buildCritters } from "./critters.js";
 import { LANDMARKS, landmarkQuery } from "./landmarks.js";
 import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
 
@@ -214,10 +215,11 @@ async function buildWorld(lat, lon) {
   const beings = buildSkyBeings(frame, terrain.heightAt);
   const plants = buildPlants(frame, terrain);
   const insects = buildInsects(frame, terrain);
+  const critters = buildCritters(frame, terrain, plants);
   const group = new THREE.Group();
-  group.add(terrain.mesh, highways.group, beings.group, plants.group, insects.group);
+  group.add(terrain.mesh, highways.group, beings.group, plants.group, insects.group, critters.group);
   layerTransparent(group); // glows, sparkles and fireflies draw after the sky
-  return { frame, terrain, highways, beings, plants, insects, group };
+  return { frame, terrain, highways, beings, plants, insects, critters, group };
 }
 function swapWorld(next, place) {
   if (place) {
@@ -558,6 +560,13 @@ function pick(clientX, clientY) {
     if (v.z > 1) continue;
     if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 24) found.push({ kind: "butterfly", d, b });
   }
+  for (const c of world.critters.all()) {
+    v.set(c.x, c.y + 0.4 * c.size, c.z);
+    const d = v.distanceTo(camera.position);
+    v.project(camera);
+    if (v.z > 1) continue;
+    if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 24) found.push({ kind: "critter", d, c });
+  }
   const bh = tapRay.intersectObject(world.beings.group, true)[0];
   if (bh) { let o = bh.object; while (o && !o.userData.being) o = o.parent; if (o) found.push({ kind: "being", d: bh.distance, being: o.userData.being, obj: o }); }
   const ch = tapRay.intersectObject(cairns.group, true)[0], ce = ch && cairns.entryOf(ch.object);
@@ -593,6 +602,11 @@ function onTap(clientX, clientY) {
     const b = hit.b, act = () => chirp(hit.b.k);
     return Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z) < RANGE.butterfly ? act() : moveTo({ x: b.x, z: b.z, h: b.y }, { range: RANGE.butterfly * 0.6, act });
   }
+  if (hit.kind === "critter") {
+    // Walking up to it, it doesn't run (others on the way might).
+    const c = hit.c, act = () => touchCritter(c.key);
+    return flat(c.x, c.z) < RANGE.critter ? act() : moveTo({ x: c.x, z: c.z, h: c.y }, { range: RANGE.critter * 0.6, act, critter: c.key });
+  }
   if (hit.kind === "being") {
     hit.obj.getWorldPosition(v);
     const seed = hit.being.seed, act = () => hum(hit.being, beingObj(seed) || hit.obj);
@@ -622,11 +636,11 @@ function beingObj(seed) {
  * follow: () => { x, z, h, alt } | null, for a goal that moves (a sky being): flyers steer for where it is now;
  * walkers who arrive and find it gone set off again.
  */
-function moveTo(hit, { range, act, alt, follow } = {}) {
+function moveTo(hit, { range, act, alt, follow, critter = null } = {}) {
   const p = state.pos, fly = stats.fly > 0;
   const pts = fly ? [{ x: hit.x, z: hit.z }] : planPath({ x: p.x, z: p.z }, hit, world.terrain.heightAt, sp);
   if (!pts) { logLine("There's no way there on foot.", "note"); return; }
-  state.target = { fly, ground: Math.max(0, hit.h ?? 0), range, act, alt, follow, pts: pts.map((q) => world.frame.toLatLon(q.x, q.z)), idx: 0 };
+  state.target = { fly, ground: Math.max(0, hit.h ?? 0), range, act, alt, follow, critter, pts: pts.map((q) => world.frame.toLatLon(q.x, q.z)), idx: 0 };
   routeDots.visible = true;
 }
 function clearTarget() { if (state.target) state.target = null; routeDots.visible = false; }
@@ -704,6 +718,33 @@ function chirp(k) {
   bursts.emit({ at: new THREE.Vector3(b.x, b.y, b.z), colors: [new THREE.Color().setHSL(b.hue, 0.95, 0.65), new THREE.Color(0xffffff)], n: 12, spread: 1.5, up: 2, fall: 0.8, life: 1.6 });
   logLine(butterflyLine(b.hue, Math.round(b.seed * 1e6), squeaks++), "creature");
 }
+/** What the small creatures did this frame (ran from you), and now and then a croak or a song from nearby. */
+let fledAt = -10, fledEver = false, chorusAt = 0;
+function critterNews(events, t, sunAltitude) {
+  for (const ev of events) {
+    if (ev.c.kind === "bird") sound.flutter();
+    if (t - fledAt > 6) { logLine(fledLine(ev.c.kind, ev.c.name, !fledEver), "creature"); fledAt = t; fledEver = true; }
+  }
+  if (t < chorusAt) return;
+  chorusAt = t + 2.5 + ((hashString(String(Math.floor(t))) % 100) / 100) * 4; // every few seconds, irregularly
+  const p = state.pos, near = world.critters.near(p.x, p.z, 70);
+  const frogs = near.filter((c) => c.kind === "frog"), birds = near.filter((c) => c.kind === "bird");
+  if (sunAltitude < 3 && frogs.length) sound.croak(1.2 / frogs[0].size, true); // frogs sing at dusk and through the night
+  else if (sunAltitude > 0 && birds.length) sound.song(Math.floor(t), true);
+}
+/** A small creature, touched gently: it answers, and trusts you for a while. */
+let critterTouches = 0;
+function touchCritter(key) {
+  const c = world.critters.touch(key, simT);
+  if (!c) return squeak();
+  if (c.kind === "bunny") sound.sniff();
+  else if (c.kind === "frog") sound.croak(1.2 / c.size);
+  else sound.song(critterTouches);
+  const at = new THREE.Vector3(c.x, c.y + c.size, c.z);
+  director.play("butterfly", simT, butterflyShot(state.pos.clone(), at), { dur: 2.6, blendIn: 0.5, blendOut: 0.9 });
+  bursts.emit({ at, colors: [new THREE.Color(0xffb8de), new THREE.Color(0xffffff)], n: 8, spread: 0.8, up: 1.6, fall: 0.6, life: 1.2 });
+  logLine(critterLine(c.kind, c.name, myName, hashString(key), critterTouches++), "creature");
+}
 function hum(being, obj) {
   director.play("being", simT, beingShot(state.pos.clone(), obj.getWorldPosition(new THREE.Vector3())), { dur: 4.5, blendIn: 0.9, blendOut: 1.2 });
   humWith(being);
@@ -749,6 +790,10 @@ function inReach() {
     const d = Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z);
     if (d < RANGE.butterfly) add({ kind: "butterfly", key: `b${b.seed}`, seed: b.seed, k: b.k, hue: b.hue, d, range: RANGE.butterfly }, b.x, b.z);
   }
+  for (const c of world.critters.near(p.x, p.z, RANGE.critter + 4)) {
+    const d = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z);
+    if (d < RANGE.critter) add({ kind: "critter", key: c.key, species: c.kind, name: c.name, d, range: RANGE.critter, c }, c.x, c.z);
+  }
   for (const o of world.beings.group.children) {
     const being = o.userData.being;
     if (!being) continue;
@@ -778,6 +823,7 @@ function glintSpot(c, v, bs) {
     return v.set(r.x + (cx / L) * off, r.y + Math.min(r.height * 0.55, 6 + r.height * 0.15), r.z + (cz / L) * off);
   }
   if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
+  if (c.kind === "critter") { const q = world.critters.near(c.c.x, c.c.z, 40).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 1.3, q.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
   if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
   if (c.kind === "mutual") return v.set(c.m.x, c.m.y + 6 * c.m.entry.graph.scale, c.m.z);
@@ -824,6 +870,7 @@ function interact() {
   scanAt = 0; // look again next frame: a highway takes you away, a butterfly moves on
   if (c.kind === "tree") return shakeTree(c.rec);
   if (c.kind === "butterfly") { const b = world.insects.butterflies().find((q) => q.seed === c.seed); return b ? chirp(b.k) : squeak(); }
+  if (c.kind === "critter") return touchCritter(c.key);
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "highway") return boardTapped(c.line);
   if (c.kind === "artifact") return touchCairn(c.entry);
@@ -1414,10 +1461,13 @@ function frame() {
   // Plants and insects around you; too small to matter from far up.
   if (world && !state.ride) {
     const life = zoom < 6000;
-    world.plants.group.visible = world.insects.group.visible = life;
+    world.plants.group.visible = world.insects.group.visible = world.critters.group.visible = life;
     if (life) {
       window.__dream.plants = world.plants.update(state.pos.x, state.pos.z, t, camera.position, detail.scale);
       window.__dream.insects = world.insects.update(state.pos.x, state.pos.z, unix % 86400, sunState.altitude);
+      const me = { x: state.pos.x, y: state.pos.y, z: state.pos.z, speed: Math.hypot(state.speed, state.vy), ground: Math.max(0, world.terrain.heightAt(state.pos.x, state.pos.z)), target: state.target?.critter ?? null };
+      critterNews(world.critters.update(t, unix, sunState.altitude, me), t, sunState.altitude);
+      window.__dream.critters = world.critters.counts;
     }
   }
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
