@@ -7,11 +7,14 @@
 import { NSID } from "./artifacts.js";
 import { INTENT_NSID, INTENT_RKEY } from "./intents.js";
 import { CREATURE_NSID, CREATURE_RKEY } from "./creature-record.js";
+import { INVENTORY_NSID, INVENTORY_RKEY } from "./inventory.js";
+// Pigeons (items carried between mutuals' repos) come later; asked for now so a sign-in covers them when they land.
+export const PIGEON_NSID = "org.jason-edelman.dream.pigeon";
 
-// Three collections in your repo (the cairns you leave, your creature, your one current intent), and reading your own
-// mute list so muted accounts stay out of your world. Nothing else.
+// Five collections in your repo (the cairns you leave, your creature, what you carry, the pigeons you send, your one
+// current intent), and reading your own mute list so muted accounts stay out of your world. Nothing else.
 const MUTES = "rpc:app.bsky.graph.getMutes?aud=did:web:api.bsky.app%23bsky_appview";
-export const SCOPE = `atproto repo:${NSID} repo:${CREATURE_NSID} repo:${INTENT_NSID} ${MUTES}`;
+export const SCOPE = `atproto repo:${NSID} repo:${CREATURE_NSID} repo:${INVENTORY_NSID} repo:${PIGEON_NSID} repo:${INTENT_NSID} ${MUTES}`;
 const HANDLE_RESOLVER = "https://bsky.social";
 const KEY = "dream.did", RETURN = "dream.return";
 
@@ -70,17 +73,25 @@ export const account = {
   canShare: () => covers(`repo:${INTENT_NSID}`),
   /** Whether this sign-in covers keeping your creature in your repo (one from before 11-09 doesn't). */
   canKeep: () => covers(`repo:${CREATURE_NSID}`),
-  /** Your creature's record, or null if there isn't one (or it can't be read). */
-  async getCreature() {
+  /** Whether this sign-in covers what you carry (one from before moonseeds doesn't). */
+  canCarry: () => covers(`repo:${INVENTORY_NSID}`),
+  /** One of your own records, or null if there isn't one. */
+  async getOwn(collection, rkey) {
     if (!session) return null;
-    const q = `repo=${encodeURIComponent(session.did)}&collection=${CREATURE_NSID}&rkey=${CREATURE_RKEY}`;
+    const q = `repo=${encodeURIComponent(session.did)}&collection=${collection}&rkey=${rkey}`;
     const r = await session.fetchHandler(`/xrpc/com.atproto.repo.getRecord?${q}`, { headers: { accept: "application/json" } });
     if (r.status === 400 || r.status === 404) return null; // none yet
     if (!r.ok) throw new Error(`${r.status}`);
     return (await r.json()).value ?? null;
   },
+  /** One of your own records, overwritten. */
+  putOwn: (collection, rkey, record) => xrpc("com.atproto.repo.putRecord", { repo: session.did, collection, rkey, record }),
+  /** Your creature's record, or null if there isn't one (or it can't be read). */
+  getCreature: () => account.getOwn(CREATURE_NSID, CREATURE_RKEY),
   /** Your creature, overwritten. */
-  putCreature: (record) => xrpc("com.atproto.repo.putRecord", { repo: session.did, collection: CREATURE_NSID, rkey: CREATURE_RKEY, record }),
+  putCreature: (record) => account.putOwn(CREATURE_NSID, CREATURE_RKEY, record),
+  getInventory: () => account.getOwn(INVENTORY_NSID, INVENTORY_RKEY),
+  putInventory: (record) => account.putOwn(INVENTORY_NSID, INVENTORY_RKEY, record),
   /** Your one current intent, overwritten. */
   putIntent: (record) => xrpc("com.atproto.repo.putRecord", { repo: session.did, collection: INTENT_NSID, rkey: INTENT_RKEY, record }),
   /** Gone from your repo (it's fine if it already was). */

@@ -1,0 +1,20 @@
+{
+  "lexicon": 1,
+  "id": "org.jason-edelman.dream.inventory",
+  "description": "What a Dream of the Earth player carries. One record (rkey 'self'), overwritten as it changes, so it follows them to any device. Honour system: nothing referees it.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["items", "updatedAt"],
+        "properties": {
+          "items": { "type": "object", "description": "How many of each kind. Unknown kinds and out-of-range counts are ignored.", "properties": { "moonseed": { "type": "integer", "minimum": 0, "maximum": 13, "description": "Falls at each new moon; eaten to change your stats." } } },
+          "lunation": { "type": "integer", "minimum": -1, "description": "The new moon (counted from 6 January 2000) whose moonseed you were last given, so each moon gives one." },
+          "updatedAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

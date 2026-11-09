@@ -6,7 +6,7 @@
 import { h } from "./maker.js";
 import { TRAITS, COUNTS, SIZE, parseGenes, generateCreature, TRIANGLE_CAP } from "./creature-graph.js";
 import { STATS, BUDGET, MAX } from "./stats.js";
-import { canRespec, respecWindow, whenText } from "./moon.js";
+import { whenText } from "./moon.js";
 
 const ROWS = [
   { trait: "palette", label: "Colours" },
@@ -27,7 +27,8 @@ const bar = (n) => "▮".repeat(n) + "▯".repeat(MAX - n);
 const clone = (c) => ({ seed: c.seed, genes: c.genes ? JSON.parse(JSON.stringify(c.genes)) : null, stats: { ...c.stats } });
 
 /**
- * hooks: { get() -> { seed, genes, stats }, set(next), name(seed) -> string, portrait(on), isMine() -> whether it's the one you keep }.
+ * hooks: { get() -> { seed, genes, stats }, set(next), name(seed) -> string, portrait(on), isMine() -> whether it's the one you keep,
+ *          respec() -> { open, seeds, next }, eatMoonseed() -> whether one was eaten, settle() (the sheet closed) }.
  * maker: the sheet's owner (one sheet at a time). button: the name button that opens it.
  */
 export function buildEditor({ hooks, maker, button }) {
@@ -56,8 +57,9 @@ export function buildEditor({ hooks, maker, button }) {
     const [lo, hi] = COUNTS[trait], now = generateCreature(c.seed, c.genes).counts[trait];
     g.count = { ...g.count, [trait]: Math.max(lo, Math.min(hi, now + by)) };
   }));
-  // Stats change only within a day of a new moon (Jason, 11-09: "respecs only during a new moon"); looks, any time.
-  const moonNow = () => canRespec(Date.now() / 1000);
+  // Stats change only with a moonseed eaten (Jason, 11-09: respecs "at the new moon but have them be an item so they can
+  // be spent or saved"); looks, any time. hooks.respec(): { open, seeds, next (s until the next new moon) }.
+  const moonNow = () => hooks.respec().open;
   const stat = (k, by) => !moonNow() ? refresh() : change((c) => {
     const left = BUDGET - STATS.reduce((t, s) => t + c.stats[s], 0);
     const n = c.stats[k] + by;
@@ -108,6 +110,7 @@ export function buildEditor({ hooks, maker, button }) {
       return { k, v, less, more, row };
     });
     const left = h("p", { class: "small left", role: "status" });
+    const eat = h("button", { class: "go eat", onclick: () => { if (hooks.eatMoonseed()) refresh(); } }, "Eat a moonseed");
     const undoBtn = h("button", { onclick: () => { const prev = undo.pop(); if (prev) { hooks.set(prev); refresh(); } } }, "↶ Undo");
     const plain = h("button", { onclick: () => change((c) => { c.genes = null; return c; }) }, "Start over");
     const mutate = h("button", { class: "go", onclick: () => change((c) => withGenes(c, (g) => {
@@ -120,12 +123,12 @@ export function buildEditor({ hooks, maker, button }) {
     // A creature from a link (?seed=…) isn't yours until you say so (or change it).
     const adopt = h("p", { class: "small adopt" }, "This creature came from a link; yours is kept for you. ",
       h("button", { onclick: () => change((c) => c) }, "Make this one mine"));
-    els = { name, info, rows, hue, size, sizeV, statRows, left, undoBtn, plain, adopt };
+    els = { name, info, rows, hue, size, sizeV, statRows, left, undoBtn, plain, adopt, eat };
     return [
       name, info, adopt,
       h("div", { class: "traits" }, rows[0], h("div", { class: "trait sub" }, h("span", { class: "k" }, ""), hue), ...rows.slice(1),
         h("div", { class: "trait" }, h("span", { class: "k" }, "Size"), size, sizeV)),
-      h("div", { class: "stats" }, ...statRows.map((s) => s.row)), left,
+      h("div", { class: "stats" }, ...statRows.map((s) => s.row)), left, eat,
       h("div", { class: "row" }, mutate, surprise),
       h("div", { class: "row" }, undoBtn, plain),
       h("p", { class: "small" }, "Your creature lives on this device and, when you're signed in, in your Bluesky repo, so it follows you to any device. When you're showing yourself, your mutuals see it as it is now."),
@@ -154,7 +157,7 @@ export function buildEditor({ hooks, maker, button }) {
     if (busy !== els.size) els.size.value = String(Math.round(graph.scale * 100));
     els.sizeV.textContent = `${graph.scale.toFixed(2)}×`;
     const spent = STATS.reduce((t, k) => t + c.stats[k], 0);
-    const open = moonNow(), nowS = Date.now() / 1000, win = respecWindow(nowS);
+    const rs = hooks.respec(), open = rs.open;
     for (const s of els.statRows) {
       s.v.textContent = bar(c.stats[s.k]);
       s.row.setAttribute("aria-label", `${s.k} ${c.stats[s.k]} of ${MAX}`);
@@ -162,9 +165,14 @@ export function buildEditor({ hooks, maker, button }) {
       s.more.disabled = !open || c.stats[s.k] >= MAX || spent >= BUDGET;
     }
     const points = spent >= BUDGET ? `All ${BUDGET} points spent.` : `${BUDGET - spent} point${BUDGET - spent === 1 ? "" : "s"} left to spend.`;
+    const next = whenText(Date.now() / 1000 + rs.next, Date.now() / 1000);
     els.left.textContent = open
-      ? `The moon is new: stats can change until ${whenText(win.closes, nowS) === "within hours" ? "later today" : whenText(win.closes, nowS)}. ${points}`
-      : `Stats change only at the new moon, ${whenText(win.opens, nowS)}. ${points}`;
+      ? `A moonseed is working: move your points, then close this to settle them (change nothing and you keep the seed). ${points}`
+      : rs.seeds > 0
+        ? `Stats change when you eat a moonseed. You have ${rs.seeds}. ${points}`
+        : `Stats change when you eat a moonseed, and you have none: the next falls at the new moon, ${next}. ${points}`;
+    els.eat.hidden = open || rs.seeds <= 0;
+    els.eat.textContent = `Eat a moonseed (${rs.seeds})`;
     els.adopt.hidden = hooks.isMine();
     els.undoBtn.disabled = !undo.length;
     els.plain.disabled = !c.genes;
@@ -172,7 +180,7 @@ export function buildEditor({ hooks, maker, button }) {
 
   function open() {
     const kids = build();
-    maker.custom("creature", kids, { trigger: button, classes: ["creature"], onClose: () => { els = null; dragging = false; hooks.portrait(false); } });
+    maker.custom("creature", kids, { trigger: button, classes: ["creature"], onClose: () => { els = null; dragging = false; hooks.portrait(false); hooks.settle(); } });
     refresh();
     hooks.portrait(true);
   }

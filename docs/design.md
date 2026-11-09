@@ -480,6 +480,17 @@ realms are a great idea, reachable by shrines."
 - **Honour system:** with no server to referee, anyone could write any item or stat into their own repo. With no
   scores or races, that only spoils their own fun.
 
+### Moonseeds: respecs you carry (built 11-09)
+Jason: "Let's grant respecs at the new moon but have them be an item so they can be spent or saved."
+- **The inventory** (`inventory.js`): what you carry, kept on the device and, signed in, in your repo (one record,
+  `org.jason-edelman.dream.inventory/self`: counts by kind and the last new moon that gave you a seed), brought into
+  step on sign-in and when you come back, like your creature (a pouch a device only started always yields). The sign-in
+  scope adds it, and pigeons' collection ahead of time, so one more sign-in covers both. A BAG button opens your pouch.
+- **The moonseed** is the first thing to carry. One falls for you in each new moon's window (a day either side), once
+  per moon (the moon's number is kept, so two devices or two visits don't make two); a new creature starts with one;
+  thirteen fit (a year of moons). Eat one (from the BAG, or the editor) and your stats loosen until you close the
+  editor; change nothing and you keep it. Stats change only that way now; looks, any time.
+
 ### Grounded stats (built 11-09)
 - **Five stats, one budget of 12:** climb, swim, run, gleam, perception. Creatures from before keep their points, fly
   becoming climb, with perception 0. Old four-number stats (links, kept creatures, records, intents) still read.
@@ -492,7 +503,7 @@ realms are a great idea, reachable by shrines."
   before the quest exists would strand everyone.
 - **Perception:** how far you see is √((1 + perception) / 4) of before (half with none, 1.3× at six), through the
   fog. Sky beings appear from perception 3; below it they're not there for you (no glint, no hum).
-- **Respecs at the new moon** (`moon.js`): stats change only within a day of a new moon, by the mean synodic month
+- **Respecs at the new moon** (`moon.js`; since superseded by moonseeds, above): stats change only within a day of a new moon, by the mean synodic month
   from 6 January 2000 18:14 UTC (the true new moon can be some hours off, so a day either side). Looks change any time.
   The first window: 9–10 November 2026, around 21:57 UTC on the 9th.
 
