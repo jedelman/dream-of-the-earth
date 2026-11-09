@@ -103,6 +103,36 @@ export const sound = {
     const t = ctx.currentTime + 0.35;
     tone("sine", 140, 60, t, 0.18, 0.6);
   },
+  /** A bunny's two little sniffs. */
+  sniff() {
+    if (!audio()) return;
+    const t = ctx.currentTime;
+    noise(t, 0.07, 0.18, "bandpass", 3200, 2600, 3);
+    noise(t + 0.13, 0.06, 0.15, "bandpass", 3400, 2800, 3);
+  },
+  /** A frog: a low, buzzy croak, twice. Bigger frogs croak lower. quiet: one far off, at night. */
+  croak(pitch = 1, quiet = false) {
+    if (!audio()) return;
+    const t = ctx.currentTime, v = quiet ? 0.06 : 0.22;
+    tone("sawtooth", 210 * pitch, 150 * pitch, t, 0.11, v, 170 * pitch);
+    tone("sawtooth", 230 * pitch, 160 * pitch, t + 0.17, 0.14, v * 0.9, 180 * pitch);
+  },
+  /** A little bird's song: a few bright notes, different every time it's asked (n). quiet: one off in the trees. */
+  song(n = 0, quiet = false) {
+    if (!audio()) return;
+    const t = ctx.currentTime, v = quiet ? 0.05 : 0.18;
+    const notes = 3 + (n % 3);
+    for (let i = 0; i < notes; i++) {
+      const f = 2600 + ((n * 7 + i * 5) % 9) * 260;
+      tone("sine", f, f * (i % 2 ? 1.25 : 0.85), t + i * 0.11, 0.08, v);
+    }
+  },
+  /** Wings: little birds taking off. */
+  flutter() {
+    if (!audio()) return;
+    const t = ctx.currentTime;
+    noise(t, 0.35, 0.16, "bandpass", 1100, 700, 1.5);
+  },
   /** Stepping onto a highway: a rising rush. */
   whoosh() {
     if (!audio()) return;

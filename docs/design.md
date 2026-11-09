@@ -350,6 +350,33 @@ customization." The design's editor verbs were randomize, mutate, edit; all thre
 - **Not yet:** voices (Operator Field patches), part-by-part editing beyond counts, and the plain-shape option for
   non-mutuals' creatures (only mutuals are shown, so it isn't needed yet).
 
+## Small creatures: bunnies, frogs and little birds (built 11-09)
+Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
+- **Where they live:** homes on the global cell grid, by biome (`critterlife.js`, tested). Bunnies like open country
+  (steppe, grassland, oceanic and continental fields; snow hares in tundra and taiga, jackrabbits in deserts and
+  savanna; none in rainforest). Frogs like it wet (bright tree frogs in rainforest and subtropics; frogs and toads in
+  temperate places; none in deserts, on ice, or above 1,200 m). Little birds live wherever plants do, bright in the
+  tropics, brown, grey, blue and black elsewhere, a snow bird in the tundra. Nothing at sea or on ice.
+- **Dream-sized,** like the butterflies: bunnies 3.5–5 m, frogs 2.4–3.4 m, birds 2.2–3 m, small beside Nyo (about
+  13 m) but readable from the camera. At first they were real-ish sizes (1–2 m) and a bunny was a speck.
+- **Low poly:** a bunny is 26 triangles (a loaf with high haunches, head on its chest, leaf ears, a cotton tail), a frog
+  20 (eyes on top, legs splayed), a bird 13 (wings that flap in the shader, folded along its back at rest). One
+  instanced mesh per kind; each creature's two colours ride as instance attributes.
+- **Their day is on the shared clock,** so everyone sees the same bunny in the same place: a bunny sits and nibbles,
+  then hops (three bounds) somewhere new within 14 m of home; a frog sits and breathes, then crouches and leaps; a
+  little bird pecks about, flies to another spot, and about a third of the time up into the tallest tree within 30 m
+  of home, to sit on its crown (in the Amazon, kapoks up to 60 m). Birds roost at night.
+- **What they do about you is local** (like a shaken tree): rush within reach of one faster than 10 m/s and it runs. A
+  bunny bolts 40 m and freezes, a frog leaps twice, a bird bursts up, circles and comes down; then each eases back to
+  its day. What you're walking up to (tapped) doesn't run, and one you've touched trusts you for 20 s. The first time
+  one runs, the log says how: "Too fast for the bunny: it bolts. Tap one to walk up gently."
+- **Touching them:** in reach they glint like everything else. "(E) Pet the snow hare" (it sniffs; sometimes a binky,
+  the twisting jump of a happy rabbit), "Boop the blue tree frog" (its throat puffs: a croak), "Whistle to the little
+  red bird" (it flutters and sings back). The camera takes the butterfly shot: you and it, from the side.
+- **Sounds:** sniffs, croaks (bigger frogs lower) and songs, synthesized like the rest. Now and then a frog croaks
+  nearby at dusk and through the night, and a bird sings by day.
+- **Next, maybe:** frogs by inland water once rivers and lakes exist; ducks; birds that follow you a little way.
+
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
   each with scale, rotation, colour and a palette cycle. Any number of heads, wings, legs, eyes or tails. The
