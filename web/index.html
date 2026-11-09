@@ -9,9 +9,12 @@
   :root { color-scheme: dark; --gold: #ffd34d; --ink: #f3e6b0; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0a14; }
   #view { position: fixed; inset: 0; width: 100vw; height: 100vh; image-rendering: pixelated; touch-action: none; display: block; }
-  #hud, #status, #help { position: fixed; color: var(--ink); font: 11px/1.45 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; text-shadow: 1px 1px 0 #000, -1px 0 0 #000; pointer-events: none; white-space: pre; letter-spacing: .03em; }
-  #hud { left: max(10px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); }
-  #help { left: max(10px, env(safe-area-inset-left)); bottom: max(8px, env(safe-area-inset-bottom)); opacity: .8; }
+  /* Symbols (the zodiac, the planets) in their text forms, never emoji: the glyphs carry U+FE0E and these fonts have them. */
+  #hud, #status, #help { position: fixed; color: var(--ink); font: 11px/1.45 ui-monospace, "SFMono-Regular", Menlo, Consolas, "Segoe UI Symbol", "Noto Sans Symbols 2", "Apple Symbols", monospace; text-shadow: 1px 1px 0 #000, -1px 0 0 #000; pointer-events: none; white-space: pre; letter-spacing: .03em; }
+  /* The HUD: two quiet lines (where you are, the sky); tap it (or I) for the rest. */
+  #hud { left: max(10px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); pointer-events: auto; cursor: pointer; white-space: pre-wrap; max-width: calc(100vw - 12.5em); }
+  #help { left: max(10px, env(safe-area-inset-left)); bottom: max(8px, env(safe-area-inset-bottom)); opacity: .8; transition: opacity 1.2s; white-space: normal; max-width: calc(100vw - 14em); }
+  #help.gone { opacity: 0; }
   #status { left: 50%; top: 42%; transform: translateX(-50%); color: var(--gold); font-size: 14px; text-align: center; white-space: normal; max-width: 80vw; }
   .btn { position: fixed; right: max(14px, env(safe-area-inset-right)); width: 52px; height: 52px; border: 2px solid var(--gold); background: rgba(20, 12, 40, .55); color: var(--gold); font: 20px/1 ui-monospace, monospace; touch-action: none; user-select: none; }
   #up { bottom: 96px; } #down { bottom: 34px; }
@@ -23,6 +26,8 @@
   /* Top right: one stack (landmarks, your creature, Bluesky, cairns, say), and the sheet dropping from under it */
   #corner { position: fixed; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); bottom: max(8px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; z-index: 5; }
   #corner > * { pointer-events: auto; flex: none; }
+  /* One tidy column: every button the same width, words to the right. */
+  #corner > button { min-width: 10.5em; text-align: right; }
   #corner > [hidden] { display: none; }
   #corner > .sheet { flex: 0 1 auto; }
   #places { max-width: 46vw; font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); border-radius: 0; padding: 3px 4px; }
@@ -41,6 +46,9 @@
   #me.on { color: var(--gold); }
   #mine { color: #ffb8de; border-color: rgba(255, 184, 222, .75); }
   #atlas { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #fff1c4; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
+  #helpbtn { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #e6e1ff; background: rgba(20, 12, 40, .6); border: 1px solid rgba(214, 205, 255, .5); padding: 4px 8px; cursor: pointer; }
+  .sheet.help dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 6px 0 10px; font-size: 12px; }
+  .sheet.help dt { color: #fff4c4; white-space: nowrap; } .sheet.help dd { margin: 0; } .sheet.help h3 { font-size: 12px; margin: 10px 0 2px; color: #ffb8de; letter-spacing: .04em; }
   #share { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #fff4c4; background: rgba(40, 24, 60, .65); border: 1px solid rgba(255, 228, 160, .75); padding: 4px 8px; cursor: pointer; }
   .sheet.share img.shot { width: 100%; height: auto; image-rendering: pixelated; border: 1px solid rgba(214, 205, 255, .4); margin: 6px 0; }
   .sheet.share textarea { width: 100%; box-sizing: border-box; font: 13px/1.4 inherit; background: rgba(10, 6, 24, .7); color: #f3efff; border: 1px solid rgba(214, 205, 255, .4); padding: 6px; resize: vertical; }
@@ -95,6 +103,7 @@
   .sheet.bag li.worn .what { color: #fff6c9; }
   .sheet.bag button:disabled { opacity: .45; cursor: default; }
   .sheet.creature button.eat { margin-top: 6px; }
+  @media (max-width: 640px) { #hud { font-size: 10px; max-width: calc(100vw - 11.5em); } #corner > button { min-width: 9em; } }
   #cairns { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #ffe3a3; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
   .sheet ul.cairns { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   .sheet ul.cairns li { display: grid; grid-template-columns: 14px 1fr auto; grid-template-areas: "sw who go" "sw where go" "sw what go"; column-gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid rgba(255, 211, 77, .18); }
@@ -160,19 +169,20 @@
 <select id="places" aria-label="Go to a landmark"><option value="" selected disabled>LANDMARKS ▾</option></select>
 <button id="mine" aria-haspopup="dialog" aria-expanded="false" aria-label="Your creature">YOUR CREATURE ▾</button>
 <button id="bag" aria-haspopup="dialog" aria-expanded="false" aria-label="What you carry">BAG ▾</button>
-  <button id="rhizome" aria-haspopup="dialog" aria-expanded="false" aria-label="Your rhizome">RHIZOME ▾</button>
-  <button id="share" aria-haspopup="dialog" aria-expanded="false" aria-label="Share a picture of this moment" title="Share a picture of this moment (P)">SHARE ▾</button>
+<button id="rhizome" aria-haspopup="dialog" aria-expanded="false" aria-label="Your rhizome">RHIZOME ▾</button>
 <button id="atlas" aria-haspopup="dialog" aria-expanded="false" aria-label="Places you've been">ATLAS ▾</button>
+<button id="share" aria-haspopup="dialog" aria-expanded="false" aria-label="Share a picture of this moment" title="Share a picture of this moment (P)">SHARE ▾</button>
 <button id="me" aria-haspopup="dialog" aria-expanded="false">BLUESKY ▾</button>
 <button id="cairns" aria-haspopup="dialog" aria-expanded="false" hidden>CAIRNS ▾</button>
 <button id="saybtn" hidden aria-label="Say something to mutuals nearby">SAY</button>
+<button id="helpbtn" aria-haspopup="dialog" aria-expanded="false" aria-label="Help: how to play" title="How to play (?)">? HELP</button>
 <div id="sheet" class="sheet" role="dialog" aria-label="Bluesky" hidden></div>
 </div>
 <div id="status" role="status" hidden></div>
 <div id="log" aria-live="polite"></div>
 <div id="whos" aria-hidden="true"><div id="mybubble" class="bubble" hidden></div></div>
 <form id="sayform" hidden autocomplete="off"><input id="saytext" maxlength="80" placeholder="Say something to mutuals nearby" aria-label="Say something" enterkeyhint="send"><button type="submit">Say</button></form>
-<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ENTER: SAY · YOUR CREATURE'S NAME ▾: CHANGE IT · SHRINES (COLUMNS OF LIGHT): A SPELL FOR A MINUTE (TOUCH AGAIN WHILE IT HOLDS TO ENTER ITS DREAM), ESC LIFTS IT · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · RHIZOME ▾: SET GEMS FROM DREAMS (WINGS, THE HIGH VIEW…) · BAG ▾: WHAT YOU CARRY AND WEAR (WEAR THE PRISM TO SEE THE GOLD HIGHWAYS; FLY ALONG ONE TO RIDE IT)</div>
+<div id="help">WASD OR DRAG: MOVE · TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ? HELP: EVERYTHING ELSE</div>
 <button id="act" aria-hidden="true"><span class="key" aria-hidden="true">E</span><span class="what"></span></button>
 <button class="btn" id="up" aria-label="Up">▲</button>
 <button class="btn" id="down" aria-label="Down">▼</button>

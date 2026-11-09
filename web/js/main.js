@@ -459,16 +459,18 @@ function skyNow(t, ll, simTime) {
   return skyCache;
 }
 /** "☉♏17 ☽♏19 ☿♏6℞ …": where each body is in the tropical zodiac, ℞ when it's retrograde. */
+/** U+FE0E after a symbol asks for its text form: ♏ as a glyph, not a purple emoji tile (Windows draws those). */
+const TEXT = "\uFE0E";
 function clockLine() {
   if (!skyCache) return "";
   const c = skyCache.clock, phase = c.moonLit < 0.03 ? "NEW MOON" : c.moonLit > 0.97 ? "FULL MOON" : `MOON ${Math.round(c.moonLit * 100)}% ${c.waxing ? "WAXING" : "WANING"}`;
-  return `${c.bodies.map((b) => { const z = zodiac(b.lon); return `${b.glyph}${z.glyph}${Math.floor(z.deg)}${b.retro ? "℞" : ""}`; }).join(" ")}  ·  ${phase}`;
+  return `${c.bodies.map((b) => { const z = zodiac(b.lon); return `${b.glyph}${TEXT}${z.glyph}${TEXT}${Math.floor(z.deg)}${b.retro ? "℞" : ""}`; }).join(" ")}  ·  ${phase}`;
 }
 // Small glyphs under the Moon and each planet when they're up and on screen.
 const skyLabels = Object.fromEntries(["moon", ...PLANETS].map((b) => {
   const el = document.createElement("div");
   el.className = "skyglyph";
-  el.textContent = GLYPH[b];
+  el.textContent = GLYPH[b] + TEXT;
   el.hidden = true;
   document.getElementById("whos").append(el);
   return [b, el];
@@ -599,6 +601,8 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyM" && !e.repeat) logLine(sound.toggle() ? "Sound off." : "Sound on.", "note");
   if (e.code === "KeyE" && !e.repeat) interact();
   if (e.code === "KeyP" && !e.repeat) takePicture();
+  if (e.code === "KeyI" && !e.repeat) toggleHud();
+  if ((e.key === "?" || e.code === "KeyH") && !e.repeat) openHelp();
   if ((e.code === "Enter" || e.code === "NumpadEnter") && !e.repeat && document.activeElement?.tagName !== "BUTTON" && document.activeElement?.tagName !== "SELECT") { e.preventDefault(); openSay(); }
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
@@ -2111,36 +2115,35 @@ const hud = document.getElementById("hud");
 const statusEl = document.getElementById("status");
 const setStatus = (s) => { statusEl.textContent = s; statusEl.hidden = !s; };
 const bar = (n, max = MAX) => "■".repeat(Math.max(0, n)) + "□".repeat(Math.max(0, max - n));
+/** The HUD: two quiet lines (where you are; the sky), and what's happening (a trip, a spell, the camera far off); tap it,
+ * or press I, for the rest (where exactly, frames, the nearest node, your stats). */
+let hudMore = (() => { try { return localStorage.getItem("dream.hud") === "more"; } catch { return false; } })();
+function toggleHud() {
+  hudMore = !hudMore;
+  try { localStorage.setItem("dream.hud", hudMore ? "more" : "less"); } catch { /* private mode */ }
+  lastHud = -Infinity;
+}
+hud.addEventListener("click", toggleHud);
 function updateHud() {
+  const fold = hudMore ? " ▴" : " ▾", lines = [];
   if (state.ride) {
-    const r = state.ride, ll = rideLatLon(r);
-    const near = r.leaving ? [] : crossings(r);
-    hud.textContent = [
-      `RIDING  ${r.line.cls.name.toUpperCase()}  ${Math.round(r.speed / 1000)} KM/S`,
-      `${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}  ·  NEXT NODE ${Math.round(remainingMeters(r) / 1000).toLocaleString("en")} KM`,
-      near.length ? `CROSSING ${near[0].line.cls.name.toUpperCase()} · A/D TO HOP` : "SHIFT OR S: STEP OFF",
-      statsLines(),
-      zoomLine(),
-    ].join("\n");
-    return;
+    const r = state.ride, ll = rideLatLon(r), near = r.leaving ? [] : crossings(r);
+    lines.push(`RIDING ${r.line.cls.name.toUpperCase()} · ${Math.round(r.speed / 1000)} KM/S${fold}`, clockLine(),
+      near.length ? `CROSSING ${near[0].line.cls.name.toUpperCase()} · A/D TO HOP` : "SHIFT OR S: STEP OFF");
+    if (hudMore) lines.push(`${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)} · NEXT NODE ${Math.round(remainingMeters(r) / 1000).toLocaleString("en")} KM`, statsLines());
+  } else {
+    const ll = world.frame.toLatLon(state.pos.x, state.pos.z), ground = world.terrain.heightAt(state.pos.x, state.pos.z);
+    const k = koppenAt(ll.lat, ll.lon), biome = biomeFor(k, world.terrain.reliefAt(state.pos.x, state.pos.z), ll.lat, ground);
+    const where = state.realm ? REALMS[state.realm.kind].name.toUpperCase() : ground < 0 ? `THE SEA · ${Math.round(-ground)} M DEEP` : biome.toUpperCase();
+    const height = state.realm ? "DREAMING" : state.mode === "water" ? (state.pos.y < -3 ? `${Math.round(-state.pos.y)} M DOWN` : "AFLOAT") : state.mode === "air" ? `${Math.round(state.pos.y - Math.max(0, ground))} M UP` : "ON THE GROUND";
+    lines.push(`${where} · ${height}${fold}`, clockLine(), targetLine(), spellsLine(), zoomLine());
+    if (hudMore) {
+      const { node, meters } = nearestNode(ll.lat, ll.lon), cls = CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
+      lines.push(`${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)} · ${Math.round(state.pos.y)} M · ${k ? koppenCode(k) : "—"}`,
+        `${detail.fps} FPS${detail.scale < DETAIL_MAX ? ` · FORESTS ${Math.round(detail.scale * 100)}%` : ""} · LEY NODE ${(meters / 1000).toFixed(1)} KM (${cls})`, statsLines());
+    }
   }
-  const ll = world.frame.toLatLon(state.pos.x, state.pos.z);
-  const ground = world.terrain.heightAt(state.pos.x, state.pos.z);
-  const { node, meters } = nearestNode(ll.lat, ll.lon);
-  const cls = CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
-  const k = koppenAt(ll.lat, ll.lon);
-  const biome = biomeFor(k, world.terrain.reliefAt(state.pos.x, state.pos.z), ll.lat, ground);
-  const where = ground < 0 ? `sea, ${Math.round(-ground)} m deep` : `${biome.toUpperCase()}${k ? ` (${koppenCode(k)})` : ""}`;
-  hud.textContent = [
-    `${state.mode.toUpperCase()}  ${Math.round(state.pos.y)} M  ·  ${where}`,
-    `${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}  ·  ${detail.fps} FPS${detail.scale < DETAIL_MAX ? `  ·  FORESTS ${Math.round(detail.scale * 100)}%` : ""}`,
-    `LEY NODE ${(meters / 1000).toFixed(1)} KM  ${cls}`,
-    statsLines(),
-    zoomLine(),
-    targetLine(),
-    spellsLine(),
-    clockLine(),
-  ].join("\n").replace(/\n+$/, "");
+  hud.textContent = lines.filter(Boolean).join("\n");
 }
 function targetLine() {
   if (!state.target || !world) return "";
@@ -2224,6 +2227,28 @@ function takePicture() {
   };
 }
 document.getElementById("share").addEventListener("click", takePicture);
+
+// ---- Help: everything the corner hint leaves out ----
+const helpBtn = document.getElementById("helpbtn"), helpHint = document.getElementById("help");
+function openHelp() {
+  if (maker.open === "help") { maker.close(); return; }
+  const group = (title, rows) => [h("h3", {}, title), h("dl", {}, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]))];
+  maker.custom("help", [
+    h("h2", {}, "How to play"),
+    ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space · Shift", "up and down (▲ ▼)"], ["Tap anything", "go to it; close enough, it answers"], ["Wheel · + − · pinch", "the camera nearer or farther"]]),
+    ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
+    ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: fly along one to ride it)"], ["ATLAS ▾", "places you've found, to travel back to"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
+  ], { trigger: helpBtn, classes: ["help"] });
+}
+helpBtn.addEventListener("click", openHelp);
+// The hint at the bottom fades once you've moved or after half a minute; ? HELP keeps the rest.
+setTimeout(() => helpHint.classList.add("gone"), 30000);
+function movedOnce(e) {
+  if (!["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) return;
+  removeEventListener("keydown", movedOnce);
+  setTimeout(() => helpHint.classList.add("gone"), 6000);
+}
+addEventListener("keydown", movedOnce);
 
 // ---- Loop ----
 let sunState = null, lastSun = -Infinity, lastHud = -Infinity, sunAheadWas = false;

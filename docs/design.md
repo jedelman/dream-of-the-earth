@@ -633,6 +633,21 @@ Jason: "OMG Claude this is so gorgeous. Can we add a 'share screenshot to bluesk
   request). One more sign-in. Signed out, the sheet offers sign-in, and Save works for anyone.
 - **Not yet tried:** an actual post (it needs a real OAuth session).
 
+### A quieter HUD (built 11-09)
+Jason, with a screenshot: "Let's clean up the HUD". What it showed: eight lines of numbers top left, the zodiac signs
+drawn as purple emoji tiles (Windows' emoji font has them; the HUD's monospace doesn't), and a help line running off the
+bottom of the screen.
+- **Two lines:** where you are and how ("TUNDRA · ON THE GROUND", "THE SEA · 1127 M DEEP · AFLOAT", "THE DREAM OF
+  ISLANDS · DREAMING") and the sky clock, plus a line only when something's happening (a trip, a spell, the camera far
+  off). Tap the HUD (or press I) for the rest: where exactly, frames and forests, the nearest ley node, your stats. The
+  choice is remembered.
+- **Symbols as text:** every zodiac and planet glyph carries U+FE0E (the text presentation selector), and the HUD's
+  fonts fall back to Segoe UI Symbol, Noto Sans Symbols 2 and Apple Symbols before any emoji font.
+- **Help behind ? HELP** (or ? / H): a sheet of the controls, grouped (moving, touching, the dream). The bottom line is a
+  short hint now, and fades once you've moved, or after half a minute.
+- **One column of buttons,** all the same width, words to the right; SHARE after ATLAS. On a phone the HUD is a size
+  smaller and wraps short of the buttons.
+
 ### Pigeons: things carried between mutuals (built 11-09)
 Jason: "item exchange between repos - via pigeon", then "we should give people reasons to collaborate". The finds
 make the reason (each kind of creature finds easily what the other needs); pigeons carry it (`pigeons.js`,
