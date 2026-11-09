@@ -84,6 +84,11 @@
   .item-mossfoot { border-radius: 50% 50% 40% 40%; background: radial-gradient(circle at 70% 30%, #ff9ad5 0 18%, transparent 20%), #6fbf4a; }
   .item-owleye { border-radius: 50%; background: radial-gradient(ellipse 18% 40% at 50% 50%, #140c05 0 90%, transparent 100%), radial-gradient(circle, #ffd27a, #e08a1a); }
   /* Gems: a faceted diamond in the shrine's colour */
+  /* A portal: a ring of violet light */
+  .item-portal { border-radius: 50%; border: 3px solid #b38bff; box-shadow: 0 0 6px #b38bff, inset 0 0 4px #fff; box-sizing: border-box; }
+  .sheet.atlas h3 { font-size: 12px; margin: 10px 0 2px; color: #fff1c4; letter-spacing: .04em; }
+  .sheet.atlas .swatch.node { background: #ffe9a8; transform: rotate(45deg) scale(.8); } .sheet.atlas .swatch.mark { background: #b9f0ff; border-radius: 50%; }
+  .sheet.atlas li.unseen { opacity: .55; } .sheet.atlas summary { cursor: pointer; font-size: 12px; margin-top: 6px; }
   .item-rosegem, .item-cyangem, .item-goldgem { clip-path: polygon(50% 0, 100% 40%, 50% 100%, 0 40%); }
   .item-rosegem { background: linear-gradient(160deg, #ffd1ef, #ff7ad9 55%, #a8327f); }
   .item-cyangem { background: linear-gradient(160deg, #d8fdff, #7af0ff 55%, #2b8fa8); }
@@ -166,7 +171,6 @@
 <canvas id="view" aria-label="Dream of the Earth: a low-poly view of a real place on Earth, with your creature"></canvas>
 <div id="hud" aria-live="off"></div>
 <div id="corner">
-<select id="places" aria-label="Go to a landmark"><option value="" selected disabled>LANDMARKS ▾</option></select>
 <button id="mine" aria-haspopup="dialog" aria-expanded="false" aria-label="Your creature">YOUR CREATURE ▾</button>
 <button id="bag" aria-haspopup="dialog" aria-expanded="false" aria-label="What you carry">BAG ▾</button>
 <button id="rhizome" aria-haspopup="dialog" aria-expanded="false" aria-label="Your rhizome">RHIZOME ▾</button>

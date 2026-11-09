@@ -3,7 +3,7 @@
 // moon but have them be an item so they can be spent or saved": the moonseed, the first thing you can carry.
 // Honour system: with no server to referee, anyone could write any count into their own repo; with no scores or races,
 // that only spoils their own fun. Pure, so Node can test it.
-import { lunationOf, seedFalls, nearestNewMoon, nextNewMoon, RESPEC_S, SYNODIC_S } from "./moon.js";
+import { lunationOf, seedFalls, nearestNewMoon, nextNewMoon, RESPEC_S, SYNODIC_S, portalFalls, fullLunationOf, nextFullMoon } from "./moon.js";
 
 export const INVENTORY_NSID = "org.jason-edelman.dream.inventory";
 export const INVENTORY_RKEY = "self";
@@ -23,6 +23,11 @@ export const ITEMS = {
     about: "Worn, it hangs over your head and splits the light, and the ley lines show in it: you can see them, and ride them.",
     on: "The prism splits the light over your head, and the ley lines shine out of nowhere.",
     off: "You take the prism off. The ley lines are gone, as if they'd never been.",
+  },
+  // Jason, 11-09: "portal items (everyone starts with one) to travel to friends". One opens for you at each full moon.
+  portal: {
+    name: "portal", plural: "portals", max: 5,
+    about: "A ring of folded space. Step through it to a mutual, wherever their creature is, or to a cairn one left; it closes behind you. One opens for you at each full moon, and a friend can send you one by pigeon.",
   },
   // Born of land or sea (birth.js): what wakes the stat your birth put to sleep. Each is found where the other kind of
   // creature goes easily, and only now and then where you do: a reason to have friends of the other kind.
@@ -62,25 +67,44 @@ export const ITEM_KINDS = Object.keys(ITEMS);
 export const WEARABLE = ITEM_KINDS.filter((k) => ITEMS[k].wear);
 /** How many things you can wear at once. */
 export const WORN_MAX = 2;
-/** The starting kit's version: a pouch from an older kit is given what it lacks (kitUp). */
-export const KIT = 1;
+/** The starting kit's version: a pouch from an older kit is given what it lacks (kitUp). 1: the prism; 2: a portal. */
+export const KIT = 2;
 
 /**
  * A creature's first pouch: one moonseed to begin with (and, born at a new moon, that moon's seed is this one), and a
  * prism, worn.
  */
 export function firstInventory(t) {
-  return { items: { moonseed: 1, prism: 1 }, worn: ["prism"], kit: KIT, lunation: seedFalls(t) ? lunationOf(t) : -1 };
+  return { items: { moonseed: 1, prism: 1, portal: 1 }, worn: ["prism"], kit: KIT, lunation: seedFalls(t) ? lunationOf(t) : -1, portalMoon: portalFalls(t) ? fullLunationOf(t) : -1 };
 }
 
 /** A pouch from before the prism (kit 0) is given one, worn if there's room. Returns the same object if nothing changes. */
 export function kitUp(inv) {
-  if ((inv.kit ?? 0) >= KIT) return inv;
+  const kit = inv.kit ?? 0;
+  if (kit >= KIT) return inv;
   const items = { ...inv.items };
   let worn = cleanWorn(inv.worn, items);
-  if (!(items.prism > 0)) items.prism = 1;
-  if (!worn.includes("prism") && worn.length < WORN_MAX) worn = [...worn, "prism"];
+  if (kit < 1) {
+    if (!(items.prism > 0)) items.prism = 1;
+    if (!worn.includes("prism") && worn.length < WORN_MAX) worn = [...worn, "prism"];
+  }
+  if (kit < 2) items.portal = Math.min(ITEMS.portal.max, (items.portal ?? 0) + 1);
   return { ...inv, items, worn, kit: KIT };
+}
+
+/** At a full moon, a portal opens for you, once per moon (like the moonseed at the new moon). Returns { inv, fell }. */
+export function portalFor(inv, t) {
+  if (!portalFalls(t)) return { inv, fell: false };
+  const L = fullLunationOf(t);
+  if ((inv.portalMoon ?? -1) >= L) return { inv, fell: false };
+  return { inv: { ...inv, items: { ...inv.items, portal: Math.min(ITEMS.portal.max, countOf(inv, "portal") + 1) }, portalMoon: L }, fell: true };
+}
+/** When your next portal opens (s): now if one is due, else the next full moon's window that hasn't given you one. */
+export function nextPortalAt(inv, t) {
+  if (portalFalls(t) && (inv.portalMoon ?? -1) < fullLunationOf(t)) return t;
+  let m = nextFullMoon(t);
+  if ((inv.portalMoon ?? -1) >= fullLunationOf(m)) m += SYNODIC_S;
+  return m - RESPEC_S;
 }
 
 /** What you're wearing, by kind (an empty list if nothing). */
@@ -227,7 +251,7 @@ const cleanKit = (k) => (Number.isInteger(k) && k >= 0 && k <= 1000 ? k : 0);
 
 export function makeInventoryRecord(inv, at = Date.now()) {
   const items = cleanItems(inv.items);
-  return { $type: INVENTORY_NSID, items, worn: cleanWorn(inv.worn, items), kit: cleanKit(inv.kit), lunation: Number.isInteger(inv.lunation) ? inv.lunation : -1, took: cleanTook(inv.took), got: cleanGot(inv.got), rhizome: cleanRhizome(inv.rhizome), updatedAt: new Date(at).toISOString() };
+  return { $type: INVENTORY_NSID, items, worn: cleanWorn(inv.worn, items), kit: cleanKit(inv.kit), lunation: Number.isInteger(inv.lunation) ? inv.lunation : -1, portalMoon: Number.isInteger(inv.portalMoon) ? inv.portalMoon : -1, took: cleanTook(inv.took), got: cleanGot(inv.got), rhizome: cleanRhizome(inv.rhizome), updatedAt: new Date(at).toISOString() };
 }
 
 /**
@@ -240,10 +264,11 @@ export function parseInventoryRecord(v) {
   const at = typeof v.updatedAt === "string" && v.updatedAt.length <= 40 ? Date.parse(v.updatedAt) : NaN;
   const lunation = Number.isInteger(v.lunation) && v.lunation >= -1 && v.lunation < 100000 ? v.lunation : -1;
   const items = cleanItems(v.items);
-  return { items, worn: cleanWorn(v.worn, items), kit: cleanKit(v.kit), lunation, took: cleanTook(v.took), got: cleanGot(v.got), rhizome: cleanRhizome(v.rhizome), at: Number.isFinite(at) ? at : 0 };
+  const portalMoon = Number.isInteger(v.portalMoon) && v.portalMoon >= -1 && v.portalMoon < 100000 ? v.portalMoon : -1;
+  return { items, worn: cleanWorn(v.worn, items), kit: cleanKit(v.kit), lunation, portalMoon, took: cleanTook(v.took), got: cleanGot(v.got), rhizome: cleanRhizome(v.rhizome), at: Number.isFinite(at) ? at : 0 };
 }
 
-const inventoryKey = (a) => JSON.stringify([cleanItems(a.items), cleanWorn(a.worn, cleanItems(a.items)), cleanKit(a.kit), a.lunation ?? -1, cleanTook(a.took), cleanGot(a.got), cleanRhizome(a.rhizome)]);
+const inventoryKey = (a) => JSON.stringify([cleanItems(a.items), cleanWorn(a.worn, cleanItems(a.items)), cleanKit(a.kit), a.lunation ?? -1, a.portalMoon ?? -1, cleanTook(a.took), cleanGot(a.got), cleanRhizome(a.rhizome)]);
 export const sameInventory = (a, b) => inventoryKey(a) === inventoryKey(b);
 
 /**

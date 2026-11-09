@@ -648,6 +648,26 @@ bottom of the screen.
 - **One column of buttons,** all the same width, words to the right; SHARE after ATLAS. On a phone the HUD is a size
   smaller and wraps short of the buttons.
 
+### The atlas grows: ley nodes, landmarks, and portals to friends (built 11-09)
+Jason: "continue on those open items" (the landmarks menu still went anywhere; ley nodes weren't in the atlas yet; and
+from his first list, "portal items (everyone starts with one) to travel to friends").
+- **Ley nodes** (Jason's "places you've been = ley nodes you've touched"): coming within 2 km of one, or arriving at one
+  on a highway, puts it in your atlas ("This ley node (Gravity wells, minor) is in your atlas now"). Go takes you there.
+- **Landmarks:** the LANDMARKS menu (top right, which went anywhere) is gone. The landmarks are in the atlas: the ones
+  you've been within 3 km of have Go; the rest are listed under "Still to find", nearest first, without it. (A
+  `?lat=&lon=` link still opens anywhere: that's a shared view, not the menu.)
+- **The atlas sheet** has three sections (shrines, ley nodes, landmarks); the globe shows them all as dots (shrines in
+  their colours, nodes pale gold, landmarks pale blue), tapping one goes there; the record (`nodes`, `landmarks`) merges
+  across devices like the shrines.
+- **Portals:** travelling to a mutual (their creature, from the list or the globe) or to a cairn a mutual left takes a
+  portal, used up as you step through. Everyone starts with one (an older pouch is given one once: the starting kit's
+  version 2), one opens for you at each full moon (a day either side; once a moon, like the moonseed at the new moon),
+  five fit, and they can be sent by pigeon. Your own cairns, and everything in your atlas, stay free. With none: "You
+  have no portal. One opens for you at each full moon (the next in 14 days), and a friend can send you one by pigeon."
+- **Still to come:** watersheds as regions, with compasses and goal sequences. They need a basin dataset whose licence
+  allows redistribution (HydroBASINS is the likely one; its terms are to be confirmed on HydroSHEDS' own site), or
+  basins worked out from the elevation tiles.
+
 ### Pigeons: things carried between mutuals (built 11-09)
 Jason: "item exchange between repos - via pigeon", then "we should give people reasons to collaborate". The finds
 make the reason (each kind of creature finds easily what the other needs); pigeons carry it (`pigeons.js`,

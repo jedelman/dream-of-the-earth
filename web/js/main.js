@@ -37,12 +37,12 @@ import { account, isReturning, takeReturn } from "./account.js";
 import { buildMaker, h } from "./maker.js";
 import { buildEditor } from "./editor.js";
 import { buildBag } from "./bag.js";
-import { makeAtlasRecord, parseAtlasRecord, mergeAtlas, atlasKey } from "./atlas-record.js";
+import { makeAtlasRecord, parseAtlasRecord, mergeAtlas, mergeBeen, atlasKey } from "./atlas-record.js";
 import { BORN, ASLEEP, WAKER, bornOf, asleep, effective, bornStats, maxDepth, spawnAround } from "./birth.js";
 import { buildFinds, FIND_COLOUR } from "./finds.js";
 import { ensureKoppen, koppenAt } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
-import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem } from "./inventory.js";
+import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem, portalFor, nextPortalAt } from "./inventory.js";
 import { whenText, lunationOf } from "./moon.js";
 import { buildShrines } from "./shrines.js";
 import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf, WAKES, skyState, wokeAt } from "./shrinelore.js";
@@ -102,8 +102,8 @@ function keptInventory() {
   try {
     const v = JSON.parse(localStorage.getItem(INVENTORY_KEY) || "null");
     if (!v) return null;
-    const p = parseInventoryRecord({ items: v.items, worn: v.worn, kit: v.kit, lunation: v.lunation, took: v.took, got: v.got, rhizome: v.rhizome });
-    return p && { items: p.items, worn: p.worn, kit: p.kit, lunation: p.lunation, took: p.took, got: p.got, rhizome: p.rhizome, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
+    const p = parseInventoryRecord({ items: v.items, worn: v.worn, kit: v.kit, lunation: v.lunation, portalMoon: v.portalMoon, took: v.took, got: v.got, rhizome: v.rhizome });
+    return p && { items: p.items, worn: p.worn, kit: p.kit, lunation: p.lunation, portalMoon: p.portalMoon, took: p.took, got: p.got, rhizome: p.rhizome, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
   } catch { return null; }
 }
 let inv = keptInventory() || { ...firstInventory(Date.now() / 1000), at: 0, changed: false }; // a moonseed and a prism to begin with
@@ -115,7 +115,7 @@ function keepInventory(next, { changed = true, at = Date.now() } = {}) {
   next = kitUp(next);
   // Your rhizome's seed, set once (from your creature's, the first time), so it stays yours whatever creature you become.
   if (next.rhizome?.seed == null) next = { ...next, rhizome: { seed: hashString(`rhizome:${seed}`) >>> 0, slots: next.rhizome?.slots ?? {} } };
-  inv = { items: next.items, worn: wornOf(next), kit: next.kit, lunation: next.lunation, took: next.took ?? { lunation: -1, keys: [] }, got: next.got ?? [], rhizome: next.rhizome, at, changed };
+  inv = { items: next.items, worn: wornOf(next), kit: next.kit, lunation: next.lunation, portalMoon: next.portalMoon ?? -1, took: next.took ?? { lunation: -1, keys: [] }, got: next.got ?? [], rhizome: next.rhizome, at, changed };
   invAt = Date.now() / 1000;
   try { localStorage.setItem(INVENTORY_KEY, JSON.stringify(inv)); } catch { /* private mode */ }
   bagView?.refresh(); // the BAG button, once it exists
@@ -374,11 +374,33 @@ const capital = (s) => s[0].toUpperCase() + s.slice(1);
 // ---- Your atlas: shrines you've found, to travel back to (11-09). Kept on the device and, signed in, in your repo
 // (Jason: "I'm okay with publishing the atlas to the repo!"), so it follows you. ----
 const ATLAS_KEY = "dream.atlas";
-const found = (() => { try { const v = JSON.parse(localStorage.getItem(ATLAS_KEY) || "{}"); return v && typeof v.shrines === "object" ? parseAtlasRecord(makeAtlasRecord(v.shrines)).shrines : {}; } catch { return {}; } })();
+const atlasStored = (() => { try { const v = JSON.parse(localStorage.getItem(ATLAS_KEY) || "{}") || {}; return parseAtlasRecord(makeAtlasRecord(v.shrines || {}, 0, { nodes: v.nodes || {}, marks: v.marks || {} })); } catch { return { shrines: {}, nodes: {}, marks: {} }; } })();
+const found = atlasStored.shrines;
+/** The ley nodes (by index) and landmarks (by name) you've been to, with when you first were (s). */
+const been = { nodes: atlasStored.nodes, marks: atlasStored.marks };
+const placesFound = () => Object.keys(found).length + Object.keys(been.nodes).length + Object.keys(been.marks).length;
 function keepAtlas() {
-  try { localStorage.setItem(ATLAS_KEY, JSON.stringify({ shrines: found })); } catch { /* private mode */ }
-  atlasView?.refresh(Object.keys(found).length);
+  try { localStorage.setItem(ATLAS_KEY, JSON.stringify({ shrines: found, nodes: been.nodes, marks: been.marks })); } catch { /* private mode */ }
+  atlasView?.refresh(placesFound());
   globe.setShrines(foundList());
+}
+const NODE_REACH_M = 2000, MARK_REACH_M = 3000;
+/** Being near a ley node or a landmark puts it in your atlas (checked every few seconds). */
+function discoverPlaces() {
+  if (!world || state.realm) return;
+  const ll = state.ride ? rideLatLon(state.ride) : world.frame.toLatLon(state.pos.x, state.pos.z), now = Math.round(realNow());
+  let added = false;
+  const { node, meters } = nearestNode(ll.lat, ll.lon), i = network().nodes.indexOf(node);
+  if (!state.ride && meters < NODE_REACH_M && i >= 0 && been.nodes[i] == null) {
+    been.nodes[i] = now; added = true;
+    logLine(`This ley node (${nodeName(ll)}) is in your atlas now: you can travel back to it.`, "highway");
+  }
+  for (const l of LANDMARKS) {
+    if (been.marks[l.name] != null || metresBetween(ll.lat, ll.lon, l.lat, l.lon) > MARK_REACH_M) continue;
+    been.marks[l.name] = now; added = true;
+    logLine(`You've been to ${l.name}. It's in your atlas.`, "note");
+  }
+  if (added) keepAtlas();
 }
 /** Walking up to a shrine puts it in your atlas. */
 function discoverShrines() {
@@ -390,9 +412,23 @@ function discoverShrines() {
     logLine(`You've found ${SPELLS[s.spell].name}. You can travel back to it from your atlas.`, "shrine");
   }
 }
-const foundList = () => Object.entries(found).map(([key, f]) => ({ key, ...f, colour: KIND_COLOUR[SPELLS[f.spell]?.kind] ?? 0xffffff })).filter((f) => SPELLS[f.spell]);
-/** Off to a shrine you've found: arrive 22 m south of it, facing it. */
+const foundList = () => [
+  ...Object.entries(found).filter(([, f]) => SPELLS[f.spell]).map(([key, f]) => ({ key, ...f, colour: KIND_COLOUR[SPELLS[f.spell].kind] })),
+  ...Object.keys(been.nodes).map((i) => { const n = network().nodes[i]; return n && { key: `node${i}`, lat: n.lat, lon: n.lon, colour: 0xffe9a8 }; }).filter(Boolean),
+  ...LANDMARKS.filter((l) => been.marks[l.name] != null).map((l) => ({ key: `mark:${l.name}`, lat: l.lat, lon: l.lon, colour: 0xb9f0ff })),
+];
+/** Off to a place in your atlas: a shrine (22 m south of it, facing it), a ley node, or a landmark you've been to. */
 function travelToShrine(key) {
+  if (key.startsWith("node")) {
+    const i = Number(key.slice(4)), n = network().nodes[i];
+    if (n && been.nodes[i] != null) teleport({ name: `a ley node (${nodeName(n)})`, lat: n.lat, lon: n.lon, alt: 30, heading: 0, zoom: 120 });
+    return;
+  }
+  if (key.startsWith("mark:")) {
+    const l = LANDMARKS.find((q) => q.name === key.slice(5));
+    if (l && been.marks[l.name] != null) teleport(l);
+    return;
+  }
   const f = found[key];
   if (!f) return;
   teleport({ name: SPELLS[f.spell].name, lat: f.lat - 22 / 111320, lon: f.lon, alt: 2, heading: 0, zoom: ZOOM_HOME });
@@ -910,18 +946,13 @@ function leaveRide(arrived) {
     rideFx.group.visible = false;
     establishing();
     setStatus(arrived ? `you're at a node: ${nodeName(ll)}` : "");
+    if (arrived) { const { node } = nearestNode(ll.lat, ll.lon), i = network().nodes.indexOf(node); if (i >= 0 && been.nodes[i] == null) { been.nodes[i] = Math.round(realNow()); keepAtlas(); } }
     logLine(arrived ? `You arrive at a node: ${nodeName(ll)}.` : "You step off the highway.", "highway");
     if (arrived) setTimeout(() => setStatus(""), 4000);
   });
 }
 // ---- Landmarks: the HUD's menu carries you anywhere in the list ----
-const places = document.getElementById("places");
-for (const [i, l] of LANDMARKS.entries()) places.add(new Option(l.name, String(i)));
-places.addEventListener("change", () => {
-  const l = LANDMARKS[Number(places.value)];
-  places.blur(); // give the keys back to flying
-  if (l) teleport(l);
-});
+// The landmarks are in the atlas now (11-09), to travel back to once you've been (the menu that went anywhere is gone).
 function teleport(l) {
   clearTarget();
   if (state.ride) { state.ride = null; rideFx.group.visible = false; if (world) world.group.visible = true; }
@@ -1399,6 +1430,7 @@ function setEverywhere(list) {
 }
 /** Off to a cairn: arrive 30 m south and 20 m west of it, facing north, so it stands ahead and to the right. */
 function travelTo(a) {
+  if (!a.own && !usePortal(a.handle ? `@${a.handle}'s cairn` : "a mutual's cairn")) return;
   const dLat = -30 / 111320, dLon = -20 / (111320 * Math.max(0.05, Math.cos((a.lat * Math.PI) / 180)));
   teleport({ name: a.own ? "your cairn" : a.handle ? `@${a.handle}'s cairn` : "a cairn", lat: a.lat + dLat, lon: a.lon + dLon, alt: 10, heading: 0, zoom: 85 });
 }
@@ -1678,18 +1710,45 @@ atlasView = buildAtlas({
   hooks: {
     shrines: () => {
       const ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn;
-      return foundList().map((f) => {
+      return foundList().filter((f) => f.spell).map((f) => {
         const st = shrineClock.state ? (WAKES[f.spell].test(shrineClock.state) ? (shrineUsed[f.key] != null && shrineStateOf({ key: f.key, spell: f.spell }) === "resting" ? "resting" : "awake") : `asleep, wakes ${WAKES[f.spell].when}`) : "";
         return { key: f.key, name: capital(SPELLS[f.spell].name), colour: `#${new THREE.Color(f.colour).getHexString()}`, state: st, metres: metresBetween(ll.lat, ll.lon, f.lat, f.lon) };
       }).sort((a, b) => a.metres - b.metres);
     },
+    nodes: () => {
+      const ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn;
+      return Object.keys(been.nodes).map((i) => { const n = network().nodes[i]; return n && { key: `node${i}`, name: capital(nodeName(n)), metres: metresBetween(ll.lat, ll.lon, n.lat, n.lon) }; }).filter(Boolean).sort((a, b) => a.metres - b.metres);
+    },
+    landmarks: () => {
+      const ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn;
+      return LANDMARKS.map((l) => ({ key: `mark:${l.name}`, name: l.name, been: been.marks[l.name] != null, metres: metresBetween(ll.lat, ll.lon, l.lat, l.lon) }));
+    },
     travel: travelToShrine,
-    globe: () => toGlobe("The whole Earth. Tap a shrine's dot to go there."),
+    globe: () => toGlobe("The whole Earth. Tap a dot to go there."),
   },
 });
-atlasView.refresh(Object.keys(found).length);
+atlasView.refresh(placesFound());
 globe.setShrines(foundList());
 // A moonseed falls for you at each new moon, once (checked once a second).
+/** A portal used up to reach a mutual (Jason: "portal items (everyone starts with one) to travel to friends"). */
+function usePortal(to) {
+  const next = spend(inv, "portal");
+  if (!next) {
+    logLine(`You have no portal. One opens for you at each full moon (the next ${whenText(nextPortalAt(inv, realNow()), realNow())}), and a friend can send you one by pigeon.`, "note");
+    return false;
+  }
+  keepInventory(next);
+  sound.whoosh();
+  logLine(`You step through a portal to ${to}. It closes behind you (${countOf(next, "portal")} left).`, "highway");
+  return true;
+}
+function portalTick() {
+  const r = portalFor(inv, realNow());
+  if (!r.fell) return;
+  keepInventory(r.inv);
+  sound.chime();
+  logLine("The full moon opens a portal for you. (BAG \u25be)", "shrine");
+}
 function seedTick() {
   const r = moonseedFor(inv, realNow());
   if (!r.fell) return;
@@ -1699,7 +1758,7 @@ function seedTick() {
 }
 // Your pouch in your repo, like your creature: brought into step on sign-in and when you come back; written once things settle.
 const carry = { can: false, synced: "", busy: false };
-const invKey = () => JSON.stringify([inv.items, wornOf(inv), inv.kit, inv.lunation, inv.took, inv.got, inv.rhizome]);
+const invKey = () => JSON.stringify([inv.items, wornOf(inv), inv.kit, inv.lunation, inv.portalMoon, inv.took, inv.got, inv.rhizome]);
 async function syncInventory() {
   if (!account.did || !carry.can || carry.busy) return;
   carry.busy = true;
@@ -1728,19 +1787,19 @@ async function syncAtlas() {
   mapping.busy = true;
   try {
     const remote = parseAtlasRecord(await account.getAtlas());
-    const merged = mergeAtlas(found, remote?.shrines);
-    if (atlasKey(merged) !== atlasKey(found)) { Object.assign(found, merged); keepAtlas(); }
-    if (!remote || atlasKey(merged) !== atlasKey(remote.shrines)) await account.putAtlas(makeAtlasRecord(found));
-    mapping.synced = atlasKey(found);
+    const merged = mergeAtlas(found, remote?.shrines), mergedBeen = { nodes: mergeBeen(been.nodes, remote?.nodes), marks: mergeBeen(been.marks, remote?.marks) };
+    if (atlasKey(merged, mergedBeen) !== atlasKey(found, been)) { Object.assign(found, merged); Object.assign(been.nodes, mergedBeen.nodes); Object.assign(been.marks, mergedBeen.marks); keepAtlas(); }
+    if (!remote || atlasKey(found, been) !== atlasKey(remote.shrines, remote)) await account.putAtlas(makeAtlasRecord(found, Date.now(), been));
+    mapping.synced = atlasKey(found, been);
   } catch (e) { console.warn("atlas:", e.message); }
   finally { mapping.busy = false; }
 }
 function atlasTick() {
   if (!account.did || !mapping.can || mapping.busy || people.viewer !== account.did) return;
-  const k = atlasKey(found);
+  const k = atlasKey(found, been);
   if (k === mapping.synced) return;
   mapping.busy = true;
-  account.putAtlas(makeAtlasRecord(found)).then(() => { mapping.synced = k; })
+  account.putAtlas(makeAtlasRecord(found, Date.now(), been)).then(() => { mapping.synced = k; })
     .catch((e) => console.warn("atlas:", e.message)).finally(() => { mapping.busy = false; });
 }
 // ---- Pigeons (pigeons.js): things carried between mutuals. Yours fly from your repo; theirs are found by the backlink
@@ -1938,6 +1997,7 @@ addEventListener("pagehide", () => { stopSharing(); });
 function travelToMutual(did) {
   const w = who.get(did);
   if (!w) return;
+  if (!usePortal(w.handle ? `@${w.handle}` : "a mutual")) return;
   const at = whereAt(w.intent, realNow()), dLat = -40 / 111320;
   teleport({ name: w.handle ? `@${w.handle}` : "a mutual", lat: at.lat + dLat, lon: at.lon, alt: 10, heading: 0, zoom: 85 });
 }
@@ -2350,6 +2410,8 @@ function frame() {
     shareTick();
     keepTick();
     seedTick();
+    portalTick();
+    if (Math.floor(simT) % 3 === 0) discoverPlaces();
     carryTick();
     atlasTick();
     pigeonTick();
@@ -2447,7 +2509,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, inv: () => inv, takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };
