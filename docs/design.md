@@ -527,8 +527,43 @@ point of cheating at a cozy exploration game?"
 - **Your atlas in your repo** (`atlas-record.js`): one record, `org.jason-edelman.dream.atlas/self`, the shrines you've
   found (key, place, spell, when), overwritten. Devices merge: a place found on any device is found, at its first
   finding. Read only from your own repo. It needs one more scope, so one more sign-in, which also covers what you wear.
-- **Next:** being born of land or sea (run or swim, the other behind something to wear), and finds out in the world
-  that give the things to wear; then pigeons, to send them to mutuals.
+- **Next:** being born of land or sea, and finds (below); then pigeons, to send things to mutuals.
+
+### Born of land or sea, and finds (built 11-09)
+Jason: "Let's lock the swim stat behind an item and not spawn new players over oceans, or give them a choice between run
+and swim and lock the other behind an item, making sure we spawn them at the appropriate region. Oceans gate by being
+large - dive depth is the unlock." The second, with the first's spirit (`birth.js`, `findlore.js`, `finds.js`):
+- **A choice on your first visit:** born on land (you run; your swim sleeps until you wear a **tidefin**) or in the sea
+  (you swim and dive; your run sleeps until you wear a **mossfoot**). A sleeping stat counts as 0, so you paddle (about
+  1 m/s) or crawl (about 2 m/s), and it takes no points in the editor; points already in it wait. A new creature's
+  points move out of the stat that will sleep into its partner, then perception, climb, gleam (none lost). Creatures
+  from before (and from links) lean where their stats do: more swim than run, the sea; otherwise land. Eat a moonseed
+  to be born again (a rebirth spends the seed, like any change). Kept in the creature record (`born`).
+- **Waking where you belong:** near a random ley node, as before, but land-born creatures wake well inland (land 3 km
+  round on every side, by the Köppen map's land mask at 0.1°) and sea-born ones in coastal water (land within 8 km),
+  then settle on the terrain itself: land 3 m up or more, or the shelf (6-200 m deep) if there's one within 12 km. If
+  the terrain disagrees with the land mask (it's coarse, and blank along the 180th meridian), another node is tried,
+  twice. Sea-born creatures wake afloat; land-born ones in the air above the land, as before.
+- **Dive depth is the sea's gate:** 3 m with no swim (a duck under), then 15, 60, 240, 960, 3,840 m, and at six 15 km,
+  anywhere (the Mariana Trench is about 11 km). The shelves run to about 200 m; the open ocean's floor lies at 3-6 km.
+  Past your depth you stop ("Too deep for Nyo"). Oceans otherwise gate by being large: a sleeping swim crosses 10 km
+  in about two and a half hours.
+- **Finds,** computed like the shrines (the same in the same place for everyone), taken once a moon per spot per
+  player (the inventory keeps which, for the moon that's running): **tidefins on the seabed**, 20 m down and more (easy
+  for the sea-born, out of reach of a sleeping swim); **mossfeet in meadows** inland (easy for the land-born, a long
+  crawl for the sea-born); **on beaches, now and then, one or the other**, washed up (how anyone gets one alone); and
+  **owl's eyes on summits** of 700 m and more, at the top of their hill (for climbers). Each is a small shape with a
+  few pixels of sparkle over it (seen within 260 m), picked up with E or a tap; one under water must be dived to.
+- **So each kind finds easily what the other needs:** that's the reason to have friends of the other kind. Pigeons
+  (next) carry what you find to them.
+- **The owl's eye,** worn: two more perception (from three, the sky beings show), as a great amber eye on your brow
+  with two feather tufts. Worn things can add to stats now (`boost`); the HUD marks a lifted stat with + and a sleeping
+  one ASLEEP.
+- **Two slots, four things to wear:** the prism (ride the ley lines), your waker (tidefin or mossfoot), the owl's eye.
+  Choosing two of three is the choice Jason asked for.
+- **Still open:** flight runs on climb until the dream quest, so a creature with climb can fly over any sea, and the
+  landmarks menu still teleports anywhere. Both undercut the sea's gate until the quest and the atlas's fast travel
+  replace them.
 
 ### Moonseeds: respecs you carry (built 11-09)
 Jason: "Let's grant respecs at the new moon but have them be an item so they can be spent or saved."

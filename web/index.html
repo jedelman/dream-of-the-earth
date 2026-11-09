@@ -50,6 +50,16 @@
   .item-moonseed { border-radius: 50%; background: #1d1830; box-shadow: inset -3px 1px 0 0 #e9e5ff, 0 0 6px rgba(201, 182, 255, .6); }
   /* A prism: a small rainbow diamond */
   .item-prism { transform: rotate(45deg) scale(.8); background: linear-gradient(135deg, #ff7ad9, #ffd34d 35%, #7af0a0 60%, #7af0ff 80%, #b38bff); box-shadow: 0 0 6px rgba(255, 255, 255, .5); }
+  /* A tidefin: a sea-glass sail; a mossfoot: a green tuft with a pink dot; an owl's eye: amber with a slit */
+  .item-tidefin { clip-path: polygon(10% 100%, 70% 0, 90% 100%); background: linear-gradient(160deg, #b9fff3, #3fcfb9); }
+  .item-mossfoot { border-radius: 50% 50% 40% 40%; background: radial-gradient(circle at 70% 30%, #ff9ad5 0 18%, transparent 20%), #6fbf4a; }
+  .item-owleye { border-radius: 50%; background: radial-gradient(ellipse 18% 40% at 50% 50%, #140c05 0 90%, transparent 100%), radial-gradient(circle, #ffd27a, #e08a1a); }
+  .sheet.birth .births { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+  .sheet.birth .births button { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 10px 12px; }
+  .sheet.birth .births button b { font-size: 14px; letter-spacing: .04em; }
+  .sheet.birth .births button span { font-size: 11px; opacity: .85; font-weight: normal; }
+  .sheet.creature .birth { margin: 8px 0 4px; color: #f3d8ff; }
+  .sheet.creature .stat.asleep .k, .sheet.creature .stat.asleep .bar { opacity: .5; }
   .sheet.bag .wearing { margin: 4px 0 0; color: #f3d8ff; }
   .sheet.bag li.worn .what { color: #fff6c9; }
   .sheet.bag button:disabled { opacity: .45; cursor: default; }

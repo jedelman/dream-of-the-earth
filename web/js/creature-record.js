@@ -3,19 +3,23 @@
 // creature (seed, stats, genes) and when you last changed it. Jason, 11-09: "Yes! Your creature should follow you."
 import { parseGenes } from "./creature-graph.js";
 import { STATS, statsFrom } from "./stats.js";
+import { BORN, bornOf } from "./birth.js";
 
 export const CREATURE_NSID = "org.jason-edelman.dream.creature";
 export const CREATURE_RKEY = "self";
 
-/** The record for a creature { seed, stats, genes } changed at `at` (ms since 1970). */
-export function makeCreatureRecord({ seed, stats, genes }, at = Date.now()) {
-  const v = { $type: CREATURE_NSID, seed: seed >>> 0, stats: STATS.map((k) => stats[k]), updatedAt: new Date(at).toISOString() };
+/** The record for a creature { seed, stats, genes, born } changed at `at` (ms since 1970). */
+export function makeCreatureRecord({ seed, stats, genes, born }, at = Date.now()) {
+  const v = { $type: CREATURE_NSID, seed: seed >>> 0, stats: STATS.map((k) => stats[k]), born: bornOf(stats, born), updatedAt: new Date(at).toISOString() };
   const g = parseGenes(genes);
   if (g) v.genes = g;
   return v;
 }
 
-/** A creature record, checked: { seed, stats, genes, at (ms) } or null. Bad genes are dropped, not the creature. */
+/**
+ * A creature record, checked: { seed, stats, genes, born, at (ms) } or null. Bad genes are dropped, not the creature;
+ * a record from before births is born where its stats lean.
+ */
 export function parseCreatureRecord(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   if (v.$type !== undefined && v.$type !== CREATURE_NSID) return null;
@@ -23,7 +27,7 @@ export function parseCreatureRecord(v) {
   const stats = statsFrom(v.stats); // five, or the four from before perception
   if (!stats) return null;
   const at = typeof v.updatedAt === "string" && v.updatedAt.length <= 40 ? Date.parse(v.updatedAt) : NaN;
-  return { seed: v.seed, stats, genes: parseGenes(v.genes), at: Number.isFinite(at) ? at : 0 };
+  return { seed: v.seed, stats, genes: parseGenes(v.genes), born: bornOf(stats, BORN.includes(v.born) ? v.born : null), at: Number.isFinite(at) ? at : 0 };
 }
 
 /**
@@ -40,4 +44,5 @@ export function reconcile(local, remote) {
 }
 
 export const sameCreature = (a, b) =>
-  a.seed === b.seed && STATS.every((k) => a.stats[k] === b.stats[k]) && JSON.stringify(parseGenes(a.genes)) === JSON.stringify(parseGenes(b.genes));
+  a.seed === b.seed && STATS.every((k) => a.stats[k] === b.stats[k]) && JSON.stringify(parseGenes(a.genes)) === JSON.stringify(parseGenes(b.genes)) &&
+  bornOf(a.stats, a.born) === bornOf(b.stats, b.born);

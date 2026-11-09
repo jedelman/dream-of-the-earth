@@ -24,6 +24,26 @@ export const ITEMS = {
     on: "The prism splits the light over your head, and the ley lines shine out of nowhere.",
     off: "You take the prism off. The ley lines are gone, as if they'd never been.",
   },
+  // Born of land or sea (birth.js): what wakes the stat your birth put to sleep. Each is found where the other kind of
+  // creature goes easily, and only now and then where you do: a reason to have friends of the other kind.
+  tidefin: {
+    name: "tidefin", plural: "tidefins", max: 5, wear: true,
+    about: "A fin of sea glass. Worn, a land-born creature's swim wakes, and the sea opens. Now and then one washes up on a beach; the sea-born find them on the seabed. (To the sea-born it's only pretty: keep it for a friend born on land.)",
+    on: "The tidefin settles along your back. The water feels like yours now.",
+    off: "You take the tidefin off. The water is heavy again.",
+  },
+  mossfoot: {
+    name: "mossfoot", plural: "mossfeet", max: 5, wear: true,
+    about: "A tuft of walking moss. Worn, a sea-born creature's run wakes, and the land opens. It grows inland, and now and then the tide leaves one on a beach. (To the land-born it's only soft: keep it for a friend born in the sea.)",
+    on: "Moss curls round your feet. The ground feels like yours now.",
+    off: "You take the mossfoot off. The ground drags at you again.",
+  },
+  owleye: {
+    name: "owl's eye", plural: "owl's eyes", max: 3, wear: true, boost: { perception: 2 },
+    about: "An eye of amber, found on high summits. Worn, you see further: two more perception (from three, the sky beings show).",
+    on: "The owl's eye opens on your brow. The world comes from further off.",
+    off: "You take the owl's eye off. The distance closes in.",
+  },
 };
 export const ITEM_KINDS = Object.keys(ITEMS);
 export const WEARABLE = ITEM_KINDS.filter((k) => ITEMS[k].wear);
@@ -52,6 +72,12 @@ export function kitUp(inv) {
 
 /** What you're wearing, by kind (an empty list if nothing). */
 export const wornOf = (inv) => cleanWorn(inv?.worn, inv?.items);
+/** What your worn things add to your stats: { stat: points }. */
+export function boostsOf(inv) {
+  const out = {};
+  for (const k of wornOf(inv)) for (const [stat, n] of Object.entries(ITEMS[k].boost ?? {})) out[stat] = (out[stat] ?? 0) + n;
+  return out;
+}
 export const wearing = (inv, kind) => wornOf(inv).includes(kind);
 
 /** Put something on: the new inventory, or null (not wearable, none carried, already on, or no room). */
@@ -97,6 +123,27 @@ export function spend(inv, kind) {
   const items = { ...inv.items, [kind]: n - 1 };
   return { ...inv, items, worn: cleanWorn(inv.worn, items) };
 }
+/** Most finds remembered as taken in a moon (each spot gives each player its thing once a moon). */
+export const TOOK_MAX = 300;
+const TOOK_KEY = /^(shore|seabed|meadow|summit)\d{1,10}$/;
+/** Whether you've had this find's thing in the moon running at t. */
+export const tookHere = (inv, key, t) => inv?.took?.lunation === lunationOf(t) && inv.took.keys.includes(key);
+/**
+ * Pick up a find ({ key, holds }): { inv, ok, why } (why: "taken", already this moon; or "full", your pouch holds no
+ * more of it).
+ */
+export function take(inv, find, t) {
+  if (tookHere(inv, find.key, t)) return { inv, ok: false, why: "taken" };
+  const n = countOf(inv, find.holds);
+  if (!ITEMS[find.holds] || n >= ITEMS[find.holds].max) return { inv, ok: false, why: "full" };
+  const L = lunationOf(t), keys = inv.took?.lunation === L ? inv.took.keys : [];
+  return { ok: true, why: null, inv: { ...inv, items: { ...inv.items, [find.holds]: n + 1 }, took: { lunation: L, keys: [...keys, find.key].slice(-TOOK_MAX) } } };
+}
+function cleanTook(took) {
+  if (!took || typeof took !== "object" || !Number.isInteger(took.lunation) || took.lunation < 0 || took.lunation > 100000 || !Array.isArray(took.keys)) return { lunation: -1, keys: [] };
+  return { lunation: took.lunation, keys: [...new Set(took.keys.filter((k) => typeof k === "string" && TOOK_KEY.test(k)))].slice(-TOOK_MAX) };
+}
+
 /** One given back (a moonseed eaten for nothing: the stats didn't change). */
 export function refund(inv, kind) {
   return { ...inv, items: { ...inv.items, [kind]: Math.min(ITEMS[kind].max, countOf(inv, kind) + 1) } };
@@ -125,11 +172,11 @@ const cleanKit = (k) => (Number.isInteger(k) && k >= 0 && k <= 1000 ? k : 0);
 
 export function makeInventoryRecord(inv, at = Date.now()) {
   const items = cleanItems(inv.items);
-  return { $type: INVENTORY_NSID, items, worn: cleanWorn(inv.worn, items), kit: cleanKit(inv.kit), lunation: Number.isInteger(inv.lunation) ? inv.lunation : -1, updatedAt: new Date(at).toISOString() };
+  return { $type: INVENTORY_NSID, items, worn: cleanWorn(inv.worn, items), kit: cleanKit(inv.kit), lunation: Number.isInteger(inv.lunation) ? inv.lunation : -1, took: cleanTook(inv.took), updatedAt: new Date(at).toISOString() };
 }
 
 /**
- * An inventory record, checked: { items, worn, kit, lunation, at (ms) } or null. Unknown kinds and bad counts are
+ * An inventory record, checked: { items, worn, kit, lunation, took, at (ms) } or null. Unknown kinds and bad counts are
  * dropped, and worn things you don't carry.
  */
 export function parseInventoryRecord(v) {
@@ -138,10 +185,10 @@ export function parseInventoryRecord(v) {
   const at = typeof v.updatedAt === "string" && v.updatedAt.length <= 40 ? Date.parse(v.updatedAt) : NaN;
   const lunation = Number.isInteger(v.lunation) && v.lunation >= -1 && v.lunation < 100000 ? v.lunation : -1;
   const items = cleanItems(v.items);
-  return { items, worn: cleanWorn(v.worn, items), kit: cleanKit(v.kit), lunation, at: Number.isFinite(at) ? at : 0 };
+  return { items, worn: cleanWorn(v.worn, items), kit: cleanKit(v.kit), lunation, took: cleanTook(v.took), at: Number.isFinite(at) ? at : 0 };
 }
 
-const inventoryKey = (a) => JSON.stringify([cleanItems(a.items), cleanWorn(a.worn, cleanItems(a.items)), cleanKit(a.kit), a.lunation ?? -1]);
+const inventoryKey = (a) => JSON.stringify([cleanItems(a.items), cleanWorn(a.worn, cleanItems(a.items)), cleanKit(a.kit), a.lunation ?? -1, cleanTook(a.took)]);
 export const sameInventory = (a, b) => inventoryKey(a) === inventoryKey(b);
 
 /**

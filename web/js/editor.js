@@ -24,11 +24,12 @@ const UNDO_MAX = 40;
 const roll = () => (Math.random() * 2 ** 32) >>> 0;
 const swatch = (c) => `hsl(${Math.round(c.h * 360)} ${Math.round(c.s * 100)}% ${Math.round(c.l * 100)}%)`;
 const bar = (n) => "▮".repeat(n) + "▯".repeat(MAX - n);
-const clone = (c) => ({ seed: c.seed, genes: c.genes ? JSON.parse(JSON.stringify(c.genes)) : null, stats: { ...c.stats } });
+const clone = (c) => ({ seed: c.seed, genes: c.genes ? JSON.parse(JSON.stringify(c.genes)) : null, stats: { ...c.stats }, born: c.born });
 
 /**
- * hooks: { get() -> { seed, genes, stats }, set(next), name(seed) -> string, portrait(on), isMine() -> whether it's the one you keep,
- *          respec() -> { open, seeds, next }, eatMoonseed() -> whether one was eaten, settle() (the sheet closed) }.
+ * hooks: { get() -> { seed, genes, stats, born }, set(next), name(seed) -> string, portrait(on), isMine() -> whether it's the one you keep,
+ *          respec() -> { open, seeds, next }, eatMoonseed() -> whether one was eaten, settle() (the sheet closed),
+ *          birth(c) -> { asleep (the stat its birth puts to sleep), waker (what wakes it), awake (worn now) } }.
  * maker: the sheet's owner (one sheet at a time). button: the name button that opens it.
  */
 export function buildEditor({ hooks, maker, button }) {
@@ -62,8 +63,9 @@ export function buildEditor({ hooks, maker, button }) {
   const moonNow = () => hooks.respec().open;
   const stat = (k, by) => !moonNow() ? refresh() : change((c) => {
     const left = BUDGET - STATS.reduce((t, s) => t + c.stats[s], 0);
-    const n = c.stats[k] + by;
+    const n = c.stats[k] + by, b = hooks.birth(c);
     if (n < 0 || n > MAX || (by > 0 && left <= 0)) return c;
+    if (by > 0 && k === b.asleep && !b.awake) return c; // a sleeping stat takes no points
     c.stats[k] = n;
     return c;
   });
@@ -110,6 +112,9 @@ export function buildEditor({ hooks, maker, button }) {
       return { k, v, less, more, row };
     });
     const left = h("p", { class: "small left", role: "status" });
+    // Born of land or sea: shown always, changed only with a moonseed working (born again).
+    const birth = h("p", { class: "small birth" });
+    const reborn = h("button", { onclick: () => moonNow() && change((c) => { c.born = c.born === "sea" ? "land" : "sea"; return c; }) });
     const eat = h("button", { class: "go eat", onclick: () => { if (hooks.eatMoonseed()) refresh(); } }, "Eat a moonseed");
     const undoBtn = h("button", { onclick: () => { const prev = undo.pop(); if (prev) { hooks.set(prev); refresh(); } } }, "↶ Undo");
     const plain = h("button", { onclick: () => change((c) => { c.genes = null; return c; }) }, "Start over");
@@ -123,11 +128,12 @@ export function buildEditor({ hooks, maker, button }) {
     // A creature from a link (?seed=…) isn't yours until you say so (or change it).
     const adopt = h("p", { class: "small adopt" }, "This creature came from a link; yours is kept for you. ",
       h("button", { onclick: () => change((c) => c) }, "Make this one mine"));
-    els = { name, info, rows, hue, size, sizeV, statRows, left, undoBtn, plain, adopt, eat };
+    els = { name, info, rows, hue, size, sizeV, statRows, left, undoBtn, plain, adopt, eat, birth, reborn };
     return [
       name, info, adopt,
       h("div", { class: "traits" }, rows[0], h("div", { class: "trait sub" }, h("span", { class: "k" }, ""), hue), ...rows.slice(1),
         h("div", { class: "trait" }, h("span", { class: "k" }, "Size"), size, sizeV)),
+      birth, reborn,
       h("div", { class: "stats" }, ...statRows.map((s) => s.row)), left, eat,
       h("div", { class: "row" }, mutate, surprise),
       h("div", { class: "row" }, undoBtn, plain),
@@ -158,12 +164,20 @@ export function buildEditor({ hooks, maker, button }) {
     els.sizeV.textContent = `${graph.scale.toFixed(2)}×`;
     const spent = STATS.reduce((t, k) => t + c.stats[k], 0);
     const rs = hooks.respec(), open = rs.open;
+    const b = hooks.birth(c), sleeps = !b.awake;
     for (const s of els.statRows) {
+      const zz = s.k === b.asleep && sleeps;
       s.v.textContent = bar(c.stats[s.k]);
-      s.row.setAttribute("aria-label", `${s.k} ${c.stats[s.k]} of ${MAX}`);
+      s.row.classList.toggle("asleep", zz);
+      s.row.querySelector(".k").textContent = zz ? `${s.k.toUpperCase()} · ASLEEP` : s.k.toUpperCase();
+      s.row.setAttribute("aria-label", `${s.k} ${c.stats[s.k]} of ${MAX}${zz ? ", asleep" : ""}`);
       s.less.disabled = !open || c.stats[s.k] <= 0;
-      s.more.disabled = !open || c.stats[s.k] >= MAX || spent >= BUDGET;
+      s.more.disabled = !open || c.stats[s.k] >= MAX || spent >= BUDGET || zz;
     }
+    const where = c.born === "sea" ? "in the sea" : "on land";
+    els.birth.textContent = `Born ${where}. Its ${b.asleep} ${sleeps ? `sleeps until it wears ${b.wakerName}` : `is awake: it's wearing ${b.wakerName}`}${sleeps && c.stats[b.asleep] ? ` (its ${c.stats[b.asleep]} point${c.stats[b.asleep] === 1 ? "" : "s"} there wait for it)` : ""}.`;
+    els.reborn.textContent = c.born === "sea" ? "Be born on land instead" : "Be born in the sea instead";
+    els.reborn.hidden = !open;
     const points = spent >= BUDGET ? `All ${BUDGET} points spent.` : `${BUDGET - spent} point${BUDGET - spent === 1 ? "" : "s"} left to spend.`;
     const next = whenText(Date.now() / 1000 + rs.next, Date.now() / 1000);
     els.left.textContent = open
