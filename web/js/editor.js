@@ -26,7 +26,7 @@ const bar = (n) => "▮".repeat(n) + "▯".repeat(MAX - n);
 const clone = (c) => ({ seed: c.seed, genes: c.genes ? JSON.parse(JSON.stringify(c.genes)) : null, stats: { ...c.stats } });
 
 /**
- * hooks: { get() -> { seed, genes, stats }, set(next), name(seed) -> string, portrait(on) }.
+ * hooks: { get() -> { seed, genes, stats }, set(next), name(seed) -> string, portrait(on), isMine() -> whether it's the one you keep }.
  * maker: the sheet's owner (one sheet at a time). button: the name button that opens it.
  */
 export function buildEditor({ hooks, maker, button }) {
@@ -114,15 +114,18 @@ export function buildEditor({ hooks, maker, button }) {
       if (Math.random() < 0.3) g.hue = ((g.hue || 0) + 40 + Math.floor(Math.random() * 280)) % 360 || 1;
     })) }, "Mutate");
     const surprise = h("button", { onclick: () => change((c) => ({ seed: roll(), genes: null, stats: c.stats })) }, "A whole new creature");
-    els = { name, info, rows, hue, size, sizeV, statRows, left, undoBtn, plain };
+    // A creature from a link (?seed=…) isn't yours until you say so (or change it).
+    const adopt = h("p", { class: "small adopt" }, "This creature came from a link; yours is kept for you. ",
+      h("button", { onclick: () => change((c) => c) }, "Make this one mine"));
+    els = { name, info, rows, hue, size, sizeV, statRows, left, undoBtn, plain, adopt };
     return [
-      name, info,
+      name, info, adopt,
       h("div", { class: "traits" }, rows[0], h("div", { class: "trait sub" }, h("span", { class: "k" }, ""), hue), ...rows.slice(1),
         h("div", { class: "trait" }, h("span", { class: "k" }, "Size"), size, sizeV)),
       h("div", { class: "stats" }, ...statRows.map((s) => s.row)), left,
       h("div", { class: "row" }, mutate, surprise),
       h("div", { class: "row" }, undoBtn, plain),
-      h("p", { class: "small" }, "Your creature lives on this device. When you're showing yourself on Bluesky, your mutuals see it as it is now."),
+      h("p", { class: "small" }, "Your creature lives on this device and, when you're signed in, in your Bluesky repo, so it follows you to any device. When you're showing yourself, your mutuals see it as it is now."),
     ];
   }
 
@@ -155,6 +158,7 @@ export function buildEditor({ hooks, maker, button }) {
       s.more.disabled = c.stats[s.k] >= MAX || spent >= BUDGET;
     }
     els.left.textContent = spent >= BUDGET ? `All ${BUDGET} points spent. Take one from a stat to give it to another.` : `${BUDGET - spent} point${BUDGET - spent === 1 ? "" : "s"} left to spend.`;
+    els.adopt.hidden = hooks.isMine();
     els.undoBtn.disabled = !undo.length;
     els.plain.disabled = !c.genes;
   }

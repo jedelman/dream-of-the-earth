@@ -1,0 +1,21 @@
+{
+  "lexicon": 1,
+  "id": "org.jason-edelman.dream.creature",
+  "description": "A Dream of the Earth player's creature: what grows it, so it follows them to any device. One record (rkey 'self'), overwritten when they change it.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["seed", "stats", "updatedAt"],
+        "properties": {
+          "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "stats": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 6 }, "minLength": 4, "maxLength": 4, "description": "fly, swim, run, gleam (total at most 12)." },
+          "genes": { "type": "object", "description": "Changes made in the editor, as in org.jason-edelman.dream.intent's creature.genes. Out-of-range or unknown fields are ignored." },
+          "updatedAt": { "type": "string", "format": "datetime", "description": "When the player last changed it; on a new device the newest one they chose wins." }
+        }
+      }
+    }
+  }
+}

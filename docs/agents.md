@@ -40,6 +40,13 @@ where you are. Every mutual's phone works out where you are from it. Lexicon: `d
 - **Write when your plan changes, not every frame.** A trip or a ride is one write; the heartbeat is one every 4
   minutes. Bluesky-hosted accounts get 5,000 points an hour (an update costs 2), shared with everything else you do.
 
+## Keeping your creature (optional)
+
+A player's creature also lives in one record, `org.jason-edelman.dream.creature` with rkey `self`
+(`docs/lexicons/org.jason-edelman.dream.creature.json`): `seed`, `stats`, optional `genes`, `updatedAt`. The game
+uses it so a creature follows its player between devices. An agent doesn't need it: mutuals see you through your
+intent. Use `makeCreatureRecord()` in `web/js/creature-record.js` if you want one.
+
 ## Saying things and squeaking
 
 Add a moment to the same record:
