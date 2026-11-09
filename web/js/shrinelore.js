@@ -4,7 +4,10 @@
 // every phone, holding the same spell. The spell itself is yours alone, for a minute, and changes nothing.
 import { cellsAround, unit, hash2 } from "./plantforms.js";
 
-export const SHRINE = { cell: 1400, radius: 3600, salt: 977, chance: 0.4, max: 24 };
+// Fewer, and farther seen (Jason, 11-09: "we should have fewer shrines and allow fast travel to them"): one cell in
+// about three of a 2.6 km grid, so a couple within walking distance and a dozen or so within 9 km, each a column of
+// light and, far off, a star. Found ones go in your atlas, and you can travel back to them.
+export const SHRINE = { cell: 2600, radius: 9000, salt: 977, chance: 0.35, max: 16 };
 export const SPELL_S = 60, EASE_S = 2.5;
 /** A spell's colour, by what it changes: your shape (pink), the camera (cyan), the world (gold). */
 export const KIND_COLOUR = { shape: 0xff7ad9, camera: 0x7af0ff, world: 0xffd34d };
@@ -77,7 +80,7 @@ export function shrineState(spell, t, sky, usedAt = null) {
   return usedAt !== null && usedAt >= w ? "resting" : "awake";
 }
 
-/** Shrines near a point: [{ key, x, z, h, seed, spell }]. at(cell) -> { p: { x, z }, h } or null (the sea). */
+/** Shrines near a point: [{ key, x, z, h, lat, lon, seed, spell }]. at(cell) -> { p: { x, z }, h } or null (the sea). */
 export function shrineHomes(lat, lon, at) {
   const out = [];
   for (const c of cellsAround(lat, lon, SHRINE.radius, SHRINE.cell, SHRINE.salt)) {
@@ -85,7 +88,7 @@ export function shrineHomes(lat, lon, at) {
     const s = at(c);
     if (!s) continue;
     const g = hash2(c.h, 3);
-    out.push({ key: `shrine${c.h}`, x: s.p.x, z: s.p.z, h: s.h, seed: unit(g, 5), spell: SPELL_IDS[g % SPELL_IDS.length] });
+    out.push({ key: `shrine${c.h}`, x: s.p.x, z: s.p.z, h: s.h, lat: c.lat, lon: c.lon, seed: unit(g, 5), spell: SPELL_IDS[g % SPELL_IDS.length] });
     if (out.length >= SHRINE.max) break;
   }
   return out;

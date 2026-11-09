@@ -6,7 +6,7 @@ import { shrineHomes, SPELLS, KIND_COLOUR, SHRINE } from "./shrinelore.js";
 import { curved, CURVE_GLSL, curveUniform } from "./curvature.js";
 import { layerTransparent } from "./skyshader.js";
 
-const REGROW_M = 600;
+const REGROW_M = 1500;
 const STONE = 0xb7a6d6;
 export const SHRINE_TRIANGLES = 12 * 5 + 8;
 
@@ -27,7 +27,7 @@ function shrineMesh(colour) {
   crystal.scale.set(1, 1.6, 1);
   group.add(crystal);
   // The beam: an open column of light, brightest at the bottom, fading up into the sky.
-  const beamGeo = new THREE.CylinderGeometry(1.6, 1.6, 180, 6, 1, true).translate(0, 90 + 1.6, 0);
+  const beamGeo = new THREE.CylinderGeometry(2.4, 2.4, 420, 6, 1, true).translate(0, 210 + 1.6, 0);
   const beamMat = new THREE.ShaderMaterial({
     uniforms: { uColour: { value: glow }, uPulse: { value: 1 }, uCurve: curveUniform },
     vertexShader: /* glsl */ `
@@ -36,7 +36,7 @@ function shrineMesh(colour) {
       ${CURVE_GLSL}
       varying float vUp;
       void main() {
-        vUp = (position.y - 1.6) / 180.0;
+        vUp = (position.y - 1.6) / 420.0;
         gl_Position = projectionMatrix * viewMatrix * curveWorld(modelMatrix * vec4(position, 1.0));
         #include <logdepthbuf_vertex>
       }`,
@@ -53,8 +53,14 @@ function shrineMesh(colour) {
   const beam = new THREE.Mesh(beamGeo, beamMat);
   beam.frustumCulled = false;
   group.add(beam);
+  // Far off, a star where it stands: a few pixels at any distance, so a shrine kilometres away still shows.
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 14, 0], 3));
+  const star = new THREE.Points(starGeo, curved(new THREE.PointsMaterial({ color: glow, size: 6, sizeAttenuation: false, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }), "-shrine-star"));
+  star.frustumCulled = false;
+  group.add(star);
   layerTransparent(group);
-  return { group, crystal, beam, beamMat, stone, glow, state: "awake" };
+  return { group, crystal, beam, beamMat, stone, glow, star, state: "awake" };
 }
 /** How a shrine looks: awake (its colour, glowing), resting (dim: you've had its gift this waking), asleep (dark). */
 function showState(m, state) {
@@ -65,7 +71,7 @@ function showState(m, state) {
   else if (state === "resting") { mat.color.copy(m.glow).lerp(grey, 0.5); mat.emissive.copy(m.glow).multiplyScalar(0.18); }
   else { mat.color.copy(m.glow); mat.emissive.copy(m.glow).multiplyScalar(0.7); }
 }
-const BEAM = { awake: 1, resting: 0.45, asleep: 0.12 };
+const BEAM = { awake: 1, resting: 0.5, asleep: 0.3 }; // asleep it's dim, but you can still find it from afar
 
 /** terrain: heights. Returns { group, update(x, z, t), near(x, z, r), all(), entryOf(object) }. */
 export function buildShrines(frame, terrain) {
@@ -108,13 +114,17 @@ export function buildShrines(frame, terrain) {
         mesh.crystal.rotation.y = awake ? t * 0.9 + home.seed * 6 : home.seed * 6; // asleep, it's still
         mesh.crystal.position.y = 5 + (awake ? Math.sin(t * 1.3 + home.seed * 9) * 0.35 : -0.6);
         mesh.beamMat.uniforms.uPulse.value = (0.75 + 0.25 * Math.sin(t * 1.7 + home.seed * 11)) * BEAM[mesh.state];
+        // The star only far off (up close the shrine speaks for itself); dimmer while it sleeps.
+        const d = Math.hypot(home.x - x, home.z - z);
+        mesh.star.visible = d > 900;
+        mesh.star.material.opacity = (mesh.state === "asleep" ? 0.6 : 1) * Math.min(1, (d - 900) / 600);
       }
     },
-    /** Shrines within r of (x, z): [{ key, spell, state, x, y, z }] (y: the crystal). */
+    /** Shrines within r of (x, z): [{ key, spell, state, x, y, z, lat, lon }] (y: the crystal). */
     near(x, z, r) {
       const out = [];
       for (const { home, mesh } of live.values()) {
-        if (Math.hypot(home.x - x, home.z - z) < r) out.push({ key: home.key, spell: home.spell, state: mesh.state, x: home.x, y: mesh.group.position.y + mesh.crystal.position.y, z: home.z });
+        if (Math.hypot(home.x - x, home.z - z) < r) out.push({ key: home.key, spell: home.spell, state: mesh.state, x: home.x, y: mesh.group.position.y + mesh.crystal.position.y, z: home.z, lat: home.lat, lon: home.lon });
       }
       return out;
     },
@@ -127,7 +137,7 @@ export function buildShrines(frame, terrain) {
       return null;
     },
     /** The stone parts, for a tap to hit (not the beam, which would catch every tap along the column). */
-    pickables() { return [...live.values()].flatMap(({ mesh }) => mesh.group.children.filter((c) => c !== mesh.beam)); },
+    pickables() { return [...live.values()].flatMap(({ mesh }) => mesh.group.children.filter((c) => c !== mesh.beam && c !== mesh.star)); },
     get count() { return live.size; },
     radius: SHRINE.radius,
   };

@@ -29,6 +29,7 @@ import { account, isReturning, takeReturn } from "./account.js";
 import { buildMaker } from "./maker.js";
 import { buildEditor } from "./editor.js";
 import { buildBag } from "./bag.js";
+import { buildAtlas } from "./atlas.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt } from "./inventory.js";
 import { whenText } from "./moon.js";
 import { buildShrines } from "./shrines.js";
@@ -302,6 +303,30 @@ function shrineTick() {
   world.shrines.setStates(shrineStateOf);
 }
 const capital = (s) => s[0].toUpperCase() + s.slice(1);
+// ---- Your atlas: shrines you've found, to travel back to (11-09). Kept on the device: a list of shrines is a map of
+// where you've been, and Jason chose to keep the repo's record of that small (ley nodes only, when they come). ----
+const ATLAS_KEY = "dream.atlas";
+const found = (() => { try { const v = JSON.parse(localStorage.getItem(ATLAS_KEY) || "{}"); return v && typeof v.shrines === "object" ? v.shrines : {}; } catch { return {}; } })();
+/** Walking up to a shrine puts it in your atlas. */
+function discoverShrines() {
+  if (!world) return;
+  for (const s of world.shrines.near(state.pos.x, state.pos.z, RANGE.shrine + 6)) {
+    if (found[s.key]) continue;
+    found[s.key] = { lat: s.lat, lon: s.lon, spell: s.spell, at: Math.round(realNow()) };
+    try { localStorage.setItem(ATLAS_KEY, JSON.stringify({ shrines: found })); } catch { /* private mode */ }
+    logLine(`You've found ${SPELLS[s.spell].name}. You can travel back to it from your atlas.`, "shrine");
+    atlasView?.refresh(Object.keys(found).length);
+    globe.setShrines(foundList());
+  }
+}
+const foundList = () => Object.entries(found).map(([key, f]) => ({ key, ...f, colour: KIND_COLOUR[SPELLS[f.spell]?.kind] ?? 0xffffff })).filter((f) => SPELLS[f.spell]);
+/** Off to a shrine you've found: arrive 22 m south of it, facing it. */
+function travelToShrine(key) {
+  const f = found[key];
+  if (!f) return;
+  teleport({ name: SPELLS[f.spell].name, lat: f.lat - 22 / 111320, lon: f.lon, alt: 2, heading: 0, zoom: ZOOM_HOME });
+}
+let atlasView = null;
 function castSpell(sh) {
   const def = SPELLS[sh.spell], cur = spells[def.kind];
   // Asleep, it does nothing; resting, it has given you its gift this waking.
@@ -797,6 +822,7 @@ function onTap(clientX, clientY) {
     const r = canvas.getBoundingClientRect(), hit = globe.pick(clientX - r.left, clientY - r.top, r.width, r.height);
     if (hit?.cairn) travelTo(hit.cairn);
     else if (hit?.mutual) travelToMutual(hit.mutual.did);
+    else if (hit?.shrine) travelToShrine(hit.shrine.key);
     return;
   }
   if (!world || state.ride || zoom > GLOBE_AT || rebuilding) return;
@@ -1324,6 +1350,23 @@ const bag = buildBag({
 });
 bagView = bag;
 bag.refresh();
+atlasView = buildAtlas({
+  maker,
+  button: document.getElementById("atlas"),
+  hooks: {
+    shrines: () => {
+      const ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn;
+      return foundList().map((f) => {
+        const st = shrineClock.state ? (WAKES[f.spell].test(shrineClock.state) ? (shrineUsed[f.key] != null && shrineStateOf({ key: f.key, spell: f.spell }) === "resting" ? "resting" : "awake") : `asleep, wakes ${WAKES[f.spell].when}`) : "";
+        return { key: f.key, name: capital(SPELLS[f.spell].name), colour: `#${new THREE.Color(f.colour).getHexString()}`, state: st, metres: metresBetween(ll.lat, ll.lon, f.lat, f.lon) };
+      }).sort((a, b) => a.metres - b.metres);
+    },
+    travel: travelToShrine,
+    globe: () => { zoom = 16e6; logLine("The whole Earth. Tap a shrine's dot to go there.", "note"); },
+  },
+});
+atlasView.refresh(Object.keys(found).length);
+globe.setShrines(foundList());
 // A moonseed falls for you at each new moon, once (checked once a second).
 function seedTick() {
   const r = moonseedFor(inv, realNow());
@@ -1751,6 +1794,7 @@ function frame() {
   // Plants and insects around you; too small to matter from far up.
   if (world && !state.ride) {
     world.shrines.update(state.pos.x, state.pos.z, t);
+    discoverShrines();
     if (t - shrineTickAt > 5) { shrineTickAt = t; shrineTick(); }
     world.shrines.group.visible = zoom < 60000;
     const life = zoom < 6000;
@@ -1869,7 +1913,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

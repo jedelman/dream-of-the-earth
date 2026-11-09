@@ -143,13 +143,32 @@ export function buildGlobe() {
     flockGeo.setDrawRange(0, flockList.length);
     flockGeo.attributes.position.needsUpdate = true;
   }
-  /** What's nearest a point on screen (x, y in 0..width, 0..height), within maxPx, on the near side: { cairn } or { mutual }, or null. */
+  // Shrines you've found: dots in the colour of what they do.
+  const SHRINE_MAX = 128, shrinePos = new Float32Array(SHRINE_MAX * 3), shrineCol = new Float32Array(SHRINE_MAX * 4);
+  const shrineGeo = new THREE.BufferGeometry();
+  shrineGeo.setAttribute("position", new THREE.BufferAttribute(shrinePos, 3));
+  shrineGeo.setAttribute("color", new THREE.BufferAttribute(shrineCol, 4));
+  shrineGeo.setDrawRange(0, 0);
+  const shrineDots = new THREE.Points(shrineGeo, new THREE.PointsMaterial({ size: 6, sizeAttenuation: false, vertexColors: true, depthTest: false, transparent: true }));
+  shrineDots.renderOrder = 9;
+  shrineDots.frustumCulled = false;
+  scene.add(shrineDots);
+  let shrineList = []; // [{ s, v, color }]
+  /** list: [{ lat, lon, colour (hex), ... }] */
+  function setShrines(list) {
+    shrineList = list.slice(0, SHRINE_MAX).map((s) => ({ s, v: new THREE.Vector3(...latLonToVec(s.lat, s.lon)), color: new THREE.Color(s.colour) }));
+    shrineList.forEach((m, k) => shrinePos.set([m.v.x * LIFT, m.v.y * LIFT, m.v.z * LIFT], k * 3));
+    shrineGeo.setDrawRange(0, shrineList.length);
+    shrineGeo.attributes.position.needsUpdate = true;
+  }
+  /** What's nearest a point on screen (x, y in 0..width, 0..height), within maxPx, on the near side: { cairn }, { mutual } or { shrine }, or null. */
   function pick(x, y, width, height, maxPx = 28) {
     let best = null, bestD = maxPx;
     const p = new THREE.Vector3();
     const near = (v) => { p.copy(v).multiplyScalar(LIFT).project(camera); return Math.hypot(((p.x + 1) / 2) * width - x, ((1 - p.y) / 2) * height - y); };
     for (const m of markList) { if (!facing(m.v)) continue; const d = near(m.v); if (d < bestD) { best = { cairn: m.a }; bestD = d; } }
     for (const f of flockList) { if (!facing(f.v)) continue; const d = near(f.v); if (d < bestD) { best = { mutual: f.m }; bestD = d; } }
+    for (const m of shrineList) { if (!facing(m.v)) continue; const d = near(m.v); if (d < bestD) { best = { shrine: m.s }; bestD = d; } }
     return best;
   }
 
@@ -215,6 +234,8 @@ export function buildGlobe() {
     if (markList.length) markGeo.attributes.color.needsUpdate = true;
     flockList.forEach((f, k) => flockCol.set([0.62, 0.94, 1, facing(f.v) ? 0.85 + 0.15 * Math.sin(t * 4 + k) : 0], k * 4));
     if (flockList.length) flockGeo.attributes.color.needsUpdate = true;
+    shrineList.forEach((m, k) => shrineCol.set([m.color.r, m.color.g, m.color.b, facing(m.v) ? 0.9 : 0], k * 4));
+    if (shrineList.length) shrineGeo.attributes.color.needsUpdate = true;
     // Fewer, fainter lines the further out you are.
     const out = THREE.MathUtils.smoothstep(altitude, 2.5e6, 9e6);
     for (const m of leyMeshes) {
@@ -238,5 +259,5 @@ export function buildGlobe() {
     camera.updateProjectionMatrix();
   }
 
-  return { scene, camera, update, load, setMarks, setFlock, pick };
+  return { scene, camera, update, load, setMarks, setFlock, setShrines, pick };
 }

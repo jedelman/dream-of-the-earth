@@ -377,6 +377,19 @@ worldview!"
   sea and sparkles included, drawn only while one holds. The sky pass hands it linear colour; without that the first
   try came out washed out, encoded twice.
 
+### Fewer shrines, and travel back to the ones you've found (11-09)
+Jason: "Whoa yes brilliant (we should have fewer shrines and allow fast travel to them)".
+- **Fewer:** one cell in about three of a 2.6 km grid (was 0.4 of 1.4 km): about 2 within walking distance (3.6 km)
+  and a dozen or so within 9 km. Their columns are taller (420 m), and past 900 m each shows a star in its colour, a
+  few pixels at any distance, so they read from kilometres off (asleep, dimmer but still there).
+- **Found:** walk up to one (within reach) and it goes in your **atlas**, with a line in the log.
+- **Travel:** the ATLAS button lists the shrines you've found, nearest first, with whether each is awake (or when it
+  wakes) and Go; found shrines are dots on the globe too, and tapping one goes there. You arrive 22 m south of it,
+  facing it. This is the first of the plan's "fast travel only to places you've been"; ley nodes join the atlas next,
+  and the landmarks menu will fold into it.
+- **Kept on the device,** not your repo: a list of shrines is a map of where you've been, and Jason kept the repo's
+  record of that small (touched ley nodes only).
+
 ### The shrines keep the astrological clock (11-09)
 Asked whether shrines should wake to moon phases or signs, Jason: "Yes! (｡•̀ᴗ-)✧🔮". It also does the plan's "shrines
 need to recharge".
