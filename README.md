@@ -46,6 +46,9 @@ its end. Shift or S steps off anywhere. Where two highways cross, A/D hops onto 
 ring of standing stones under its pillar of light: step in and press E, and the light lifts you, wings or not, to
 choose a lane (A/D, then E or W; Space or Shift lets go).
 
+**A controller** works too (any pad in the browser's standard mapping): the left stick moves, A jumps, B crouches,
+X touches what glints, Y takes a picture, and the D-pad walks the menus (A presses, B closes).
+
 URL parameters make any spawn reproducible: `?seed=42` (creature, stats and spawn), `&stats=6,2,2,2`
 (climb, swim, run, gleam, perception; 12 points, 0–6 each; the old four still read), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north), `&alt=` (metres up), `&zoom=` (camera distance in
 metres, up to 40,000,000), `&ride=N` (start out riding highway N, 0–723), and `&detail=` (0.25–1: pin how far
