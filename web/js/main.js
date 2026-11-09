@@ -27,6 +27,8 @@ import { realmLayout, floorAt, lowest, REALMS, GATHER_M, REALM_ALT, TURN } from 
 import { buildRealmFx, FOG as REALM_FOG } from "./realmfx.js";
 import { rhizomeOf, viewOf, canSlot, canUnslot, effectsOf, cleanFilled, POWERS, GEM_OF as GEM_OF_COLOUR } from "./rhizome.js";
 import { buildRhizomeView, effectsWords } from "./rhizomeview.js";
+import { spotUrl, defaultText, makeShotPost, postWebUrl, IMAGE_MAX_BYTES } from "./share.js";
+import { buildShareSheet } from "./sharesheet.js";
 import { makeIntent, parseIntent, driftOf, whereAt, fresh, INTENT_NSID, HEARTBEAT_S, STALE_S, MOMENT_S } from "./intents.js";
 import { listen } from "./presence.js";
 import { buildFlock } from "./flock.js";
@@ -596,6 +598,7 @@ addEventListener("keydown", (e) => {
   if (["Space", "ArrowUp", "ArrowDown"].includes(e.code)) e.preventDefault();
   if (e.code === "KeyM" && !e.repeat) logLine(sound.toggle() ? "Sound off." : "Sound on.", "note");
   if (e.code === "KeyE" && !e.repeat) interact();
+  if (e.code === "KeyP" && !e.repeat) takePicture();
   if ((e.code === "Enter" || e.code === "NumpadEnter") && !e.repeat && document.activeElement?.tagName !== "BUTTON" && document.activeElement?.tagName !== "SELECT") { e.preventDefault(); openSay(); }
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
@@ -1822,7 +1825,7 @@ account.onChange(async (did) => {
   if (did) {
     const name = (await handlesOf([did])).get(did) || null;
     setViewer(did, name);
-    [share.can, keep.can, carry.can, mapping.can, flying.can] = await Promise.all([account.canShare(), account.canKeep(), account.canCarry(), account.canMap(), account.canFly()]);
+    [share.can, keep.can, carry.can, mapping.can, flying.can, posting.can] = await Promise.all([account.canShare(), account.canKeep(), account.canCarry(), account.canMap(), account.canFly(), account.canPost()]);
     maker.setSharing({ on: share.on, can: share.can, keep: keep.can && carry.can && mapping.can });
     syncCreature();
     syncInventory();
@@ -2152,6 +2155,76 @@ function zoomLine() {
   return zoom > GLOBE_AT ? `ORBIT ${d} KM UP` : `CAMERA ${d} KM AWAY`;
 }
 
+// ---- Sharing a picture to Bluesky (Jason, 11-09: "Can we add a 'share screenshot to bluesky' button?") ----
+let snapWanted = null;
+const posting = { can: false };
+/** The frame just drawn, made four times bigger with hard pixels (the dream's own 224 lines, sharp). */
+function grabPicture() {
+  const k = 4, c = document.createElement("canvas");
+  c.width = canvas.width * k; c.height = canvas.height * k;
+  const g = c.getContext("2d");
+  g.imageSmoothingEnabled = false;
+  g.drawImage(canvas, 0, 0, c.width, c.height);
+  return c;
+}
+/** A picture as a file Bluesky will take (about a megabyte at most): PNG if it fits, else JPEG. */
+async function pictureFile(c) {
+  const as = (type, q) => new Promise((res) => c.toBlob(res, type, q));
+  let blob = await as("image/png");
+  for (const q of [0.92, 0.85, 0.75]) { if (blob.size <= IMAGE_MAX_BYTES) break; blob = await as("image/jpeg", q); }
+  return { blob, width: c.width, height: c.height };
+}
+/** Where you are, in a few words, for the caption and the description. */
+function hereWords() {
+  if (state.realm) return `in ${REALMS[state.realm.kind].name}`;
+  if (state.ride) return "riding a ley line";
+  if (!world) return "somewhere on the Earth";
+  const ll = world.frame.toLatLon(state.pos.x, state.pos.z), ground = world.terrain.heightAt(state.pos.x, state.pos.z);
+  if (ground < 0) return state.pos.y < -3 ? `under the sea, ${Math.round(-state.pos.y)} m down` : state.mode === "air" ? "over the sea" : "at sea";
+  const biome = biomeFor(koppenAt(ll.lat, ll.lon), world.terrain.reliefAt(state.pos.x, state.pos.z), ll.lat, ground).toLowerCase();
+  return state.mode === "air" ? `over the ${biome}` : `in the ${biome}`;
+}
+/** When it is, by the sun where you are. */
+function sunWords() {
+  const a = sunState?.altitude ?? 30, ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn;
+  const solar = ((new Date(realNow() * 1000).getUTCHours() + new Date(realNow() * 1000).getUTCMinutes() / 60 + ll.lon / 15) % 24 + 24) % 24;
+  if (a < -6) return "at night";
+  if (a < 6) return solar < 12 ? "at dawn" : "at dusk";
+  if (a < 30) return solar < 12 ? "in the morning" : "in the afternoon";
+  return "in the full day";
+}
+/** The spot the picture was taken at, as a link that opens the game there. */
+function hereUrl() {
+  const sh = state.realm?.shrine;
+  const p = sh ? { x: sh.x, z: sh.z - 22 } : state.pos, ll = world ? world.frame.toLatLon(p.x, p.z) : spawn;
+  const ground = world ? Math.max(0, world.terrain.heightAt(p.x, p.z)) : 0;
+  return spotUrl({ lat: ll.lat, lon: ll.lon, heading: ((((-state.heading * 180) / Math.PI) % 360) + 360) % 360, alt: sh ? 2 : state.pos.y - ground, zoom: Math.min(zoom, zoomMax()) });
+}
+const shareSheet = buildShareSheet({
+  maker,
+  button: document.getElementById("share"),
+  hooks: {
+    canPost: () => (!account.did ? "signin" : posting.can ? "yes" : "again"),
+    signIn: () => maker.openSignIn(),
+    post: async ({ blob, text, alt, width, height }) => {
+      const ref = await account.uploadImage(blob);
+      const r = await account.post(makeShotPost({ text, alt, url: hereUrl(), blob: ref, width, height }));
+      logLine("Posted to Bluesky.", "note");
+      return postWebUrl(r.uri, people.handle || account.did);
+    },
+  },
+});
+/** Take a picture of this moment and open the SHARE sheet with it. */
+function takePicture() {
+  if (maker.open === "share") { maker.close(); return; }
+  snapWanted = async (c) => {
+    const shot = await pictureFile(c), where = hereWords(), when = sunWords();
+    sound.chime();
+    shareSheet.open(shot, defaultText({ name: myName, where, when }), `A pixel-art picture from Dream of the Earth, an open world on the real Earth: ${myName}, a small creature, ${where}, ${when}.`);
+  };
+}
+document.getElementById("share").addEventListener("click", takePicture);
+
 // ---- Loop ----
 let sunState = null, lastSun = -Infinity, lastHud = -Infinity, sunAheadWas = false;
 const t0 = performance.now();
@@ -2281,6 +2354,8 @@ function frame() {
     if (worldview.active) { skyPass.render(renderer, scene, camera, worldview.target(renderer)); worldview.render(renderer, t); }
     else skyPass.render(renderer, scene, camera);
   }
+  // A picture asked for: taken now, before the frame is shown and its buffer cleared.
+  if (snapWanted) { const f = snapWanted; snapWanted = null; f(grabPicture()); }
   window.__dream.frames++;
   if (!film?.manual) requestAnimationFrame(frame);
 }
@@ -2347,7 +2422,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, inv: () => inv, rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, inv: () => inv, takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

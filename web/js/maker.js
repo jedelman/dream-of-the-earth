@@ -152,6 +152,8 @@ export function buildMaker(hooks) {
   addEventListener("keydown", (e) => { if (e.key === "Escape" && open) close(); });
 
   return {
+    /** The sign-in sheet (to sign in, or again for more permissions). */
+    openSignIn: () => signInSheet(person.handle || ""),
     /** Who's looking: { did, handle, signedIn }. */
     setPerson(p) {
       person = p;

@@ -41,6 +41,12 @@
   #me.on { color: var(--gold); }
   #mine { color: #ffb8de; border-color: rgba(255, 184, 222, .75); }
   #atlas { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #fff1c4; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
+  #share { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #fff4c4; background: rgba(40, 24, 60, .65); border: 1px solid rgba(255, 228, 160, .75); padding: 4px 8px; cursor: pointer; }
+  .sheet.share img.shot { width: 100%; height: auto; image-rendering: pixelated; border: 1px solid rgba(214, 205, 255, .4); margin: 6px 0; }
+  .sheet.share textarea { width: 100%; box-sizing: border-box; font: 13px/1.4 inherit; background: rgba(10, 6, 24, .7); color: #f3efff; border: 1px solid rgba(214, 205, 255, .4); padding: 6px; resize: vertical; }
+  .sheet.share label.words { display: block; margin-top: 4px; } .sheet.share .count { float: right; font-size: 11px; opacity: .7; } .sheet.share .count.over { color: #ff9a9a; opacity: 1; }
+  .sheet.share details { margin: 6px 0; } .sheet.share summary { cursor: pointer; font-size: 12px; }
+  .sheet.share a.button { display: inline-block; padding: 6px 10px; border: 1px solid rgba(214, 205, 255, .6); color: #e6e1ff; text-decoration: none; }
   #rhizome { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #e6e1ff; background: rgba(20, 12, 40, .6); border: 1px solid rgba(214, 205, 255, .7); padding: 4px 8px; cursor: pointer; }
   .sheet.rhizome .rhizome-map { width: 100%; max-height: 52vh; display: block; margin: 6px auto; background: radial-gradient(circle, rgba(60, 40, 100, .35), rgba(20, 12, 40, 0) 70%); }
   .sheet.rhizome .fog { fill: #b9b0e0; opacity: .18; }
@@ -155,6 +161,7 @@
 <button id="mine" aria-haspopup="dialog" aria-expanded="false" aria-label="Your creature">YOUR CREATURE ▾</button>
 <button id="bag" aria-haspopup="dialog" aria-expanded="false" aria-label="What you carry">BAG ▾</button>
   <button id="rhizome" aria-haspopup="dialog" aria-expanded="false" aria-label="Your rhizome">RHIZOME ▾</button>
+  <button id="share" aria-haspopup="dialog" aria-expanded="false" aria-label="Share a picture of this moment" title="Share a picture of this moment (P)">SHARE ▾</button>
 <button id="atlas" aria-haspopup="dialog" aria-expanded="false" aria-label="Places you've been">ATLAS ▾</button>
 <button id="me" aria-haspopup="dialog" aria-expanded="false">BLUESKY ▾</button>
 <button id="cairns" aria-haspopup="dialog" aria-expanded="false" hidden>CAIRNS ▾</button>

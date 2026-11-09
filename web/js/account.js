@@ -15,7 +15,10 @@ export { PIGEON_NSID };
 // Six collections in your repo (the cairns you leave, your creature, what you carry, your atlas, the pigeons you send,
 // your one current intent), and reading your own mute list so muted accounts stay out of your world. Nothing else.
 const MUTES = "rpc:app.bsky.graph.getMutes?aud=did:web:api.bsky.app%23bsky_appview";
-export const SCOPE = `atproto repo:${NSID} repo:${CREATURE_NSID} repo:${INVENTORY_NSID} repo:${ATLAS_NSID} repo:${PIGEON_NSID} repo:${INTENT_NSID} ${MUTES}`;
+// Sharing a screenshot (11-09, Jason: "Can we add a 'share screenshot to bluesky' button?"): create posts only (never
+// edit or delete them) and upload images.
+export const POST_SCOPE = "repo:app.bsky.feed.post?action=create", IMAGE_SCOPE = "blob:image/*";
+export const SCOPE = `atproto repo:${NSID} repo:${CREATURE_NSID} repo:${INVENTORY_NSID} repo:${ATLAS_NSID} repo:${PIGEON_NSID} repo:${INTENT_NSID} ${POST_SCOPE} ${IMAGE_SCOPE} ${MUTES}`;
 const HANDLE_RESOLVER = "https://bsky.social";
 const KEY = "dream.did", RETURN = "dream.return";
 
@@ -95,6 +98,18 @@ export const account = {
   putCreature: (record) => account.putOwn(CREATURE_NSID, CREATURE_RKEY, record),
   getInventory: () => account.getOwn(INVENTORY_NSID, INVENTORY_RKEY),
   putInventory: (record) => account.putOwn(INVENTORY_NSID, INVENTORY_RKEY, record),
+  /** Whether this sign-in covers posting a screenshot (one from before sharing doesn't). */
+  canPost: async () => (await covers(POST_SCOPE)) && (await covers(IMAGE_SCOPE)),
+  /** An image up to your PDS: its blob ref, for a post to embed. */
+  async uploadImage(blob) {
+    if (!session) throw new Error("not signed in");
+    const r = await session.fetchHandler("/xrpc/com.atproto.repo.uploadBlob", { method: "POST", headers: { "content-type": blob.type }, body: blob });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.message || j.error || `${r.status}`);
+    return j.blob;
+  },
+  /** A Bluesky post from you: { uri, cid }. */
+  post: (record) => xrpc("com.atproto.repo.createRecord", { repo: session.did, collection: "app.bsky.feed.post", record }),
   /** Whether this sign-in covers sending pigeons (one from before moonseeds doesn't). */
   canFly: () => covers(`repo:${PIGEON_NSID}`),
   /** A pigeon off to a mutual: a new record in your repo. */
