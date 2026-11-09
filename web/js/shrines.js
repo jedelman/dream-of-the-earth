@@ -54,8 +54,18 @@ function shrineMesh(colour) {
   beam.frustumCulled = false;
   group.add(beam);
   layerTransparent(group);
-  return { group, crystal, beam, beamMat, stone };
+  return { group, crystal, beam, beamMat, stone, glow, state: "awake" };
 }
+/** How a shrine looks: awake (its colour, glowing), resting (dim: you've had its gift this waking), asleep (dark). */
+function showState(m, state) {
+  if (m.state === state) return;
+  m.state = state;
+  const mat = m.crystal.material, grey = new THREE.Color(0x4a4360);
+  if (state === "asleep") { mat.color.copy(grey); mat.emissive.setRGB(0.02, 0.02, 0.04); }
+  else if (state === "resting") { mat.color.copy(m.glow).lerp(grey, 0.5); mat.emissive.copy(m.glow).multiplyScalar(0.18); }
+  else { mat.color.copy(m.glow); mat.emissive.copy(m.glow).multiplyScalar(0.7); }
+}
+const BEAM = { awake: 1, resting: 0.45, asleep: 0.12 };
 
 /** terrain: heights. Returns { group, update(x, z, t), near(x, z, r), all(), entryOf(object) }. */
 export function buildShrines(frame, terrain) {
@@ -94,19 +104,22 @@ export function buildShrines(frame, terrain) {
     update(x, z, t) {
       if (!centre || Math.hypot(x - centre.x, z - centre.z) > REGROW_M) settle(x, z);
       for (const { home, mesh } of live.values()) {
-        mesh.crystal.rotation.y = t * 0.9 + home.seed * 6;
-        mesh.crystal.position.y = 5 + Math.sin(t * 1.3 + home.seed * 9) * 0.35;
-        mesh.beamMat.uniforms.uPulse.value = 0.75 + 0.25 * Math.sin(t * 1.7 + home.seed * 11);
+        const awake = mesh.state !== "asleep";
+        mesh.crystal.rotation.y = awake ? t * 0.9 + home.seed * 6 : home.seed * 6; // asleep, it's still
+        mesh.crystal.position.y = 5 + (awake ? Math.sin(t * 1.3 + home.seed * 9) * 0.35 : -0.6);
+        mesh.beamMat.uniforms.uPulse.value = (0.75 + 0.25 * Math.sin(t * 1.7 + home.seed * 11)) * BEAM[mesh.state];
       }
     },
-    /** Shrines within r of (x, z): [{ key, spell, x, y, z }] (y: the crystal). */
+    /** Shrines within r of (x, z): [{ key, spell, state, x, y, z }] (y: the crystal). */
     near(x, z, r) {
       const out = [];
       for (const { home, mesh } of live.values()) {
-        if (Math.hypot(home.x - x, home.z - z) < r) out.push({ key: home.key, spell: home.spell, x: home.x, y: mesh.group.position.y + mesh.crystal.position.y, z: home.z });
+        if (Math.hypot(home.x - x, home.z - z) < r) out.push({ key: home.key, spell: home.spell, state: mesh.state, x: home.x, y: mesh.group.position.y + mesh.crystal.position.y, z: home.z });
       }
       return out;
     },
+    /** stateOf(home) -> "awake" | "resting" | "asleep", for every shrine standing (main.js keeps the clock). */
+    setStates(stateOf) { for (const { home, mesh } of live.values()) showState(mesh, stateOf(home)); },
     all() { return this.near(0, 0, Infinity); },
     /** The shrine a tapped mesh belongs to, or null. */
     entryOf(object) {

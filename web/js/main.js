@@ -32,9 +32,9 @@ import { buildBag } from "./bag.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt } from "./inventory.js";
 import { whenText } from "./moon.js";
 import { buildShrines } from "./shrines.js";
-import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf } from "./shrinelore.js";
+import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf, WAKES, skyState, wokeAt } from "./shrinelore.js";
 import { buildWorldview } from "./worldview.js";
-import { skyClock, horizontal, zodiac, PLANETS, GLYPH } from "./astro.js";
+import { skyClock, horizontal, zodiac, PLANETS, GLYPH, moonEcliptic, planetEcliptic, sunLongitude } from "./astro.js";
 import { makeCreatureRecord, parseCreatureRecord, reconcile } from "./creature-record.js";
 import { sound } from "./sound.js";
 import { logLine } from "./eventlog.js";
@@ -192,7 +192,7 @@ function tooSteep() {
 }
 // Shrines' spells (shrinelore.js): a minute of another shape, another camera, another world. Each { id, t0, endAt }.
 const spells = { shape: null, camera: null, world: null };
-let spellZoom = 1, spellLegs = 1, masks = 0;
+let spellZoom = 1, spellLegs = 1, masks = 0, shrineTickAt = -Infinity;
 function fadeCreature(o) {
   if (Math.abs(o - creatureOpacity) < 0.004) return;
   const was = creatureOpacity < 1, now = o < 0.999;
@@ -269,8 +269,50 @@ function endSpell(kind, quiet = false) {
   if (!quiet && s.endAt === null) logLine(LIFTED[kind], "shrine"); // ended by you, it was already said
 }
 /** A shrine touched: its spell takes you (the same again renews it; another of its kind replaces it). */
+// ---- The shrines keep the astrological clock (shrinelore.js): asleep, awake, or resting for you ----
+const SHRINES_KEY = "dream.shrines";
+/** When you last took each shrine's gift (s), on this device; forgotten after two moons. */
+const shrineUsed = (() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(SHRINES_KEY) || "{}") || {}, old = Date.now() / 1000 - 60 * 86400;
+    for (const k of Object.keys(v)) if (!(v[k] > old)) delete v[k];
+    return v;
+  } catch { return {}; }
+})();
+const shrineSky = (ll) => ({
+  moonLon: (t) => moonEcliptic(t).lon, sunLon: sunLongitude, mercuryLon: (t) => planetEcliptic("mercury", t).lon,
+  moonAlt: (t) => horizontal(moonEcliptic(t), t, ll.lat, ll.lon).altitude, sunAlt: (t) => sunPosition(new Date(t * 1000), ll.lat, ll.lon).altitude,
+});
+let shrineClock = { t: 0, sky: null, state: null };
+const wokeCache = {}; // spell -> { woke (s), until (s) }: when its present waking began, worked out at most every 10 minutes
+function shrineStateOf(home) {
+  if (!shrineClock.state || home.key === "test") return "awake";
+  if (!WAKES[home.spell].test(shrineClock.state)) { delete wokeCache[home.spell]; return "asleep"; }
+  const used = shrineUsed[home.key];
+  if (used == null) return "awake";
+  let c = wokeCache[home.spell];
+  if (!c || c.until < shrineClock.t) c = wokeCache[home.spell] = { woke: wokeAt(home.spell, shrineClock.t, shrineClock.sky) ?? Infinity, until: shrineClock.t + 600 };
+  return used >= c.woke ? "resting" : "awake";
+}
+/** Every few seconds: the sky where you are, and every shrine around shown asleep, awake or resting. */
+function shrineTick() {
+  if (!world) return;
+  const ll = world.frame.toLatLon(state.pos.x, state.pos.z), sky = shrineSky(ll), t = realNow();
+  shrineClock = { t, sky, state: skyState(t, sky) };
+  world.shrines.setStates(shrineStateOf);
+}
+const capital = (s) => s[0].toUpperCase() + s.slice(1);
 function castSpell(sh) {
   const def = SPELLS[sh.spell], cur = spells[def.kind];
+  // Asleep, it does nothing; resting, it has given you its gift this waking.
+  const st = shrineStateOf(sh);
+  if (st === "asleep") { logLine(`${capital(def.name)} sleeps. It wakes ${WAKES[sh.spell].when}.`, "shrine"); return; }
+  if (st === "resting") { logLine(`${capital(def.name)} rests: it has given you its gift this waking. It wakes again ${WAKES[sh.spell].when}.`, "shrine"); return; }
+  if (sh.key !== "test") {
+    shrineUsed[sh.key] = realNow();
+    try { localStorage.setItem(SHRINES_KEY, JSON.stringify(shrineUsed)); } catch { /* private mode */ }
+    if (world) world.shrines.setStates(shrineStateOf);
+  }
   if (cur && cur.id === sh.spell && cur.endAt === null) {
     if (sh.spell !== "turning" && sh.spell !== "days") cur.t0 = Math.max(cur.t0, simT - EASE_S); // another minute, at full strength
   } else {
@@ -964,7 +1006,7 @@ function inReach() {
     if (d < RANGE.butterfly) add({ kind: "butterfly", key: `b${b.seed}`, seed: b.seed, k: b.k, hue: b.hue, d, range: RANGE.butterfly }, b.x, b.z);
   }
   for (const s of world.shrines.near(p.x, p.z, RANGE.shrine)) {
-    add({ kind: "shrine", key: s.key, name: SPELLS[s.spell].name, d: Math.hypot(s.x - p.x, s.z - p.z), range: RANGE.shrine, s }, s.x, s.z);
+    add({ kind: "shrine", key: s.key, name: SPELLS[s.spell].name, state: s.state, d: Math.hypot(s.x - p.x, s.z - p.z), range: RANGE.shrine, s }, s.x, s.z);
   }
   for (const c of world.critters.near(p.x, p.z, RANGE.critter + 4)) {
     const d = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z);
@@ -1709,6 +1751,7 @@ function frame() {
   // Plants and insects around you; too small to matter from far up.
   if (world && !state.ride) {
     world.shrines.update(state.pos.x, state.pos.z, t);
+    if (t - shrineTickAt > 5) { shrineTickAt = t; shrineTick(); }
     world.shrines.group.visible = zoom < 60000;
     const life = zoom < 6000;
     world.plants.group.visible = world.insects.group.visible = world.critters.group.visible = life;

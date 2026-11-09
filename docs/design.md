@@ -377,6 +377,20 @@ worldview!"
   sea and sparkles included, drawn only while one holds. The sky pass hands it linear colour; without that the first
   try came out washed out, encoded twice.
 
+### The shrines keep the astrological clock (11-09)
+Asked whether shrines should wake to moon phases or signs, Jason: "Yes! (｡•̀ᴗ-)✧🔮". It also does the plan's "shrines
+need to recharge".
+- **Each wakes to part of the real sky** (`WAKES` in `shrinelore.js`), matched to its spell: your shape to the Moon's
+  phase (giant at the full moon, tiny at the new, taffy while it waxes, mask while it wanes); the world's look to the
+  Moon's element (colours in fire, spinning days in earth, kaleidoscope in air, melting in water); the camera to
+  Mercury turning retrograde (turning), the Moon being up where you are (the upturned sky), and night (fisheye). Most
+  are awake about a quarter of the time; turning, only while Mercury is retrograde (a few weeks, three times a year).
+- **Asleep, a shrine is dark** (grey, still crystal; a faint beam), and touching it says when it wakes ("The taffy
+  shrine sleeps. It wakes while the Moon waxes."). **Awake, it glows.** **Used, it rests for you** (dim crystal, half
+  a beam) until it has slept and woken again: when its present waking began is found by stepping back an hour at a
+  time (`wokeAt`). What you've used is kept on the device (two moons' worth).
+- The sky's state is worked out every few seconds where you stand; a shrine's waking start at most every ten minutes.
+
 ## A smaller you, and a breathing world (11-09)
 Jason: "lets make everything bigger relative to the player by shrinking the player. Two, lets make everything
 breathe. Animals more, plants less, landscapes even less."

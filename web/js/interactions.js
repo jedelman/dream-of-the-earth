@@ -88,7 +88,7 @@ export function promptFor(c) {
     return `Shake the ${TREE_NAMES[c.species] ?? c.species}`;
   }
   if (c.kind === "butterfly") return `Greet the ${hueName(c.hue)} butterfly`;
-  if (c.kind === "shrine") return `Touch ${c.name}`;
+  if (c.kind === "shrine") return c.state === "asleep" ? `${c.name[0].toUpperCase()}${c.name.slice(1)} sleeps` : c.state === "resting" ? `${c.name[0].toUpperCase()}${c.name.slice(1)} rests` : `Touch ${c.name}`;
   if (c.kind === "critter") return c.species === "bunny" ? `Pet the ${c.name}` : c.species === "frog" ? `Boop the ${c.name}` : `Whistle to the ${c.name}`;
   if (c.kind === "being") return "Hum to the sky being";
   if (c.kind === "highway") return "Board the highway";
