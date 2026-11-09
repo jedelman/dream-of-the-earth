@@ -15,6 +15,7 @@ import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount, linesNear, lanesAt, laneFacing } from "./ride.js";
 import { buildStones, CIRCLE_R } from "./stones.js";
+import { readPad, firstPad, stepFocus } from "./gamepad.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
@@ -682,6 +683,77 @@ addEventListener("keydown", (e) => {
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
 const touch = { turn: 0, thrust: 0, up: 0, id: null, x: 0, y: 0 };
+
+// ---- Gamepads (gamepad.js; Jason, 11-09: "Then let's build in gamepad support.") ----
+// Polled each frame. The sticks and A/B merge into input() like the keys and the touch stick; X, Y, Start and Back act
+// on the frame they're pressed. The D-pad walks the menus along the bottom and whatever a menu holds: A presses, B closes.
+const pad = { turn: 0, thrust: 0, up: 0, held: new Set(), using: false, said: false };
+const sheetEl = document.getElementById("sheet"), cornerEl = document.getElementById("corner");
+const sheetOpen = () => !sheetEl.hidden;
+const PAD_FOCUSABLE = "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), summary, textarea";
+/** What the D-pad can reach: in an open menu, what it holds; otherwise the menus along the bottom. */
+function padTargets() {
+  const open = sheetOpen(), root = open ? sheetEl : cornerEl;
+  return [...root.querySelectorAll(PAD_FOCUSABLE)].filter((el) => !el.hidden && el.offsetParent !== null && (open || el.parentElement === cornerEl));
+}
+const padFocused = () => { const a = document.activeElement; return a && a !== document.body && (sheetEl.contains(a) || cornerEl.contains(a)) ? a : null; };
+const clearPadFocus = () => document.querySelectorAll(".padfocus").forEach((e) => e.classList.remove("padfocus"));
+function padFocus(dir) {
+  const list = padTargets(), el = list[stepFocus(list.indexOf(document.activeElement), list.length, dir)];
+  if (!el) return;
+  clearPadFocus();
+  el.classList.add("padfocus");
+  el.focus();
+  el.scrollIntoView?.({ block: "nearest" });
+}
+/** Escape, as if from the keyboard: closes a menu, shakes off spells, wakes you from a dream. */
+function padEscape() {
+  const at = document.activeElement || document.body;
+  at.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+  at.dispatchEvent(new KeyboardEvent("keyup", { key: "Escape", code: "Escape", bubbles: true }));
+}
+/** The glyph on the touch prompt: the key or button that presses it. */
+function setActGlyph() { actBtn.querySelector(".key").textContent = pad.using ? "X" : matchMedia("(hover: hover) and (pointer: fine)").matches ? "E" : "✦"; }
+// A key or a touch takes over from the pad (and its words) until the pad is used again.
+for (const ev of ["keydown", "pointerdown"]) addEventListener(ev, (e) => { if (e.isTrusted && pad.using) { pad.using = false; clearPadFocus(); setActGlyph(); } }, { capture: true });
+function pollPad(dt) {
+  const gp = navigator.getGamepads ? firstPad(navigator.getGamepads()) : null;
+  if (!gp) { if (pad.held.size || pad.turn || pad.thrust || pad.up) Object.assign(pad, { turn: 0, thrust: 0, up: 0, held: new Set() }); return; }
+  const r = readPad(gp, pad.held);
+  pad.held = r.held;
+  if (r.active && !pad.using) { pad.using = true; setActGlyph(); }
+  if (r.active && !pad.said) { pad.said = true; logLine("A controller: the left stick moves, A jumps, X touches what glints, Y takes a picture, the D-pad walks the menus. Start for the rest.", "note"); }
+  for (const dir of ["up", "down", "left", "right"]) {
+    if (!r.down.has(dir)) continue;
+    const a = document.activeElement;
+    if (a?.matches?.("input[type=range]") && (dir === "left" || dir === "right")) {
+      if (dir === "left") a.stepDown(); else a.stepUp();
+      a.dispatchEvent(new Event("input", { bubbles: true })); a.dispatchEvent(new Event("change", { bubbles: true }));
+    } else padFocus(dir);
+  }
+  // On the bar with no menu open, a stick steps you back into the world.
+  let menu = sheetOpen() || !!padFocused();
+  if (menu && !sheetOpen() && (r.turn || r.thrust || r.look)) { document.activeElement?.blur(); clearPadFocus(); menu = false; }
+  if (menu) {
+    pad.turn = pad.thrust = pad.up = 0;
+    if (r.down.has("a")) padFocused()?.click();
+    if (r.down.has("b")) { if (sheetOpen()) padEscape(); else { document.activeElement?.blur(); clearPadFocus(); } }
+  } else {
+    pad.turn = r.turn || r.look;
+    pad.thrust = r.thrust;
+    if (state.gate) {
+      // Held in a ley node's ring: A sets off, B lets go.
+      pad.up = 0;
+      if (r.down.has("a") && state.gate.phase === "choose") takeLane();
+      else if (r.down.has("b") && state.gate.phase !== "sink") { state.gate.held.up = true; leaveGate(); }
+    } else pad.up = (r.held.has("a") ? 1 : 0) - (r.held.has("b") ? 1 : 0);
+    if (r.down.has("x")) interact();
+    if (r.down.has("y")) takePicture();
+  }
+  if (r.zoom && !sheetOpen()) zoomBy(Math.exp(r.zoom * 2.4 * dt));
+  if (r.down.has("start")) openHelp();
+  if (r.down.has("back")) padEscape();
+}
 // Two fingers pinch to zoom; one finger steers.
 const pointers = new Map();
 let pinchFrom = 0;
@@ -730,9 +802,9 @@ for (const [id, v] of [["up", 1], ["down", -1]]) {
 function input() {
   const k = (...c) => c.some((x) => keys.has(x));
   return {
-    turn: (k("KeyD", "ArrowRight") ? 1 : 0) - (k("KeyA", "ArrowLeft") ? 1 : 0) || touch.turn,
-    thrust: (k("KeyW", "ArrowUp") ? 1 : 0) - (k("KeyS", "ArrowDown") ? 1 : 0) || touch.thrust,
-    up: (k("Space") ? 1 : 0) - (k("ShiftLeft", "ShiftRight") ? 1 : 0) || touch.up,
+    turn: (k("KeyD", "ArrowRight") ? 1 : 0) - (k("KeyA", "ArrowLeft") ? 1 : 0) || touch.turn || pad.turn,
+    thrust: (k("KeyW", "ArrowUp") ? 1 : 0) - (k("KeyS", "ArrowDown") ? 1 : 0) || touch.thrust || pad.thrust,
+    up: (k("Space") ? 1 : 0) - (k("ShiftLeft", "ShiftRight") ? 1 : 0) || touch.up || pad.up,
   };
 }
 
@@ -969,9 +1041,10 @@ const laneMarks = (() => {
   return g;
 })();
 /** The gate's controls in words, for keys or for a touch screen. */
-const GATE_KEYS = matchMedia("(hover: hover) and (pointer: fine)").matches
-  ? { pick: "A/D", pickHud: "A/D", go: "E or W", off: "Space or Shift" }
-  : { pick: "the stick (left or right)", pickHud: "STICK ◀ ▶", go: "✦", off: "▲ or ▼" };
+const GATE_KEYS_FINE = matchMedia("(hover: hover) and (pointer: fine)").matches;
+const gateKeys = () => (pad.using ? { pick: "the left stick", pickHud: "STICK ◀ ▶", go: "A", off: "B" }
+  : GATE_KEYS_FINE ? { pick: "A/D", pickHud: "A/D", go: "E or W", off: "Space or Shift" }
+  : { pick: "the stick (left or right)", pickHud: "STICK ◀ ▶", go: "✦", off: "▲ or ▼" });
 const bearingOfHeading = (h) => ((((-h * 180) / Math.PI) % 360) + 360) % 360;
 /** Into the stones: the light takes you up. */
 function enterStones(st) {
@@ -1038,7 +1111,7 @@ function gateStep(dt) {
     p.set(g.from.x + (g.st.x - g.from.x) * c, g.from.y + (g.st.top - g.from.y) * e, g.from.z + (g.st.z - g.from.z) * c);
     turnTo(2);
     state.mode = "air";
-    if (k >= 1) { g.phase = "choose"; g.t0 = simT; sound.whoosh(); logLine(`${g.lanes.length} lanes leave ${nodeName(g.st.node)}. ${capital(GATE_KEYS.pick)} chooses; ${GATE_KEYS.go} sets off; ${GATE_KEYS.off} lets go.`, "highway"); }
+    if (k >= 1) { g.phase = "choose"; g.t0 = simT; sound.whoosh(); logLine(`${g.lanes.length} lanes leave ${nodeName(g.st.node)}. ${capital(gateKeys().pick)} chooses; ${gateKeys().go} sets off; ${gateKeys().off} lets go.`, "highway"); }
     return;
   }
   if (g.phase === "choose") {
@@ -1073,11 +1146,11 @@ function laneMarksTick(t) {
 function gateLines() {
   const g = state.gate, l = g.lanes[g.pick], to = l.far, i = to ? network().nodes.indexOf(to) : -1;
   const dir = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(l.bearing / 45) % 8];
-  if (g.phase === "rise") return [`THE STONES OF ${nodeName(g.st.node).toUpperCase()} · RISING`, `${GATE_KEYS.off.toUpperCase()}: LET GO`];
+  if (g.phase === "rise") return [`THE STONES OF ${nodeName(g.st.node).toUpperCase()} · RISING`, `${gateKeys().off.toUpperCase()}: LET GO`];
   if (g.phase === "sink") return [`THE STONES OF ${nodeName(g.st.node).toUpperCase()}`, ""];
   return [`LANE ${g.pick + 1} OF ${g.lanes.length} · ${l.line.cls.name.toUpperCase()} · ${dir} ${Math.round(l.bearing) % 360}°`,
     `${Math.round(l.km).toLocaleString("en")} KM TO ${to ? nodeName(to).toUpperCase() : "A NODE"}${i >= 0 && been.nodes[i] != null ? " (BEEN)" : ""}`,
-    `${GATE_KEYS.pickHud}: ANOTHER LANE · ${GATE_KEYS.go.toUpperCase()}: GO · ${GATE_KEYS.off.toUpperCase()}: LET GO`];
+    `${gateKeys().pickHud}: ANOTHER LANE · ${gateKeys().go.toUpperCase()}: GO · ${gateKeys().off.toUpperCase()}: LET GO`];
 }
 
 // ---- Riding the highways (ley-space) ----
@@ -1127,7 +1200,7 @@ function leaveRide(arrived) {
     if (arrived) { const { node } = nearestNode(ll.lat, ll.lon), i = network().nodes.indexOf(node); if (i >= 0 && been.nodes[i] == null) { been.nodes[i] = Math.round(realNow()); keepAtlas(); } }
     // Arriving, you're held in the node's ring, so you can go straight on along another lane, or let go.
     const st = arrived && w.stones.near(0, 0, 600)[0];
-    if (st && holdInRing(st, (Math.atan2(tg.e, tg.n) * 180) / Math.PI)) { logLine(`You arrive at a node: ${nodeName(ll)}. The light holds you in its ring: choose a lane on (${GATE_KEYS.pick}, then ${GATE_KEYS.go}), or let go (${GATE_KEYS.off}).`, "highway"); setTimeout(() => setStatus(""), 4000); return; }
+    if (st && holdInRing(st, (Math.atan2(tg.e, tg.n) * 180) / Math.PI)) { logLine(`You arrive at a node: ${nodeName(ll)}. The light holds you in its ring: choose a lane on (${gateKeys().pick}, then ${gateKeys().go}), or let go (${gateKeys().off}).`, "highway"); setTimeout(() => setStatus(""), 4000); return; }
     logLine(arrived ? `You arrive at a node: ${nodeName(ll)}.` : "You step off the highway.", "highway");
     if (arrived) setTimeout(() => setStatus(""), 4000);
   });
@@ -1437,7 +1510,7 @@ function boardTapped(line) {
 // ---- What's in reach: a glint on each, and a prompt for the likeliest, "(E) Shake the baobab" ----
 const glints = buildGlints(scene);
 const actBtn = document.getElementById("act"), actWhat = actBtn.querySelector(".what");
-actBtn.querySelector(".key").textContent = matchMedia("(hover: hover) and (pointer: fine)").matches ? "E" : "✦";
+setActGlyph();
 actBtn.addEventListener("pointerdown", (e) => e.preventDefault()); // don't take focus: Space is "up"
 actBtn.addEventListener("click", () => { sound.unlock(); interact(); });
 const REACH_ZOOM = 2500; // zoomed out farther than this, the glints and the prompt step aside
@@ -2488,6 +2561,7 @@ function openHelp() {
     h("h2", {}, "How to play"),
     ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space", "jump; with Wings, take off and climb (▲)"], ["Shift", "crouch, slow and quiet (small creatures don't start); flying, go down (▼)"], ["Tap anything", "go to it; close enough, it answers"], ["E at a ley node's stones", "the light lifts you to its ring: A/D chooses a lane, E or W sets off, Space or Shift lets go"], ["Wheel · + − · pinch", "the camera nearer or farther (about 500 m back; a far feather, or a shrine of the soaring eye, lifts it higher)"]]),
     ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
+    ...group("A controller", [["Left stick", "move and turn"], ["Right stick", "turn; up or down, the camera nearer or farther (or LB · RB)"], ["A", "jump; with Wings, take off and climb; in a ley node's ring, set off"], ["B", "crouch; flying, go down; on a highway, step off; in a ring, let go"], ["X · Y", "touch what glints · take a picture"], ["D-pad", "through the menus along the bottom and what they hold: A presses, B closes"], ["Start · Back", "this help · Esc"]]),
     ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: fly along one to ride it)"], ["ATLAS ▾", "places you've found, to travel back to"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
   ], { trigger: helpBtn, classes: ["help"] });
 }
@@ -2514,6 +2588,7 @@ function frame() {
   // Only frames that draw forests steer the governor.
   meterFrame(nowMs - last, t, !!world && !state.ride && zoom < 6000);
   last = nowMs;
+  pollPad(dt);
   // +/- (or PageUp/PageDown) zoom smoothly while held.
   if (keys.has("Equal") || keys.has("NumpadAdd") || keys.has("PageUp")) zoomBy(Math.exp(-2.4 * dt));
   if (keys.has("Minus") || keys.has("NumpadSubtract") || keys.has("PageDown")) zoomBy(Math.exp(2.4 * dt));

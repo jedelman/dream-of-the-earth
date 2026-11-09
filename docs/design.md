@@ -617,6 +617,25 @@ them; flight becomes a sixth stat, from the same budget of 12, once Wings is lit
   ceilings); five and four still read. Looks travel in the intent as names. The map: tap a slot to set a gem (or, with
   a moonseed, take it out), tap a link to read it; framed on what you've grown toward.
 
+### A controller (built 11-09)
+Jason: "Then let's build in gamepad support." (`gamepad.js`, `pollPad` in `main.js`)
+- **The Gamepad API, standard mapping** (Xbox, PlayStation and Switch Pro pads read alike), polled each frame from
+  the first pad connected. Sticks have a dead zone of 0.18, rescaled so they still run 0 to 1. Nothing to install
+  or allow; browsers show a pad only once a button has been pressed.
+- **Moving:** the left stick moves and turns. The right stick turns too, and up or down brings the camera nearer
+  or farther (as do LB and RB). A is Space (jump; with Wings, take off and climb), B is Shift (crouch; flying, go
+  down; on a highway, step off). They merge into the same input as the keys and the touch stick.
+- **Touching:** X touches what glints (E), Y takes a picture (P), Start opens help, Back is Escape.
+- **Held in a ley node's ring,** A sets off and B lets go (the conventional confirm and cancel, rather than A as
+  Space letting go).
+- **Menus:** the D-pad walks the bar along the bottom and, in an open menu, whatever it holds. The focus shows as a
+  gold outline; A presses, B closes, and left or right on a slider moves it. On the bar with no menu open, moving a
+  stick steps you back into the world.
+- **Words follow the hands:** once the pad is used, the touch prompt's glyph is X and the ring's HUD says A and B;
+  a key or a touch switches them back. The help sheet has a controller group.
+- Checked headless with a simulated pad (`navigator.getGamepads` replaced), not on a physical pad **(unverified on
+  real hardware)**.
+
 ### The stones at the nodes (built 11-09)
 Jason: "We should rework the portal UX as well - it doesn't work very well for non-fliers! Maybe pin position and
 switch to a lane selector, space or shift to cancel; have a shrine or a circle of standing stones that you can
