@@ -38,6 +38,19 @@ export const ITEMS = {
     on: "Moss curls round your feet. The ground feels like yours now.",
     off: "You take the mossfoot off. The ground drags at you again.",
   },
+  // Gems, from dream realms (realm.js): one for each dream you finish, in its shrine's colour. They go in your rhizome.
+  rosegem: {
+    name: "rose gem", plural: "rose gems", max: 24,
+    about: "From the dream behind a pink shrine (your shape). Gems go in your rhizome, where linked ones wake what lies between them.",
+  },
+  cyangem: {
+    name: "cyan gem", plural: "cyan gems", max: 24,
+    about: "From the dream behind a cyan shrine (how you see). Gems go in your rhizome, where linked ones wake what lies between them.",
+  },
+  goldgem: {
+    name: "gold gem", plural: "gold gems", max: 24,
+    about: "From the dream behind a gold shrine (the world). Gems go in your rhizome, where linked ones wake what lies between them.",
+  },
   owleye: {
     name: "owl's eye", plural: "owl's eyes", max: 3, wear: true, boost: { perception: 2 },
     about: "An eye of amber, found on high summits. Worn, you see further: two more perception (from three, the sky beings show).",
