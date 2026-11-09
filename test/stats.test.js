@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { speeds, POWER, randomStats, valid, BUDGET } from "../web/js/stats.js";
+import { speeds, POWER, randomStats, valid, BUDGET, parseStats, maxSlopeDeg, SLOPE_LIMIT, sightOf } from "../web/js/stats.js";
 import { mulberry32 } from "../web/js/rng.js";
 
-const at = (n) => speeds({ fly: n, swim: n, run: n, gleam: 0 });
+const at = (n) => speeds({ climb: n, swim: n, run: n, gleam: 0, perception: 0 });
 
 test("every speed is a power law in its stat: v = v0 · (1 + stat)^p", () => {
   for (const k of ["run", "jump", "swim", "dive", "fly", "climb"]) {
@@ -24,7 +24,7 @@ test("p is √3, pinned at 3 points: a balanced creature moves as it did; more i
 });
 
 test("bigger legs run faster as the square root of size; wings don't care", () => {
-  const s = { fly: 3, swim: 3, run: 3, gleam: 3 };
+  const s = { climb: 3, swim: 3, run: 3, gleam: 3, perception: 0 };
   assert.ok(Math.abs(speeds(s, 4).run / speeds(s, 1).run - 2) < 1e-9);
   assert.ok(Math.abs(speeds(s, 0.25).swim / speeds(s, 1).swim - 0.5) < 1e-9);
   assert.equal(speeds(s, 6).fly, speeds(s, 1).fly);
@@ -35,6 +35,29 @@ test("random stats spend the whole budget within the rules", () => {
   for (let i = 0; i < 50; i++) {
     const s = randomStats(mulberry32(i));
     assert.ok(valid(s));
-    assert.equal(s.fly + s.swim + s.run + s.gleam, BUDGET);
+    assert.equal(s.climb + s.swim + s.run + s.gleam, BUDGET);
+    assert.equal(s.perception, 0, "perception starts at 0");
   }
+});
+
+test("five stats now; the old four (fly first) read as climb, swim, run, gleam with no perception", () => {
+  assert.deepEqual(parseStats("1,5,4,2"), { climb: 1, swim: 5, run: 4, gleam: 2, perception: 0 });
+  assert.deepEqual(parseStats("2,2,2,2,4"), { climb: 2, swim: 2, run: 2, gleam: 2, perception: 4 });
+  assert.equal(parseStats("6,6,6,6,6"), null);
+  assert.equal(parseStats("1,2,3"), null);
+  // A seed's creature keeps its old stats (the same draw), fly becoming climb.
+  assert.deepEqual(randomStats(mulberry32(7)), randomStats(mulberry32(7)));
+});
+
+test("climb sets the steepest slope you can climb; nothing climbs past 45°", () => {
+  assert.equal(maxSlopeDeg(0), 18);
+  assert.equal(maxSlopeDeg(6), SLOPE_LIMIT);
+  assert.ok(maxSlopeDeg(6) <= 45 && maxSlopeDeg(10) === 45);
+  assert.ok(Math.abs(speeds({ climb: 6, swim: 0, run: 0, gleam: 0, perception: 0 }).maxSlope - 1) < 1e-9, "45° is a rise of 1 in 1");
+});
+
+test("perception: half the sight with none, as far as before at three, 1.3× at six", () => {
+  assert.equal(sightOf(0), 0.5);
+  assert.equal(sightOf(3), 1);
+  assert.ok(Math.abs(sightOf(6) - Math.sqrt(7 / 4)) < 1e-12);
 });

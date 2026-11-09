@@ -37,7 +37,7 @@ import { logLine } from "./eventlog.js";
 import { buildBursts } from "./bursts.js";
 import { buildDirector, squeakShot, treeShot, butterflyShot, beingShot, arriveShot, boardShot, cairnShot, portraitShot, portraitAngle, portraitDistance } from "./director.js";
 import { buildSkyBeings } from "./skybeings.js";
-import { randomStats, parseStats, speeds, STATS, MAX, TYPICAL_SCALE } from "./stats.js";
+import { randomStats, parseStats, speeds, STATS, MAX, TYPICAL_SCALE, statsList, sightOf, SEE_BEINGS } from "./stats.js";
 import { biomeFor, koppenCode } from "./biome.js";
 import { koppenAt } from "./koppen.js";
 import { buildPlants } from "./plants.js";
@@ -150,6 +150,19 @@ let eyeLocal = eyeOf(graph);
 /** How see-through the creature is (1 = solid). Translucent, it draws after the sky, or the sky pass would paint over it. */
 let creatureOpacity = 1, footLift = 0;
 let editing = false; // the creature editor is open: the camera looks at it, not through it
+/** The stat your wings run on: climb, until the dream quest gives flight its own (Jason, 11-09). */
+const wings = () => stats.climb;
+/** Perception 3 and up sees the sky beings. */
+const seesBeings = () => stats.perception >= SEE_BEINGS;
+/** The HUD's stats, on two lines. */
+const statsLines = () => [STATS.slice(0, 3), STATS.slice(3)].map((ks) => ks.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  ")).join("\n");
+let steepAt = -Infinity;
+/** Walking into a slope too steep for you: said once in a while. */
+function tooSteep() {
+  if (simT - steepAt < 20) return;
+  steepAt = simT;
+  logLine(`Too steep for ${myName}. More climb would do it, or another way round.`, "note");
+}
 // Shrines' spells (shrinelore.js): a minute of another shape, another camera, another world. Each { id, t0, endAt }.
 const spells = { shape: null, camera: null, world: null };
 let spellZoom = 1, spellLegs = 1, masks = 0;
@@ -202,7 +215,7 @@ function setCreature(next, at = Date.now()) {
   if (params.has("seed")) {
     const q = new URLSearchParams(location.search);
     q.set("seed", String(seed));
-    q.set("stats", STATS.map((k) => stats[k]).join(","));
+    q.set("stats", statsList(stats).join(","));
     history.replaceState(null, "", `?${q}`);
   }
   Object.assign(window.__dream, { seed, stats, genes, triangles: creature.triangles });
@@ -435,12 +448,12 @@ function step(dt) {
 
   const max = state.mode === "air" ? sp.fly : state.mode === "water" ? sp.swim : sp.run;
   let target = thrust > 0 ? max * thrust : thrust < 0 ? -0.3 * max : 0;
-  if (state.mode === "air" && stats.fly === 0) target = Math.max(target, 0.6 * sp.fly); // a glide, not a hover
+  if (state.mode === "air" && wings() === 0) target = Math.max(target, 0.6 * sp.fly); // a glide, not a hover
   state.speed += (target - state.speed) * Math.min(1, dt * 1.8);
 
   if (state.mode !== "air" || up !== 0) state.clear = null;
   if (state.mode === "air") {
-    if (stats.fly > 0) {
+    if (wings() > 0) {
       let vyTarget = up > 0 ? sp.climb : up < 0 ? -sp.climb * 1.6 : 0;
       if (up === 0) {
         // Hands off the climb: keep the clearance you let go at (4 to 30 m) over the land ahead,
@@ -463,17 +476,28 @@ function step(dt) {
   }
 
   const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-  p.x += fx * state.speed * dt;
-  p.z += fz * state.speed * dt;
+  // On foot, a slope steeper than your climb stops you, and near your limit you slow; downhill is always fine.
+  let stride = 1;
+  if (state.mode === "ground" && Math.abs(state.speed) > 0.1) {
+    const dir = Math.sign(state.speed), d = 3;
+    const rise = (world.terrain.heightAt(p.x + fx * d * dir, p.z + fz * d * dir) - Math.max(0, ground)) / d;
+    if (rise > 0) {
+      const k = rise / sp.maxSlope;
+      if (k >= 1) { stride = 0; state.speed *= 0.5; tooSteep(); }
+      else stride = 1 - 0.6 * k * k;
+    }
+  }
+  p.x += fx * state.speed * dt * stride;
+  p.z += fz * state.speed * dt * stride;
   p.y += state.vy * dt;
 
   const g2 = world.terrain.heightAt(p.x, p.z);
   if (state.mode === "water") {
-    if (p.y > -1.5 && !(up > 0 && stats.fly > 0)) { p.y = -1.5; state.vy = Math.min(state.vy, 0); } // float at the surface
+    if (p.y > -1.5 && !(up > 0 && wings() > 0)) { p.y = -1.5; state.vy = Math.min(state.vy, 0); } // float at the surface
     if (p.y < g2 + 2) p.y = g2 + 2;
   }
   // Land only on purpose: a flyer not heading down skims a slope too steep to climb, still flying.
-  if (g2 >= 0 && p.y < g2) { p.y = state.mode === "air" && stats.fly > 0 && up >= 0 ? g2 + 0.5 : g2; state.vy = Math.max(0, state.vy); }
+  if (g2 >= 0 && p.y < g2) { p.y = state.mode === "air" && wings() > 0 && up >= 0 ? g2 + 0.5 : g2; state.vy = Math.max(0, state.vy); }
   if (g2 < 0 && p.y < g2 + 2) p.y = g2 + 2;
 
   // Pillars of light at the nodes lift any creature up to the ring, wings or not.
@@ -646,7 +670,7 @@ function pick(clientX, clientY) {
     if (v.z > 1) continue;
     if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 24) found.push({ kind: "critter", d, c });
   }
-  const bh = tapRay.intersectObject(world.beings.group, true)[0];
+  const bh = seesBeings() ? tapRay.intersectObject(world.beings.group, true)[0] : null;
   if (bh) { let o = bh.object; while (o && !o.userData.being) o = o.parent; if (o) found.push({ kind: "being", d: bh.distance, being: o.userData.being, obj: o }); }
   const sh = tapRay.intersectObjects(world.shrines.pickables(), true)[0], se = sh && world.shrines.entryOf(sh.object);
   if (se) found.push({ kind: "shrine", d: sh.distance, s: se });
@@ -722,7 +746,7 @@ function beingObj(seed) {
  * walkers who arrive and find it gone set off again.
  */
 function moveTo(hit, { range, act, alt, follow, critter = null } = {}) {
-  const p = state.pos, fly = stats.fly > 0;
+  const p = state.pos, fly = wings() > 0;
   const pts = fly ? [{ x: hit.x, z: hit.z }] : planPath({ x: p.x, z: p.z }, hit, world.terrain.heightAt, sp);
   if (!pts) { logLine("There's no way there on foot.", "note"); return; }
   state.target = { fly, ground: Math.max(0, hit.h ?? 0), range, act, alt, follow, critter, pts: pts.map((q) => world.frame.toLatLon(q.x, q.z)), idx: 0 };
@@ -882,7 +906,7 @@ function inReach() {
     const d = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z);
     if (d < RANGE.critter) add({ kind: "critter", key: c.key, species: c.kind, name: c.name, d, range: RANGE.critter, c }, c.x, c.z);
   }
-  for (const o of world.beings.group.children) {
+  for (const o of seesBeings() ? world.beings.group.children : []) {
     const being = o.userData.being;
     if (!being) continue;
     const d = o.getWorldPosition(v).distanceTo(p);
@@ -1050,7 +1074,7 @@ async function lookAs(handle, persist = true) {
 function hereQuery() {
   const q = new URLSearchParams(location.search), ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn;
   q.set("seed", String(seed));
-  q.set("stats", STATS.map((k) => stats[k]).join(","));
+  q.set("stats", statsList(stats).join(","));
   q.set("lat", ll.lat.toFixed(6)); q.set("lon", ll.lon.toFixed(6));
   if (world) q.set("alt", String(Math.max(2, Math.round(state.pos.y - Math.max(0, world.terrain.heightAt(state.pos.x, state.pos.z))))));
   q.set("heading", String(Math.round((((-state.heading * 180) / Math.PI) % 360 + 360) % 360)));
@@ -1456,7 +1480,7 @@ function updateHud() {
       `RIDING  ${r.line.cls.name.toUpperCase()}  ${Math.round(r.speed / 1000)} KM/S`,
       `${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}  ·  NEXT NODE ${Math.round(remainingMeters(r) / 1000).toLocaleString("en")} KM`,
       near.length ? `CROSSING ${near[0].line.cls.name.toUpperCase()} · A/D TO HOP` : "SHIFT OR S: STEP OFF",
-      STATS.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  "),
+      statsLines(),
       zoomLine(),
     ].join("\n");
     return;
@@ -1472,7 +1496,7 @@ function updateHud() {
     `${state.mode.toUpperCase()}  ${Math.round(state.pos.y)} M  ·  ${where}`,
     `${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}  ·  ${detail.fps} FPS${detail.scale < DETAIL_MAX ? `  ·  FORESTS ${Math.round(detail.scale * 100)}%` : ""}`,
     `LEY NODE ${(meters / 1000).toFixed(1)} KM  ${cls}`,
-    STATS.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  "),
+    statsLines(),
     zoomLine(),
     targetLine(),
     spellsLine(),
@@ -1538,7 +1562,7 @@ function frame() {
     const horizonM = Math.sqrt(2 * 6371008.8 * h + h * h);
     scene.fog.color.copy(horizon);
     // Capped inside the outer terrain ring, so from high up its edge melts into haze.
-    scene.fog.far = Math.min(440000, Math.max(40000, horizonM * 1.2));
+    scene.fog.far = Math.min(440000, Math.max(40000, horizonM * 1.2)) * sightOf(stats.perception); // perception: how far you see
     scene.fog.near = scene.fog.far * 0.25;
   }
   if (world) world.highways.group.visible = !underwater;
@@ -1551,7 +1575,7 @@ function frame() {
   // clouds follow it, so every player sees the same sky.
   const unix = unixAt(t);
   if (world) world.highways.update(t);
-  if (world) { window.__dream.beings = world.beings.update(unix, t); layerTransparent(world.beings.group); }
+  if (world) { window.__dream.beings = world.beings.update(unix, t); layerTransparent(world.beings.group); world.beings.group.visible = seesBeings(); }
   // Plants and insects around you; too small to matter from far up.
   if (world && !state.ride) {
     world.shrines.update(state.pos.x, state.pos.z, t);

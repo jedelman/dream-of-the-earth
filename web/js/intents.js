@@ -7,7 +7,7 @@
 // parseIntent checks every field. Also here, the one rule for whose things we
 // show at all. Pure, so Node can test it.
 import { WORLD_URL, metresBetween, cleanNote } from "./artifacts.js";
-import { STATS, valid } from "./stats.js";
+import { STATS, statsFrom } from "./stats.js";
 import { parseGenes } from "./creature-graph.js";
 import { pointOn, rideSpeed, lineAt, lineCount } from "./ride.js";
 import { vecToLatLon } from "./geo.js";
@@ -62,9 +62,9 @@ export function parseIntent(v, nowS = Date.now() / 1000) {
   if (!Number.isFinite(at) || at > nowS + 60 || nowS - at > STALE_S) return null;
   if (!int(v.latE6, -90e6, 90e6) || !int(v.lonE6, -180e6, 180e6) || !int(v.altDm, -120000, 120000)) return null;
   const c = v.creature;
-  if (!c || !int(c.seed, 0, 0xffffffff) || !Array.isArray(c.stats) || c.stats.length !== 4) return null;
-  const stats = Object.fromEntries(STATS.map((k, i) => [k, c.stats[i]]));
-  if (!valid(stats)) return null;
+  if (!c || !int(c.seed, 0, 0xffffffff)) return null;
+  const stats = statsFrom(c.stats); // five, or the four from before perception
+  if (!stats) return null;
   const out = { kind: v.kind, at, lat: v.latE6 / 1e6, lon: v.lonE6 / 1e6, alt: v.altDm / 10, creature: { seed: c.seed, stats, genes: parseGenes(c.genes) } };
   if (v.kind === "goto") {
     const g = v.goto;
