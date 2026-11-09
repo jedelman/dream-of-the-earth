@@ -6,6 +6,7 @@
 import { h } from "./maker.js";
 import { TRAITS, COUNTS, SIZE, parseGenes, generateCreature, TRIANGLE_CAP } from "./creature-graph.js";
 import { STATS, BUDGET, MAX } from "./stats.js";
+import { canRespec, respecWindow, whenText } from "./moon.js";
 
 const ROWS = [
   { trait: "palette", label: "Colours" },
@@ -55,7 +56,9 @@ export function buildEditor({ hooks, maker, button }) {
     const [lo, hi] = COUNTS[trait], now = generateCreature(c.seed, c.genes).counts[trait];
     g.count = { ...g.count, [trait]: Math.max(lo, Math.min(hi, now + by)) };
   }));
-  const stat = (k, by) => change((c) => {
+  // Stats change only within a day of a new moon (Jason, 11-09: "respecs only during a new moon"); looks, any time.
+  const moonNow = () => canRespec(Date.now() / 1000);
+  const stat = (k, by) => !moonNow() ? refresh() : change((c) => {
     const left = BUDGET - STATS.reduce((t, s) => t + c.stats[s], 0);
     const n = c.stats[k] + by;
     if (n < 0 || n > MAX || (by > 0 && left <= 0)) return c;
@@ -151,13 +154,17 @@ export function buildEditor({ hooks, maker, button }) {
     if (busy !== els.size) els.size.value = String(Math.round(graph.scale * 100));
     els.sizeV.textContent = `${graph.scale.toFixed(2)}×`;
     const spent = STATS.reduce((t, k) => t + c.stats[k], 0);
+    const open = moonNow(), nowS = Date.now() / 1000, win = respecWindow(nowS);
     for (const s of els.statRows) {
       s.v.textContent = bar(c.stats[s.k]);
       s.row.setAttribute("aria-label", `${s.k} ${c.stats[s.k]} of ${MAX}`);
-      s.less.disabled = c.stats[s.k] <= 0;
-      s.more.disabled = c.stats[s.k] >= MAX || spent >= BUDGET;
+      s.less.disabled = !open || c.stats[s.k] <= 0;
+      s.more.disabled = !open || c.stats[s.k] >= MAX || spent >= BUDGET;
     }
-    els.left.textContent = spent >= BUDGET ? `All ${BUDGET} points spent. Take one from a stat to give it to another.` : `${BUDGET - spent} point${BUDGET - spent === 1 ? "" : "s"} left to spend.`;
+    const points = spent >= BUDGET ? `All ${BUDGET} points spent.` : `${BUDGET - spent} point${BUDGET - spent === 1 ? "" : "s"} left to spend.`;
+    els.left.textContent = open
+      ? `The moon is new: stats can change until ${whenText(win.closes, nowS) === "within hours" ? "later today" : whenText(win.closes, nowS)}. ${points}`
+      : `Stats change only at the new moon, ${whenText(win.opens, nowS)}. ${points}`;
     els.adopt.hidden = hooks.isMine();
     els.undoBtn.disabled = !undo.length;
     els.plain.disabled = !c.genes;

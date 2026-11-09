@@ -2,7 +2,7 @@
 // (org.jason-edelman.dream.creature, rkey "self"), overwritten when you change it. It holds only what grows the
 // creature (seed, stats, genes) and when you last changed it. Jason, 11-09: "Yes! Your creature should follow you."
 import { parseGenes } from "./creature-graph.js";
-import { STATS, valid } from "./stats.js";
+import { STATS, statsFrom } from "./stats.js";
 
 export const CREATURE_NSID = "org.jason-edelman.dream.creature";
 export const CREATURE_RKEY = "self";
@@ -20,9 +20,8 @@ export function parseCreatureRecord(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   if (v.$type !== undefined && v.$type !== CREATURE_NSID) return null;
   if (!Number.isInteger(v.seed) || v.seed < 0 || v.seed > 0xffffffff) return null;
-  if (!Array.isArray(v.stats) || v.stats.length !== 4) return null;
-  const stats = Object.fromEntries(STATS.map((k, i) => [k, v.stats[i]]));
-  if (!valid(stats)) return null;
+  const stats = statsFrom(v.stats); // five, or the four from before perception
+  if (!stats) return null;
   const at = typeof v.updatedAt === "string" && v.updatedAt.length <= 40 ? Date.parse(v.updatedAt) : NaN;
   return { seed: v.seed, stats, genes: parseGenes(v.genes), at: Number.isFinite(at) ? at : 0 };
 }

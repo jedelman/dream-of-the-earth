@@ -4,7 +4,7 @@ import { makeIntent, parseIntent, whereAt, driftOf, allowed, STALE_S, MAX_POINTS
 import { metresBetween, WORLD_URL } from "../web/js/artifacts.js";
 import { lineAt, rideSpeed } from "../web/js/ride.js";
 
-const creature = { seed: 7, stats: { fly: 1, swim: 5, run: 4, gleam: 2 } };
+const creature = { seed: 7, stats: { climb: 1, swim: 5, run: 4, gleam: 2, perception: 0 } };
 const now = new Date("2026-11-08T20:00:00Z"), t0 = now.getTime() / 1000;
 const ints = (v) => (typeof v === "number" ? assert.ok(Number.isInteger(v), `float ${v}`) : v && typeof v === "object" && Object.values(v).forEach(ints));
 
@@ -95,4 +95,13 @@ test("a creature's genes travel with it; bad genes are dropped, not the creature
   const odd = parseIntent({ ...v, creature: { ...v.creature, genes: { roll: { wings: -4 }, count: { eyes: 99 }, size: "huge" } } }, t0);
   assert.ok(odd, "the creature still shows");
   assert.equal(odd.creature.genes, null);
+});
+
+test("stats from before perception (four numbers, fly first) read as climb, swim, run, gleam, with no perception", () => {
+  const now = new Date(), t0 = now.getTime() / 1000;
+  const v = makeIntent({ kind: "rest", p: { lat: 1, lon: 2, alt: 10 }, creature, now });
+  assert.deepEqual(v.creature.stats, [1, 5, 4, 2, 0]);
+  const old = parseIntent({ ...v, creature: { ...v.creature, stats: [3, 3, 3, 3] } }, t0);
+  assert.deepEqual(old.creature.stats, { climb: 3, swim: 3, run: 3, gleam: 3, perception: 0 });
+  assert.equal(parseIntent({ ...v, creature: { ...v.creature, stats: [3, 3, 3, 3, 1] } }, t0), null, "13 points is over the budget");
 });

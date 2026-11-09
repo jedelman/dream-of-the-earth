@@ -2,12 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeCreatureRecord, parseCreatureRecord, reconcile, CREATURE_NSID } from "../web/js/creature-record.js";
 
-const nyo = { seed: 7, stats: { fly: 1, swim: 5, run: 4, gleam: 2 }, genes: { count: { wings: 3 }, hue: 40 } };
+const nyo = { seed: 7, stats: { climb: 1, swim: 5, run: 4, gleam: 2, perception: 0 }, genes: { count: { wings: 3 }, hue: 40 } };
 
 test("a creature record round-trips", () => {
   const v = makeCreatureRecord(nyo, Date.parse("2026-11-09T02:00:00Z"));
   assert.equal(v.$type, CREATURE_NSID);
-  assert.deepEqual(v.stats, [1, 5, 4, 2]);
+  assert.deepEqual(v.stats, [1, 5, 4, 2, 0]);
+  assert.deepEqual(parseCreatureRecord({ ...v, stats: [1, 5, 4, 2] }).stats, nyo.stats, "a record from before perception");
   assert.deepEqual(parseCreatureRecord(v), { ...nyo, at: Date.parse("2026-11-09T02:00:00Z") });
   assert.equal(makeCreatureRecord({ ...nyo, genes: null }).genes, undefined, "no genes, no field");
 });

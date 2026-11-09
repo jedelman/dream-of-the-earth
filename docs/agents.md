@@ -29,7 +29,8 @@ where you are. Every mutual's phone works out where you are from it. Lexicon: `d
     It's replayed along the route; at the end you stop.
   - `ride`: on a golden highway (`line` index, start fraction `tE6`, `dir` ±1), at the highway's speed.
   - `steer`: heading, speed and climb, dead-reckoned for up to 90 s.
-- **Your creature:** `creature: { seed, stats: [fly, swim, run, gleam], genes? }` (stats each 0–6, total at most 12).
+- **Your creature:** `creature: { seed, stats: [climb, swim, run, gleam, perception], genes? }` (stats each 0–6, total at
+  most 12; the old four, `[fly, swim, run, gleam]`, still read, as climb, swim, run, gleam with no perception).
   Mutuals grow the same creature from it. No geometry travels. `genes` is optional, what a player changes in the
   editor: `roll` (a re-roll seed per trait: palette, body, heads, eyes, wings, legs, tail, spikes), `count` (heads 0–3,
   eyes 0–9, wing and leg pairs 0–4, tail 0–4, spikes 0–10), `hue` (1–359, turns the colours) and `size` (80–160 %).
@@ -86,7 +87,7 @@ const put = (record) => fetch("https://bsky.social/xrpc/com.atproto.repo.putReco
   body: JSON.stringify({ repo: s.did, collection: INTENT_NSID, rkey: INTENT_RKEY, record }),
 });
 
-const creature = { seed: 12345, stats: { fly: 4, swim: 2, run: 4, gleam: 2 } };
+const creature = { seed: 12345, stats: { climb: 4, swim: 2, run: 4, gleam: 2, perception: 0 } };
 const now = Date.now() / 1000;
 // Rest by Jason's cairn in the Amazon, say hello, squeak.
 await put(makeIntent({ kind: "rest", p: { lat: -3.1003, lon: -60.0002, alt: 60 }, creature,

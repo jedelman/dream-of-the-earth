@@ -443,6 +443,40 @@ Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
 - **Someone will build something obscene.** The tools are local: mute, plus an option to draw non-mutuals as a
   plain default shape. With no server, there's nowhere to report it.
 
+## Becoming a game (11-09)
+Jason: "Now let's make this more like a game. For starters: inventory and equipment (psychedelic of course);
+perception stat that expands what you can see - ley lines are invisible without the correct item, sky beings invisible
+without the correct stat; infinite zoom out should be tied to a shrine or an item; shrines need to recharge; compass
+items and goal sequences to unlock areas; fast travel only available to places you've been to; portal items (everyone
+starts with one) to travel to friends; item exchange between repos - via pigeon; respecs only during a new moon."
+His calls on the open questions: **items live in your repo** (one inventory record); **perception joins a budget that
+stays 12, starting at 0** (sky beings vanish until you move points at a new moon); **places you've been = ley nodes
+you've touched**; and the areas: "Regions of the earth, I was thinking watersheds? We should swap the fly stat for a
+climb stat and make terrain above a certain slope impassible. Fly stat unlocks after a dream quest.... Oh yeah, dream
+realms are a great idea, reachable by shrines."
+- **The plan, one step at a time:** (1) grounded stats, below; (2) inventory and equipment in your repo, the starting
+  portal and pigeon, the Prism Lens for ley lines; (3) dream realms through shrines, the first one the quest that
+  unlocks flight; (4) shrine recharge, the zoom cap and a high-view shrine, the atlas of touched ley nodes, portals;
+  (5) pigeons; (6) watersheds as regions, with compasses and goal sequences.
+- **Honour system:** with no server to referee, anyone could write any item or stat into their own repo. With no
+  scores or races, that only spoils their own fun.
+
+### Grounded stats (built 11-09)
+- **Five stats, one budget of 12:** climb, swim, run, gleam, perception. Creatures from before keep their points, fly
+  becoming climb, with perception 0. Old four-number stats (links, kept creatures, records, intents) still read.
+- **Climb** sets the steepest slope you can climb on foot: 18° with none, 4.5° more a point, 45° at six. Nothing
+  climbs past 45°. On this terrain's resolution (30 m baselines) the big ranges run 17–27° at the median and 35–39° at
+  the 90th percentile, peaking near 50–55°; lowlands stay under 5°. So climb 0 keeps you to valleys and foothills, and
+  about 1–3% of the high ranges is closed to everyone on foot. Near your limit you slow; past it you stop ("Too steep
+  for Nyo"). Routes you tap for respect it too (the pathfinder's cliff is your limit).
+- **Flight, for now,** runs on climb (the old fly points), until the dream quest gives it its own stat. Locking it
+  before the quest exists would strand everyone.
+- **Perception:** how far you see is √((1 + perception) / 4) of before (half with none, 1.3× at six), through the
+  fog. Sky beings appear from perception 3; below it they're not there for you (no glint, no hum).
+- **Respecs at the new moon** (`moon.js`): stats change only within a day of a new moon, by the mean synodic month
+  from 6 January 2000 18:14 UTC (the true new moon can be some hours off, so a day either side). Looks change any time.
+  The first window: 9–10 November 2026, around 21:57 UTC on the 9th.
+
 ## Creature stats: fly, swim, run, gleam
 Jason: "creature stat customization. Fly/swim/run/gleam (the last one just makes you shinier)."
 - **Four stats, one budget.** Proposal: 12 points, 0–6 per stat, set in the avatar editor.

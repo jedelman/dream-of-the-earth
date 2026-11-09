@@ -72,7 +72,7 @@ export function simplify(path, cost, w) {
 
 /**
  * A route on foot (and by water) from `from` to `to` ({x, z} metres), over terrain
- * heightAt(x, z) (below 0 is water), for a creature with speeds { run, swim }.
+ * heightAt(x, z) (below 0 is water), for a creature with speeds { run, swim, maxSlope? (rise over run) }.
  * Returns [{x, z}, ...] ending at `to`, or null if there's no way.
  */
 export function planPath(from, to, heightAt, speeds, maxCells = 140) {
@@ -84,6 +84,8 @@ export function planPath(from, to, heightAt, speeds, maxCells = 140) {
   const w = Math.ceil(spanX / cell) + 1, h = Math.ceil(spanZ / cell) + 1;
   const heights = new Float32Array(w * h);
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) heights[j * w + i] = heightAt(x0 + i * cell, z0 + j * cell);
+  // The steepest it may climb (its climb stat; a little under, as the grid smooths slopes out), else the old cliff.
+  const limit = speeds.maxSlope ? speeds.maxSlope * 0.9 : CLIFF;
   const cost = new Float32Array(w * h);
   for (let j = 0; j < h; j++)
     for (let i = 0; i < w; i++) {
@@ -92,7 +94,7 @@ export function planPath(from, to, heightAt, speeds, maxCells = 140) {
       // Slopes are measured on the surface you move over: the water's surface, not the seafloor.
       const nb = (a, b) => Math.max(0, heights[Math.min(h - 1, Math.max(0, b)) * w + Math.min(w - 1, Math.max(0, a))]);
       const slope = Math.max(Math.abs(nb(i + 1, j) - nb(i - 1, j)), Math.abs(nb(i, j + 1) - nb(i, j - 1))) / (2 * cell);
-      cost[k] = slope > CLIFF ? Infinity : (1 / speeds.run) * (1 + 3 * slope);
+      cost[k] = slope > limit ? Infinity : (1 / speeds.run) * (1 + 3 * slope);
     }
   const cellOf = (p) => [Math.round((p.x - x0) / cell), Math.round((p.z - z0) / cell)];
   const s = cellOf(from), t = cellOf(to);
