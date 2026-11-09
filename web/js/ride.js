@@ -121,3 +121,30 @@ export function crossings(ride) {
   const { lat, lon } = rideLatLon(ride);
   return linesNear(lat, lon).filter((c) => c.line.i !== ride.line.i);
 }
+
+/**
+ * The lanes out of a node: every line that ends there, leaving it, clockwise from north. Each { line, t, dir (to
+ * startRide), bearing (degrees clockwise from north), far (the node at the other end), km (how far) }.
+ */
+export function lanesAt(node) {
+  const out = [], SAME = 1e-4; // the data's points aren't quite unit length, so even a point's angle to itself is ~3e-5
+
+  for (const line of lines()) {
+    let t, dir, end;
+    if (angle(line.a, node.vec) < SAME) { t = 0; dir = 1; end = line.b; }
+    else if (angle(line.b, node.vec) < SAME) { t = 1; dir = -1; end = line.a; }
+    else continue;
+    const tg = tangentEN(line, t, dir);
+    const bearing = ((Math.atan2(tg.e, tg.n) * 180) / Math.PI + 360) % 360;
+    const far = network().nodes.find((n) => angle(n.vec, end) < SAME);
+    out.push({ line, t, dir, bearing, far, km: (line.arc * R_EARTH) / 1000 });
+  }
+  return out.sort((a, b) => a.bearing - b.bearing || a.line.cls.rank - b.line.cls.rank);
+}
+
+/** Of the lanes, the one leaving nearest a bearing (degrees): where you're already facing. */
+export function laneFacing(lanes, bearing) {
+  let best = 0, bestC = -Infinity;
+  lanes.forEach((l, i) => { const c = Math.cos(((l.bearing - bearing) * Math.PI) / 180); if (c > bestC) { bestC = c; best = i; } });
+  return best;
+}

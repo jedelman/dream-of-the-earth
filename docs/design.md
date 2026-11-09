@@ -617,6 +617,30 @@ them; flight becomes a sixth stat, from the same budget of 12, once Wings is lit
   ceilings); five and four still read. Looks travel in the intent as names. The map: tap a slot to set a gem (or, with
   a moonseed, take it out), tap a link to read it; framed on what you've grown toward.
 
+### The stones at the nodes (built 11-09)
+Jason: "We should rework the portal UX as well - it doesn't work very well for non-fliers! Maybe pin position and
+switch to a lane selector, space or shift to cancel; have a shrine or a circle of standing stones that you can
+interact with before the pillar of light pulls you up" (`stones.js`, `lanesAt` in `ride.js`, the gate in `main.js`).
+- **Before:** walking within 300 m of a node's pillar lifted anything to the ring, where a creature without wings
+  hung, unable to fly along a line to board it.
+- **The stones:** nine standing stones in a 14 m ring at the foot of every node's pillar. Each stone is 3 to 5.4 m
+  tall, leaning a little; their heights come from the node, so they're the same for everyone. At sea they float. Anyone can see
+  them. Wearing a prism (or with ley sight), their veins and a ring on the ground glow; without one, touching them
+  says they hum to something you can't see.
+- **Step in (E):** the pillar's light draws you to the middle and lifts you to the ring (3.2 s), turning you
+  toward the lane nearest your heading. You're held there, wings or not.
+- **The lane picker:** every line that ends at the node, leaving it, clockwise from north (`lanesAt`). That's 4 to
+  42 lanes, depending on how many networks meet there. A/D (or the stick) moves one lane; held, it keeps going. You
+  turn to face the lane, and diamonds of light run out along it. The HUD names the lane, its compass bearing, how
+  far it goes, and the node at the end (and whether you've been). E or W sets off.
+- **Space or Shift lets go:** down to the stones (1.6 s), or, with wings, off into the air where you are. Only a key
+  going down counts, never one still held from before (W walking in, Space from a jump), and a quick tap counts
+  even if it's over before the next frame looks.
+- **Arriving at a node off a highway, you're held in its ring the same way,** facing the lane that goes straight
+  on, so a long journey is a chain of choices; let go to step down.
+- **Travel to a node from the atlas** puts you just before its stones, facing them.
+- Boarding by flying along a highway, or by tapping one, works as before.
+
 ### How far you see (built 11-09)
 Jason: "let's limit zoom out distance. We can have shrines and items that temporarily boost it and zoom way out."
 (`zoomreach.js`)
@@ -1024,7 +1048,8 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
    - A ride is ley-space: the ground falls away and there's only the line, streaks, sky and sea. Speed is 200 km/s
      × 2 per rank, with ease in and out, to the node at the end of the line. The world regrows where you get off.
    - Shift/S steps off anywhere, and A/D hops lines at a crossing.
-   - Every node has a pillar of light that lifts any creature to the ring.
+   - Every node has a pillar of light up to the ring; since 11-09 you step into the standing stones at its foot to be
+     lifted (see "The stones at the nodes").
    - Lines are long (median 3,527 km for Becker-Hagens, 8,262 km for gravity-wells major and basic, 10,008 km
      for minor), which is why the speeds are absurd: a typical full ride takes 5–50 s.
    - Highways fade within ~700 m of the camera, so one you're inside, or a node where many meet, reads as light

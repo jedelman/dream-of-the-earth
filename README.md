@@ -43,7 +43,8 @@ sees the same one in the same place at the same moment.
 **Ley highways:** fly along a gold highway (inside its glow, heading roughly the same way) and it carries you
 into ley-space at absurd speed, 200 km/s on the commonest lines up to 1,600 km/s on the rarest, to the node at
 its end. Shift or S steps off anywhere. Where two highways cross, A/D hops onto the other one. Every node has a
-pillar of light that lifts any creature up to the network, wings or not.
+ring of standing stones under its pillar of light: step in and press E, and the light lifts you, wings or not, to
+choose a lane (A/D, then E or W; Space or Shift lets go).
 
 URL parameters make any spawn reproducible: `?seed=42` (creature, stats and spawn), `&stats=6,2,2,2`
 (climb, swim, run, gleam, perception; 12 points, 0–6 each; the old four still read), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north), `&alt=` (metres up), `&zoom=` (camera distance in

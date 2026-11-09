@@ -13,7 +13,8 @@ import { buildSea } from "./water.js";
 import { buildGlobe } from "./globe.js";
 import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
-import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount, linesNear } from "./ride.js";
+import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount, linesNear, lanesAt, laneFacing } from "./ride.js";
+import { buildStones, CIRCLE_R } from "./stones.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
@@ -422,7 +423,7 @@ const foundList = () => [
 function travelToShrine(key) {
   if (key.startsWith("node")) {
     const i = Number(key.slice(4)), n = network().nodes[i];
-    if (n && been.nodes[i] != null) teleport({ name: `a ley node (${nodeName(n)})`, lat: n.lat, lon: n.lon, alt: 30, heading: 0, zoom: 120 });
+    if (n && been.nodes[i] != null) teleport({ name: `a ley node (${nodeName(n)})`, lat: n.lat - 30 / 111320, lon: n.lon, alt: 2, heading: 0, zoom: ZOOM_HOME * 1.5 }); // before its stones, facing them
     return;
   }
   if (key.startsWith("mark:")) {
@@ -553,6 +554,7 @@ async function buildWorld(lat, lon) {
   const frame = makeFrame(lat, lon);
   const terrain = await buildTerrain(frame, lat, lon);
   const highways = buildHighways(frame, terrain.heightAt);
+  const stones = buildStones(highways.pillars, terrain.heightAt);
   const beings = buildSkyBeings(frame, terrain.heightAt);
   const plants = buildPlants(frame, terrain);
   const insects = buildInsects(frame, terrain);
@@ -561,9 +563,9 @@ async function buildWorld(lat, lon) {
   const finds = buildFinds(frame, terrain);
   finds.setTaken((f) => tookHere(inv, f.key, realNow())); // one you've had this moon isn't there for you
   const group = new THREE.Group();
-  group.add(terrain.mesh, highways.group, beings.group, plants.group, insects.group, critters.group, shrines.group, finds.group);
+  group.add(terrain.mesh, highways.group, stones.group, beings.group, plants.group, insects.group, critters.group, shrines.group, finds.group);
   layerTransparent(group); // glows, sparkles and fireflies draw after the sky
-  return { frame, terrain, highways, beings, plants, insects, critters, shrines, finds, group };
+  return { frame, terrain, highways, stones, beings, plants, insects, critters, shrines, finds, group };
 }
 function swapWorld(next, place) {
   if (place) {
@@ -672,6 +674,7 @@ addEventListener("keydown", (e) => {
   if (["Space", "ArrowUp", "ArrowDown"].includes(e.code)) e.preventDefault();
   if (e.code === "KeyM" && !e.repeat) logLine(sound.toggle() ? "Sound off." : "Sound on.", "note");
   if (e.code === "KeyE" && !e.repeat) interact();
+  if (state.gate && !e.repeat) gateKey(e.code); // a tap counts even if it's over before the next frame looks
   if (e.code === "KeyP" && !e.repeat) takePicture();
   if (e.code === "KeyI" && !e.repeat) toggleHud();
   if ((e.key === "?" || e.code === "KeyH") && !e.repeat) openHelp();
@@ -841,6 +844,7 @@ function step(dt) {
   // Speeds from your stats, and your legs: your body's scale, and any shape spell's (a giant strides, a tiny thing patters).
   sp = speeds(body(), (graph.scale / TYPICAL_SCALE) * spellLegs);
   if (state.realm) sp.run = Math.min(sp.run, DREAM_PACE); // in a dream you move as in a dream: no faster than a trot
+  if (state.gate) return gateStep(dt);
   const manual = input();
   if (manual.turn || manual.thrust || manual.up) { director.input(simT); if (state.target) clearTarget(); } // your hands back on the controls
   const { turn, thrust, up } = (!manual.turn && !manual.thrust && !manual.up && autopilot()) || manual;
@@ -930,15 +934,7 @@ function step(dt) {
   if (state.mode === "ground" && state.vy <= 0 && g2 >= 0 && p.y > g2 && p.y - g2 < groundStick()) p.y = g2;
   if (g2 < 0 && p.y < g2 + 2) p.y = g2 + 2;
 
-  // Pillars of light at the nodes lift any creature up to the ring, wings or not.
-  for (const pl of seesLey() && !state.realm ? world.highways.pillars : []) {
-    if (Math.hypot(p.x - pl.x, p.z - pl.z) > 300) continue;
-    if (p.y < pl.top) p.y = Math.min(pl.top, p.y + 160 * dt);
-    else if (up <= 0) p.y = pl.top;
-    state.vy = 0;
-    state.mode = "air";
-    break;
-  }
+  // (The pillars of light at the nodes used to lift anything that wandered in; now you step into their stones: gateStep.)
 
   // Fly along a highway, inside its ribbon, and it takes you.
   state.captureCooldown -= dt;
@@ -954,6 +950,134 @@ function step(dt) {
     setStatus("the dream shifts…");
     regrow(ll.lat, ll.lon, (w) => { swapWorld(w); setStatus(""); });
   }
+}
+
+// ---- The stones at the nodes (Jason, 11-09: "rework the portal UX ... it doesn't work very well for non-fliers! Maybe
+// pin position and switch to a lane selector, space or shift to cancel; have a shrine or a circle of standing stones
+// that you can interact with before the pillar of light pulls you up") ----
+// Step into a node's stones and touch them (E): the pillar's light lifts you to the ring overhead, held there, wings or
+// not, facing the lane nearest your heading. A/D (or the stick) chooses another, E or W sets off along it, Space or
+// Shift lets go (back down to the stones; a flyer just lets go). Arriving at a node off a highway, you're held in the
+// ring the same way, so you can go straight on. Pure lane geometry is in ride.js (lanesAt).
+const RISE_S = 3.2, SINK_S = 1.6;
+const laneMarks = (() => {
+  const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: 0xffd36a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+  for (let k = 0; k < 7; k++) { const m = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), mat.clone()); m.scale.set(1.4, 0.5, 1.4); g.add(m); }
+  g.visible = false;
+  scene.add(g);
+  layerTransparent(g); // light, drawn after the sky
+  return g;
+})();
+/** The gate's controls in words, for keys or for a touch screen. */
+const GATE_KEYS = matchMedia("(hover: hover) and (pointer: fine)").matches
+  ? { pick: "A/D", pickHud: "A/D", go: "E or W", off: "Space or Shift" }
+  : { pick: "the stick (left or right)", pickHud: "STICK ◀ ▶", go: "✦", off: "▲ or ▼" };
+const bearingOfHeading = (h) => ((((-h * 180) / Math.PI) % 360) + 360) % 360;
+/** Into the stones: the light takes you up. */
+function enterStones(st) {
+  if (!seesLey()) { logLine("The stones hum, but you can't see what they hum to. (Something worn that splits the light would show you.)", "highway"); return; }
+  const lanes = lanesAt(st.node);
+  if (!lanes.length) return;
+  clearTarget();
+  state.gate = { st, lanes, pick: laneFacing(lanes, bearingOfHeading(state.heading)), phase: "rise", t0: simT, from: state.pos.clone(), held: { turn: 0, go: true, up: true }, turnAt: 0 };
+  state.speed = 0; state.vy = 0; state.mode = "air";
+  sound.chime();
+  logLine(`You step into the stones. The light of ${nodeName(st.node)} takes hold of you and lifts.`, "highway");
+}
+/** Held in the ring at the top, choosing (straight off a highway, too). arrivedAlong: the bearing you came in on. */
+function holdInRing(st, arrivedAlong) {
+  const lanes = lanesAt(st.node);
+  if (!lanes.length) return false;
+  state.gate = { st, lanes, pick: laneFacing(lanes, arrivedAlong), phase: "choose", t0: simT, from: state.pos.clone(), held: { turn: 0, go: true, up: true }, turnAt: 0 };
+  state.pos.set(st.x, st.top, st.z);
+  state.speed = 0; state.vy = 0; state.mode = "air";
+  return true;
+}
+/** Let go of the light: down to the stones, or, with wings, just off into the air. */
+function leaveGate(words = "You step back out of the light.") {
+  const g = state.gate;
+  laneMarks.visible = false;
+  if (wings() > 0) { state.gate = null; state.mode = "air"; state.captureCooldown = 3; logLine("You let go of the light and fly.", "highway"); return; }
+  g.phase = "sink"; g.t0 = simT; g.from = state.pos.clone();
+  logLine(words, "highway");
+}
+/** Another lane: d = 1 clockwise, -1 back. */
+function gatePick(d) {
+  const g = state.gate;
+  g.pick = (g.pick + d + g.lanes.length) % g.lanes.length;
+  g.turnAt = simT; g.held.turn = d;
+}
+/** A key going down while held in the light (gateStep handles keys held, the stick and the touch buttons). */
+function gateKey(code) {
+  const g = state.gate;
+  if (g.phase === "sink") return;
+  if (code === "Space" || code === "ShiftLeft" || code === "ShiftRight") { g.held.up = true; leaveGate(); return; }
+  if (g.phase !== "choose") return;
+  if (code === "KeyA" || code === "ArrowLeft") gatePick(-1);
+  else if (code === "KeyD" || code === "ArrowRight") gatePick(1);
+  else if (code === "KeyW" || code === "ArrowUp") { g.held.go = true; takeLane(); }
+}
+/** Off along the chosen lane. */
+function takeLane() {
+  const g = state.gate, l = g.lanes[g.pick];
+  state.gate = null;
+  laneMarks.visible = false;
+  boardRide({ line: l.line, t: l.t, dir: l.dir });
+}
+function gateStep(dt) {
+  const g = state.gate, p = state.pos, { turn, thrust, up } = input(), age = simT - g.t0;
+  // Edges only: a key still held from before (W walking in, Space from a jump) does nothing until it's let go.
+  const goNow = thrust > 0 && !g.held.go, upNow = up !== 0 && !g.held.up;
+  g.held.go = thrust > 0; g.held.up = up !== 0;
+  state.speed = 0; state.vy = 0;
+  if (g.phase !== "sink" && upNow) return leaveGate();
+  const lane = g.lanes[g.pick], want = (-lane.bearing * Math.PI) / 180;
+  const turnTo = (rate) => { const d = Math.atan2(Math.sin(want - state.heading), Math.cos(want - state.heading)); state.heading += d * Math.min(1, dt * rate); };
+  if (g.phase === "rise") {
+    const k = Math.min(1, age / RISE_S), e = k * k * (3 - 2 * k), c = Math.min(1, e * 2.5);
+    p.set(g.from.x + (g.st.x - g.from.x) * c, g.from.y + (g.st.top - g.from.y) * e, g.from.z + (g.st.z - g.from.z) * c);
+    turnTo(2);
+    state.mode = "air";
+    if (k >= 1) { g.phase = "choose"; g.t0 = simT; sound.whoosh(); logLine(`${g.lanes.length} lanes leave ${nodeName(g.st.node)}. ${capital(GATE_KEYS.pick)} chooses; ${GATE_KEYS.go} sets off; ${GATE_KEYS.off} lets go.`, "highway"); }
+    return;
+  }
+  if (g.phase === "choose") {
+    p.set(g.st.x, g.st.top + Math.sin(simT * 1.6) * 0.4, g.st.z);
+    state.mode = "air";
+    // A tap moves one lane; held, it keeps going.
+    if (turn !== 0 && (g.held.turn !== Math.sign(turn) || simT - g.turnAt > 0.32)) gatePick(Math.sign(turn));
+    g.held.turn = Math.sign(turn);
+    turnTo(6);
+    if (goNow) takeLane();
+    return;
+  }
+  // Sinking back down to the stones.
+  const k = Math.min(1, age / SINK_S), e = k * k * (3 - 2 * k), ground = Math.max(world.terrain.heightAt(g.st.x, g.st.z), g.st.sea ? -1.5 : -Infinity);
+  p.set(g.st.x, g.from.y + (ground - g.from.y) * e, g.st.z);
+  if (k >= 1) { state.gate = null; state.mode = g.st.sea ? "water" : "ground"; state.captureCooldown = 3; state.upWas = true; } // a Space still held doesn't jump
+}
+/** The chosen lane, shown: diamonds of light running out along it from you. */
+function laneMarksTick(t) {
+  const g = state.gate;
+  laneMarks.visible = !!g && g.phase === "choose" && !!world && !state.ride;
+  if (!laneMarks.visible) return;
+  const b = (g.lanes[g.pick].bearing * Math.PI) / 180, ex = Math.sin(b), ez = -Math.cos(b);
+  laneMarks.children.forEach((m, k) => {
+    const d = 9 + k * 7;
+    m.position.set(state.pos.x + ex * d, state.pos.y + 0.5, state.pos.z + ez * d);
+    m.rotation.y = t * 2 + k;
+    m.material.opacity = 0.35 + 0.65 * Math.max(0, Math.sin(t * 5 - k * 0.8));
+  });
+}
+/** The HUD's lines while held in the ring. */
+function gateLines() {
+  const g = state.gate, l = g.lanes[g.pick], to = l.far, i = to ? network().nodes.indexOf(to) : -1;
+  const dir = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(l.bearing / 45) % 8];
+  if (g.phase === "rise") return [`THE STONES OF ${nodeName(g.st.node).toUpperCase()} · RISING`, `${GATE_KEYS.off.toUpperCase()}: LET GO`];
+  if (g.phase === "sink") return [`THE STONES OF ${nodeName(g.st.node).toUpperCase()}`, ""];
+  return [`LANE ${g.pick + 1} OF ${g.lanes.length} · ${l.line.cls.name.toUpperCase()} · ${dir} ${Math.round(l.bearing) % 360}°`,
+    `${Math.round(l.km).toLocaleString("en")} KM TO ${to ? nodeName(to).toUpperCase() : "A NODE"}${i >= 0 && been.nodes[i] != null ? " (BEEN)" : ""}`,
+    `${GATE_KEYS.pickHud}: ANOTHER LANE · ${GATE_KEYS.go.toUpperCase()}: GO · ${GATE_KEYS.off.toUpperCase()}: LET GO`];
 }
 
 // ---- Riding the highways (ley-space) ----
@@ -1001,6 +1125,9 @@ function leaveRide(arrived) {
     establishing();
     setStatus(arrived ? `you're at a node: ${nodeName(ll)}` : "");
     if (arrived) { const { node } = nearestNode(ll.lat, ll.lon), i = network().nodes.indexOf(node); if (i >= 0 && been.nodes[i] == null) { been.nodes[i] = Math.round(realNow()); keepAtlas(); } }
+    // Arriving, you're held in the node's ring, so you can go straight on along another lane, or let go.
+    const st = arrived && w.stones.near(0, 0, 600)[0];
+    if (st && holdInRing(st, (Math.atan2(tg.e, tg.n) * 180) / Math.PI)) { logLine(`You arrive at a node: ${nodeName(ll)}. The light holds you in its ring: choose a lane on (${GATE_KEYS.pick}, then ${GATE_KEYS.go}), or let go (${GATE_KEYS.off}).`, "highway"); setTimeout(() => setStatus(""), 4000); return; }
     logLine(arrived ? `You arrive at a node: ${nodeName(ll)}.` : "You step off the highway.", "highway");
     if (arrived) setTimeout(() => setStatus(""), 4000);
   });
@@ -1009,6 +1136,7 @@ function leaveRide(arrived) {
 // The landmarks are in the atlas now (11-09), to travel back to once you've been (the menu that went anywhere is gone).
 function teleport(l) {
   clearTarget();
+  state.gate = null; // out of any ring of light
   if (state.ride) { state.ride = null; rideFx.group.visible = false; if (world) world.group.visible = true; }
   zoom = Math.min(zoomMax(), l.zoom ?? ZOOM_HOME);
   if (l.heading !== undefined) state.heading = (-l.heading * Math.PI) / 180;
@@ -1337,6 +1465,11 @@ function inReach() {
     const d = Math.hypot(f.x - p.x, f.y - p.y, f.z - p.z); // in three dimensions: one on the seabed is down there
     if (d < RANGE.find) add({ kind: "find", key: f.key, name: ITEMS[f.holds].name, d, range: RANGE.find, f }, f.x, f.z);
   }
+  for (const c of world.stones.near(p.x, p.z, RANGE.stones)) {
+    const d = Math.hypot(c.x - p.x, c.z - p.z);
+    add({ kind: "stones", key: `n${c.i}`, d, range: RANGE.stones, c }, c.x, c.z);
+    if (d < CIRCLE_R) out[out.length - 1].facing = 1; // inside the ring, the ring is all round you
+  }
   for (const s of world.shrines.near(p.x, p.z, RANGE.shrine)) {
     add({ kind: "shrine", key: s.key, name: SPELLS[s.spell].name, state: s.state, dream: canDream(s), wake: s.state === "asleep" && canWake(s), d: Math.hypot(s.x - p.x, s.z - p.z), range: RANGE.shrine, s }, s.x, s.z);
   }
@@ -1375,6 +1508,7 @@ function glintSpot(c, v, bs) {
   if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
   if (c.kind === "find") return v.set(c.f.x, c.f.y + 0.7, c.f.z);
   if (c.kind === "shrine") return v.set(c.s.x, c.s.y + 2.4, c.s.z);
+  if (c.kind === "stones") return v.set(c.c.x, c.c.y + 3.5, c.c.z);
   if (c.kind === "critter") { const q = world.critters.near(c.c.x, c.c.z, 40).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 1.3, q.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
   if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
@@ -1382,7 +1516,7 @@ function glintSpot(c, v, bs) {
   return v.set(c.x, c.alt, c.z);
 }
 function updateReach(t, dt) {
-  const on = !!world && !rebuilding && !state.ride && !state.realm && zoom < REACH_ZOOM && !editing; // in the editor, nothing else asks for you
+  const on = !!world && !rebuilding && !state.ride && !state.gate && !state.realm && zoom < REACH_ZOOM && !editing; // in the editor, nothing else asks for you
   if (!on) { reach = lit = []; focus = null; }
   else if (t >= scanAt) {
     scanAt = t + 0.15;
@@ -1390,7 +1524,8 @@ function updateReach(t, dt) {
     focus = chooseFocus(reach, focus?.key);
     lit = glinting(reach, focus, 5);
   }
-  const r = state.ride, words = r ? (!r.leaving && r.age > 0.6 ? promptFor({ kind: "ride" }) : "") : focus ? promptFor(focus) : "";
+  const r = state.ride, g = state.gate;
+  const words = r ? (!r.leaving && r.age > 0.6 ? promptFor({ kind: "ride" }) : "") : g ? (g.phase === "choose" ? promptFor({ kind: "lane" }) : "") : focus ? promptFor(focus) : "";
   if (words !== shownPrompt) {
     shownPrompt = words;
     if (words) actWhat.textContent = words;
@@ -1411,6 +1546,7 @@ function updateReach(t, dt) {
 function interact() {
   const r = state.ride;
   if (r) { if (!r.leaving && r.age > 0.6) leaveRide(false); return; }
+  if (state.gate) { if (state.gate.phase === "choose") takeLane(); return; }
   if (!world || rebuilding || zoom > GLOBE_AT) return;
   director.input(simT);
   clearTarget();
@@ -1427,6 +1563,7 @@ function interact() {
   if (c.kind === "critter") return touchCritter(c.key);
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "highway") return boardTapped(c.line);
+  if (c.kind === "stones") return enterStones(c.c);
   if (c.kind === "artifact") return touchCairn(c.entry);
   if (c.kind === "mutual") return squeakAt(c.m);
 }
@@ -2238,7 +2375,9 @@ function toggleHud() {
 hud.addEventListener("click", toggleHud);
 function updateHud() {
   const fold = hudMore ? " ▴" : " ▾", lines = [];
-  if (state.ride) {
+  if (state.gate && world) {
+    lines.push(...gateLines());
+  } else if (state.ride) {
     const r = state.ride, ll = rideLatLon(r), near = r.leaving ? [] : crossings(r);
     lines.push(`RIDING ${r.line.cls.name.toUpperCase()} · ${Math.round(r.speed / 1000)} KM/S${fold}`, clockLine(),
       near.length ? `CROSSING ${near[0].line.cls.name.toUpperCase()} · A/D TO HOP` : "SHIFT OR S: STEP OFF");
@@ -2347,7 +2486,7 @@ function openHelp() {
   const group = (title, rows) => [h("h3", {}, title), h("dl", {}, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]))];
   maker.custom("help", [
     h("h2", {}, "How to play"),
-    ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space", "jump; with Wings, take off and climb (▲)"], ["Shift", "crouch, slow and quiet (small creatures don't start); flying, go down (▼)"], ["Tap anything", "go to it; close enough, it answers"], ["Wheel · + − · pinch", "the camera nearer or farther (about 500 m back; a far feather, or a shrine of the soaring eye, lifts it higher)"]]),
+    ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space", "jump; with Wings, take off and climb (▲)"], ["Shift", "crouch, slow and quiet (small creatures don't start); flying, go down (▼)"], ["Tap anything", "go to it; close enough, it answers"], ["E at a ley node's stones", "the light lifts you to its ring: A/D chooses a lane, E or W sets off, Space or Shift lets go"], ["Wheel · + − · pinch", "the camera nearer or farther (about 500 m back; a far feather, or a shrine of the soaring eye, lifts it higher)"]]),
     ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
     ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: fly along one to ride it)"], ["ATLAS ▾", "places you've found, to travel back to"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
   ], { trigger: helpBtn, classes: ["help"] });
@@ -2427,7 +2566,8 @@ function frame() {
   // The shared clock: the real one, or ?t= when it's fixed. Sky beings and
   // clouds follow it, so every player sees the same sky.
   const unix = unixAt(t);
-  if (world) world.highways.update(t);
+  if (world) { world.highways.update(t); world.stones.update(t, seesLey()); }
+  laneMarksTick(t);
   if (world) { window.__dream.beings = world.beings.update(unix, t); layerTransparent(world.beings.group); world.beings.group.visible = seesBeings(); }
   // Plants and insects around you; too small to matter from far up.
   if (world && !state.ride) {

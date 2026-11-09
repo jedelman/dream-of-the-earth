@@ -145,8 +145,8 @@ export function buildHighways(frame, heightAt) {
   }
 
   // Nodes: rings of light where lines meet, and a pillar of light from the
-  // ground (or the sea) up to the ring, which lifts any creature onto the
-  // network, wings or not.
+  // ground (or the sea) up to the ring. Step into the stones at its foot
+  // (stones.js) and it lifts you to the ring, wings or not.
   const pillars = [];
   const pillarMat = curved(new THREE.MeshBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide }), "-pillar");
   const ringMat = curved(new THREE.MeshBasicMaterial({ color: 0xffc94a, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide }), "-ring");
