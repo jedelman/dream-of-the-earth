@@ -8,6 +8,10 @@ test("shrines are scattered on land, the same everywhere, each holding a spell",
   const a = shrineHomes(45, 10, land), b = shrineHomes(45, 10, land);
   assert.deepEqual(a, b);
   assert.ok(a.length >= 3 && a.length <= SHRINE.max, `${a.length} shrines`);
+  // Fewer since 11-09: a couple within walking distance (3.6 km), each with its place for travelling back.
+  const near = a.filter((h) => Math.hypot(h.x, h.z) < 3600);
+  assert.ok(near.length <= 4, `${near.length} within 3.6 km`);
+  assert.ok(a.every((h) => Number.isFinite(h.lat) && Number.isFinite(h.lon)));
   assert.ok(a.every((s) => SPELLS[s.spell]));
   assert.equal(shrineHomes(45, 10, () => null).length, 0, "none at sea");
   // Across the Earth every spell turns up.

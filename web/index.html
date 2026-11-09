@@ -40,6 +40,7 @@
   #me, #mine { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: var(--ink); background: rgba(20, 12, 40, .6); border: 1px solid var(--gold); padding: 4px 8px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
   #me.on { color: var(--gold); }
   #mine { color: #ffb8de; border-color: rgba(255, 184, 222, .75); }
+  #atlas { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #fff1c4; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
   #bag { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #e6e1ff; background: rgba(20, 12, 40, .6); border: 1px solid rgba(214, 205, 255, .7); padding: 4px 8px; cursor: pointer; }
   .sheet.bag ul.items { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .sheet.bag ul.items li { display: grid; grid-template-columns: 22px 1fr auto; grid-template-areas: "ic what use" "ic about use"; column-gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid rgba(214, 205, 255, .2); }
@@ -101,7 +102,7 @@
   .sheet.creature .adopt[hidden] { display: none; } .sheet.creature .adopt button { margin-top: 4px; }
   /* A phone: the editor along the bottom, so the creature shows above it */
   @media (max-width: 640px) { .sheet.creature { position: fixed; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; max-height: 50vh; } }
-  .sheet input:focus-visible, .sheet textarea:focus-visible, .sheet button:focus-visible, #me:focus-visible, #mine:focus-visible, #bag:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .sheet input:focus-visible, .sheet textarea:focus-visible, .sheet button:focus-visible, #me:focus-visible, #mine:focus-visible, #bag:focus-visible, #atlas:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   @media (hover: hover) and (pointer: fine) { .btn { display: none; } }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
@@ -113,6 +114,7 @@
 <select id="places" aria-label="Go to a landmark"><option value="" selected disabled>LANDMARKS ▾</option></select>
 <button id="mine" aria-haspopup="dialog" aria-expanded="false" aria-label="Your creature">YOUR CREATURE ▾</button>
 <button id="bag" aria-haspopup="dialog" aria-expanded="false" aria-label="What you carry">BAG ▾</button>
+<button id="atlas" aria-haspopup="dialog" aria-expanded="false" aria-label="Places you've been">ATLAS ▾</button>
 <button id="me" aria-haspopup="dialog" aria-expanded="false">BLUESKY ▾</button>
 <button id="cairns" aria-haspopup="dialog" aria-expanded="false" hidden>CAIRNS ▾</button>
 <button id="saybtn" hidden aria-label="Say something to mutuals nearby">SAY</button>
