@@ -48,6 +48,11 @@
   .sheet.bag .what { grid-area: what; color: #e6e1ff; } .sheet.bag .about { grid-area: about; font-size: 11px; opacity: .75; } .sheet.bag button { grid-area: use; }
   /* A moonseed: dark, with a thin silver crescent catching the light */
   .item-moonseed { border-radius: 50%; background: #1d1830; box-shadow: inset -3px 1px 0 0 #e9e5ff, 0 0 6px rgba(201, 182, 255, .6); }
+  /* A prism: a small rainbow diamond */
+  .item-prism { transform: rotate(45deg) scale(.8); background: linear-gradient(135deg, #ff7ad9, #ffd34d 35%, #7af0a0 60%, #7af0ff 80%, #b38bff); box-shadow: 0 0 6px rgba(255, 255, 255, .5); }
+  .sheet.bag .wearing { margin: 4px 0 0; color: #f3d8ff; }
+  .sheet.bag li.worn .what { color: #fff6c9; }
+  .sheet.bag button:disabled { opacity: .45; cursor: default; }
   .sheet.creature button.eat { margin-top: 6px; }
   #cairns { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #ffe3a3; background: rgba(20, 12, 40, .6); border: 1px solid rgba(255, 211, 77, .6); padding: 4px 8px; cursor: pointer; }
   .sheet ul.cairns { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -124,7 +129,7 @@
 <div id="log" aria-live="polite"></div>
 <div id="whos" aria-hidden="true"><div id="mybubble" class="bubble" hidden></div></div>
 <form id="sayform" hidden autocomplete="off"><input id="saytext" maxlength="80" placeholder="Say something to mutuals nearby" aria-label="Say something" enterkeyhint="send"><button type="submit">Say</button></form>
-<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ENTER: SAY · YOUR CREATURE'S NAME ▾: CHANGE IT · SHRINES (COLUMNS OF LIGHT): A SPELL FOR A MINUTE, ESC LIFTS IT · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · FLY ALONG A GOLD HIGHWAY TO RIDE IT</div>
+<div id="help">TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ENTER: SAY · YOUR CREATURE'S NAME ▾: CHANGE IT · SHRINES (COLUMNS OF LIGHT): A SPELL FOR A MINUTE, ESC LIFTS IT · BLUESKY ▾: YOUR MUTUALS' CAIRNS · M: SOUND · WASD / ARROWS: MOVE · SPACE: UP · SHIFT: DOWN · WHEEL, +/− OR PINCH: ZOOM · BAG ▾: WHAT YOU CARRY AND WEAR (WEAR THE PRISM TO SEE THE GOLD HIGHWAYS; FLY ALONG ONE TO RIDE IT)</div>
 <button id="act" aria-hidden="true"><span class="key" aria-hidden="true">E</span><span class="what"></span></button>
 <button class="btn" id="up" aria-label="Up">▲</button>
 <button class="btn" id="down" aria-label="Down">▼</button>

@@ -1,0 +1,77 @@
+{
+  "lexicon": 1,
+  "id": "org.jason-edelman.dream.atlas",
+  "description": "A Dream of the Earth player's atlas: the places they've found, to travel back to. One record (rkey 'self'), overwritten as it grows, so it follows them to any device; devices merge.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": [
+          "shrines",
+          "updatedAt"
+        ],
+        "properties": {
+          "shrines": {
+            "type": "array",
+            "maxLength": 2000,
+            "description": "Shrines found, earliest first.",
+            "items": {
+              "type": "object",
+              "required": [
+                "key",
+                "latE6",
+                "lonE6",
+                "spell",
+                "at"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "maxLength": 16,
+                  "description": "The shrine's key: 'shrine' and its cell's hash."
+                },
+                "latE6": {
+                  "type": "integer",
+                  "minimum": -90000000,
+                  "maximum": 90000000
+                },
+                "lonE6": {
+                  "type": "integer",
+                  "minimum": -180000000,
+                  "maximum": 180000000
+                },
+                "spell": {
+                  "type": "string",
+                  "knownValues": [
+                    "giant",
+                    "tiny",
+                    "taffy",
+                    "mask",
+                    "upturned",
+                    "fisheye",
+                    "turning",
+                    "colours",
+                    "kaleido",
+                    "melt",
+                    "days"
+                  ]
+                },
+                "at": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "When it was first found (seconds since 1970)."
+                }
+              }
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

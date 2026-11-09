@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, ITEMS, INVENTORY_NSID } from "../web/js/inventory.js";
+import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, ITEMS, INVENTORY_NSID, wear, takeOff, wornOf, wearing, kitUp, KIT, WORN_MAX, sameInventory } from "../web/js/inventory.js";
 import { nearestNewMoon, lunationOf, SYNODIC_S } from "../web/js/moon.js";
 
 const newMoon = nearestNewMoon(Date.parse("2026-11-09T12:00:00Z") / 1000);
@@ -36,7 +36,7 @@ test("spend and refund", () => {
 test("the record: integers, known kinds only, round-trips", () => {
   const v = makeInventoryRecord({ items: { moonseed: 2 }, lunation: 333 }, Date.parse("2026-11-09T22:00:00Z"));
   assert.equal(v.$type, INVENTORY_NSID);
-  assert.deepEqual(parseInventoryRecord(v), { items: { moonseed: 2 }, lunation: 333, at: Date.parse("2026-11-09T22:00:00Z") });
+  assert.deepEqual(parseInventoryRecord(v), { items: { moonseed: 2 }, worn: [], kit: 0, lunation: 333, at: Date.parse("2026-11-09T22:00:00Z") });
   assert.deepEqual(parseInventoryRecord({ ...v, items: { moonseed: 99, sword: 1, x: "y" } }).items, { moonseed: 13 });
   assert.deepEqual(parseInventoryRecord({ ...v, items: { moonseed: -2 } }).items, {});
   assert.equal(parseInventoryRecord({ ...v, $type: "app.bsky.feed.post" }), null);
@@ -57,4 +57,36 @@ test("when the next moonseed falls: now if one is due, else the next window that
   const born = firstInventory(newMoon - 3600); // born tonight: tonight's seed is the first one
   assert.ok(Math.abs(nextSeedAt(born, newMoon - 3600) - (newMoon + SYNODIC_S - 86400)) < 1, "next month, not tonight");
   assert.ok(Math.abs(nextSeedAt({ items: {}, lunation: lunationOf(newMoon) }, fullMoon) - (newMoon + SYNODIC_S - 86400)) < 1);
+});
+
+test("a new creature starts wearing a prism; a pouch from before is given one", () => {
+  const a = firstInventory(fullMoon);
+  assert.equal(countOf(a, "prism"), 1);
+  assert.deepEqual(wornOf(a), ["prism"]);
+  assert.equal(a.kit, KIT);
+  assert.equal(kitUp(a), a, "nothing to add");
+  const old = kitUp({ items: { moonseed: 4 }, lunation: 333 });
+  assert.equal(countOf(old, "prism"), 1);
+  assert.equal(countOf(old, "moonseed"), 4);
+  assert.ok(wearing(old, "prism"));
+  assert.equal(kitUp(old), old, "only once");
+});
+
+test("wearing things: only what you carry, each once, and only so many at once", () => {
+  const inv = { items: { prism: 1, moonseed: 2 }, worn: [], kit: KIT, lunation: -1 };
+  assert.equal(wear(inv, "moonseed"), null, "a moonseed isn't worn");
+  assert.equal(wear({ ...inv, items: { moonseed: 1 } }, "prism"), null, "none to put on");
+  const on = wear(inv, "prism");
+  assert.deepEqual(wornOf(on), ["prism"]);
+  assert.equal(wear(on, "prism"), null, "already on");
+  assert.deepEqual(wornOf(takeOff(on, "prism")), []);
+  assert.equal(takeOff(inv, "prism"), null, "wasn't on");
+  assert.equal(WORN_MAX, 2);
+  // The last one given away comes off.
+  assert.deepEqual(wornOf(spend(on, "prism")), []);
+  // A record claiming more than the slots, or things not carried, is cut down.
+  const v = makeInventoryRecord({ items: { prism: 1 }, worn: ["prism", "prism", "moonseed", "crown"], kit: 1, lunation: 2 });
+  assert.deepEqual(v.worn, ["prism"]);
+  assert.deepEqual(parseInventoryRecord({ ...v, worn: ["prism"], items: {} }).worn, []);
+  assert.ok(!sameInventory(on, inv), "what you wear is part of the pouch");
 });

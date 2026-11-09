@@ -10,7 +10,9 @@
         "type": "object",
         "required": ["items", "updatedAt"],
         "properties": {
-          "items": { "type": "object", "description": "How many of each kind. Unknown kinds and out-of-range counts are ignored.", "properties": { "moonseed": { "type": "integer", "minimum": 0, "maximum": 13, "description": "Falls at each new moon; eaten to change your stats." } } },
+          "items": { "type": "object", "description": "How many of each kind. Unknown kinds and out-of-range counts are ignored.", "properties": { "moonseed": { "type": "integer", "minimum": 0, "maximum": 13, "description": "Falls at each new moon; eaten to change your stats." }, "prism": { "type": "integer", "minimum": 0, "maximum": 3, "description": "Worn, the ley lines show and can be ridden. Every creature starts with one." } } },
+          "worn": { "type": "array", "maxLength": 2, "items": { "type": "string", "knownValues": ["prism"] }, "description": "What you wear, by kind, in the order put on: at most two, each something you carry." },
+          "kit": { "type": "integer", "minimum": 0, "description": "The starting kit you've been given (1: the prism), so an older pouch is given what it lacks, once." },
           "lunation": { "type": "integer", "minimum": -1, "description": "The new moon (counted from 6 January 2000) whose moonseed you were last given, so each moon gives one." },
           "updatedAt": { "type": "string", "format": "datetime" }
         }

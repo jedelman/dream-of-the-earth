@@ -29,12 +29,13 @@ where you are. Every mutual's phone works out where you are from it. Lexicon: `d
     It's replayed along the route; at the end you stop.
   - `ride`: on a golden highway (`line` index, start fraction `tE6`, `dir` ±1), at the highway's speed.
   - `steer`: heading, speed and climb, dead-reckoned for up to 90 s.
-- **Your creature:** `creature: { seed, stats: [climb, swim, run, gleam, perception], genes? }` (stats each 0–6, total at
+- **Your creature:** `creature: { seed, stats: [climb, swim, run, gleam, perception], genes?, worn? }` (stats each 0–6, total at
   most 12; the old four, `[fly, swim, run, gleam]`, still read, as climb, swim, run, gleam with no perception).
   Mutuals grow the same creature from it. No geometry travels. `genes` is optional, what a player changes in the
   editor: `roll` (a re-roll seed per trait: palette, body, heads, eyes, wings, legs, tail, spikes), `count` (heads 0–3,
   eyes 0–9, wing and leg pairs 0–4, tail 0–4, spikes 0–10), `hue` (1–359, turns the colours) and `size` (80–160 %).
   `generateCreature(seed, genes)` in `web/js/creature-graph.js` shows what you'll look like.
+  `worn` (optional) lists what it wears, at most two names (`"prism"` so far); each phone builds the look itself.
 - **Stay alive:** an intent older than 10 minutes is treated as gone. Rewrite it at least every 4 minutes while you're
   playing; that's the heartbeat.
 - **Leave cleanly:** delete the record when you stop (`com.atproto.repo.deleteRecord`, rkey `self`).

@@ -29,8 +29,9 @@ import { account, isReturning, takeReturn } from "./account.js";
 import { buildMaker } from "./maker.js";
 import { buildEditor } from "./editor.js";
 import { buildBag } from "./bag.js";
+import { makeAtlasRecord, parseAtlasRecord, mergeAtlas, atlasKey } from "./atlas-record.js";
 import { buildAtlas } from "./atlas.js";
-import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt } from "./inventory.js";
+import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX } from "./inventory.js";
 import { whenText } from "./moon.js";
 import { buildShrines } from "./shrines.js";
 import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf, WAKES, skyState, wokeAt } from "./shrinelore.js";
@@ -88,19 +89,24 @@ function keptInventory() {
   try {
     const v = JSON.parse(localStorage.getItem(INVENTORY_KEY) || "null");
     if (!v) return null;
-    const p = parseInventoryRecord({ items: v.items, lunation: v.lunation });
-    return p && { items: p.items, lunation: p.lunation, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
+    const p = parseInventoryRecord({ items: v.items, worn: v.worn, kit: v.kit, lunation: v.lunation });
+    return p && { items: p.items, worn: p.worn, kit: p.kit, lunation: p.lunation, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
   } catch { return null; }
 }
-let inv = keptInventory() || { ...firstInventory(Date.now() / 1000), at: 0, changed: false }; // one moonseed to begin with
+let inv = keptInventory() || { ...firstInventory(Date.now() / 1000), at: 0, changed: false }; // a moonseed and a prism to begin with
+inv = { ...kitUp(inv), at: inv.at, changed: inv.changed }; // a pouch from before the prism is given one
 let invAt = -Infinity; // when it last changed (s), so your repo gets it once things settle
 let bagView = null;
 function keepInventory(next, { changed = true, at = Date.now() } = {}) {
-  inv = { items: next.items, lunation: next.lunation, at, changed };
+  const wasWorn = wornOf(inv).join(",");
+  next = kitUp(next);
+  inv = { items: next.items, worn: wornOf(next), kit: next.kit, lunation: next.lunation, at, changed };
   invAt = Date.now() / 1000;
   try { localStorage.setItem(INVENTORY_KEY, JSON.stringify(inv)); } catch { /* private mode */ }
   bagView?.refresh(); // the BAG button, once it exists
+  if (wornOf(inv).join(",") !== wasWorn) wornChanged?.();
 }
+let wornChanged = null; // set once the creature exists: what you wear shows on it
 keepInventory(inv, { changed: inv.changed, at: inv.at });
 // Separate streams, so choosing your stats doesn't move your spawn. A creature named in the URL lands where its
 // seed says, so any spawn is reproducible; your own lands somewhere new each visit.
@@ -165,7 +171,7 @@ layerTransparent(rideFx.group);
 
 // ---- The creature ----
 let graph = generateCreature(seed, genes);
-let creature = buildCreature(graph, stats);
+let creature = buildCreature(graph, stats, wornOf(inv));
 // Where it looks from: just in front of its eyes (or its head, or the front of its body), in its own units.
 function eyeOf(graph) {
   const eyes = graph.parts.filter((p) => p.kind === "eye"), heads = graph.parts.filter((p) => p.kind === "head");
@@ -182,6 +188,8 @@ let editing = false; // the creature editor is open: the camera looks at it, not
 const wings = () => stats.climb;
 /** Perception 3 and up sees the sky beings. */
 const seesBeings = () => stats.perception >= SEE_BEINGS;
+/** The ley lines (the highways) show, and carry you, only while you wear a prism (Jason, 11-09: "ley lines are invisible without the correct item"). */
+const seesLey = () => wearing(inv, "prism");
 /** The HUD's stats, on two lines. */
 const statsLines = () => [STATS.slice(0, 3), STATS.slice(3)].map((ks) => ks.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  ")).join("\n");
 let steepAt = -Infinity;
@@ -211,13 +219,15 @@ layerTransparent(creature.group);
 const myCreature = () => ({ seed, genes, stats });
 const keyOf = (c) => `${c.seed}:${STATS.map((k) => c.stats[k]).join(",")}:${JSON.stringify(parseGenes(c.genes))}`;
 const lookKey = () => keyOf(myCreature());
+/** What mutuals see of you: your look and what you wear. */
+const shownKey = () => `${lookKey()}:${wornOf(inv).join(",")}`;
 let lookAt = -Infinity; // when the look last changed (real seconds), so mutuals get it once you've settled
 /** A new look (from the editor, or your repo): regrow the creature where it stands, keep it, and tell mutuals once you've settled. */
 /** Swap the body on screen for one grown from g (your own, or a shrine's mask), where it stands. */
 function swapBody(g) {
   const was = creature;
   graph = g;
-  creature = buildCreature(graph, stats);
+  creature = buildCreature(graph, stats, wornOf(inv));
   creature.group.position.copy(was.group.position);
   creature.group.rotation.copy(was.group.rotation);
   scene.remove(was.group);
@@ -303,20 +313,23 @@ function shrineTick() {
   world.shrines.setStates(shrineStateOf);
 }
 const capital = (s) => s[0].toUpperCase() + s.slice(1);
-// ---- Your atlas: shrines you've found, to travel back to (11-09). Kept on the device: a list of shrines is a map of
-// where you've been, and Jason chose to keep the repo's record of that small (ley nodes only, when they come). ----
+// ---- Your atlas: shrines you've found, to travel back to (11-09). Kept on the device and, signed in, in your repo
+// (Jason: "I'm okay with publishing the atlas to the repo!"), so it follows you. ----
 const ATLAS_KEY = "dream.atlas";
-const found = (() => { try { const v = JSON.parse(localStorage.getItem(ATLAS_KEY) || "{}"); return v && typeof v.shrines === "object" ? v.shrines : {}; } catch { return {}; } })();
+const found = (() => { try { const v = JSON.parse(localStorage.getItem(ATLAS_KEY) || "{}"); return v && typeof v.shrines === "object" ? parseAtlasRecord(makeAtlasRecord(v.shrines)).shrines : {}; } catch { return {}; } })();
+function keepAtlas() {
+  try { localStorage.setItem(ATLAS_KEY, JSON.stringify({ shrines: found })); } catch { /* private mode */ }
+  atlasView?.refresh(Object.keys(found).length);
+  globe.setShrines(foundList());
+}
 /** Walking up to a shrine puts it in your atlas. */
 function discoverShrines() {
   if (!world) return;
   for (const s of world.shrines.near(state.pos.x, state.pos.z, RANGE.shrine + 6)) {
     if (found[s.key]) continue;
     found[s.key] = { lat: s.lat, lon: s.lon, spell: s.spell, at: Math.round(realNow()) };
-    try { localStorage.setItem(ATLAS_KEY, JSON.stringify({ shrines: found })); } catch { /* private mode */ }
+    keepAtlas();
     logLine(`You've found ${SPELLS[s.spell].name}. You can travel back to it from your atlas.`, "shrine");
-    atlasView?.refresh(Object.keys(found).length);
-    globe.setShrines(foundList());
   }
 }
 const foundList = () => Object.entries(found).map(([key, f]) => ({ key, ...f, colour: KIND_COLOUR[SPELLS[f.spell]?.kind] ?? 0xffffff })).filter((f) => SPELLS[f.spell]);
@@ -633,7 +646,7 @@ function step(dt) {
   if (g2 < 0 && p.y < g2 + 2) p.y = g2 + 2;
 
   // Pillars of light at the nodes lift any creature up to the ring, wings or not.
-  for (const pl of world.highways.pillars) {
+  for (const pl of seesLey() ? world.highways.pillars : []) {
     if (Math.hypot(p.x - pl.x, p.z - pl.z) > 300) continue;
     if (p.y < pl.top) p.y = Math.min(pl.top, p.y + 160 * dt);
     else if (up <= 0) p.y = pl.top;
@@ -644,7 +657,7 @@ function step(dt) {
 
   // Fly along a highway, inside its ribbon, and it takes you.
   state.captureCooldown -= dt;
-  if (state.captureCooldown <= 0 && state.speed > 5 && !state.target) { // not on a trip you tapped for: a highway you cross shouldn't take you
+  if (state.captureCooldown <= 0 && state.speed > 5 && !state.target && seesLey()) { // not on a trip you tapped for: a highway you cross shouldn't take you
     const ll = world.frame.toLatLon(p.x, p.z);
     const c = chooseCapture(ll.lat, ll.lon, { e: fx, n: -fz });
     if (c && Math.abs(p.y - highwayAltitude(world.terrain.heightAt(p.x, p.z))) < captureRadius(c.line.cls.rank)) boardRide(c);
@@ -769,6 +782,7 @@ function groundAt() {
 }
 /** A highway glowing along the tap ray (before it reaches the ground): { t, x, z, alt, line } or null. */
 function highwayAt() {
+  if (!seesLey()) return null; // without a prism there's nothing there to tap
   const o = tapRay.ray.origin, d = tapRay.ray.direction;
   for (let t = 20, i = 0; i < 500 && t < 40000; i++, t += Math.max(10, t * 0.015)) {
     const x = o.x + d.x * t, z = o.z + d.z * t, dx = x - camera.position.x, dz = z - camera.position.z;
@@ -1051,7 +1065,7 @@ function inReach() {
     add({ kind: "artifact", key: `a${e.a.uri}`, d: Math.hypot(e.x - p.x, e.z - p.z), range: RANGE.artifact, entry: e, handle: e.a.handle, own: e.a.own }, e.x, e.z);
   }
   const ll = world.frame.toLatLon(p.x, p.z);
-  for (const c of linesNear(ll.lat, ll.lon, RANGE.highway)) {
+  for (const c of seesLey() ? linesNear(ll.lat, ll.lon, RANGE.highway) : []) {
     const q = vecToLatLon(c.at), l = world.frame.toLocal(q.lat, q.lon);
     // The glint sits a little way along the line, the way you're facing, so at a node they fan out along the roads.
     const tg = tangentEN(c.line, c.t, 1), dir = tg.e * fx - tg.n * fz >= 0 ? 30 : -30, gx = l.x + tg.e * dir, gz = l.z - tg.n * dir;
@@ -1234,7 +1248,7 @@ const maker = buildMaker({
     share.on = !share.on;
     try { localStorage.setItem("dream.share", share.on ? "on" : "off"); } catch { /* */ }
     if (!share.on) await stopSharing();
-    maker.setSharing({ on: share.on, can: share.can, keep: keep.can });
+    maker.setSharing({ on: share.on, can: share.can, keep: keep.can && carry.can && mapping.can });
     logLine(share.on ? "Your mutuals can see your creature now." : "You're hidden from your mutuals now.", "note");
   },
   flock: () => {
@@ -1346,10 +1360,34 @@ const bag = buildBag({
     inventory: () => inv,
     use: (kind) => { if (kind === "moonseed" && (respec.open || eatMoonseed())) editor.open(); },
     nextSeed: () => whenText(nextSeedAt(inv, realNow()), realNow()),
+    wear: (kind) => changeWorn(kind, true),
+    takeOff: (kind) => changeWorn(kind, false),
+    whyNot: () => wornLock(),
   },
 });
 bagView = bag;
 bag.refresh();
+// What you wear (Jason, 11-09: "limited equip slots too so we have to choose between abilities"): two things at once,
+// changed on the ground or in the water, not in the air or on a highway, so you choose before you set off.
+wornChanged = () => { swapBody(graph); lookAt = realNow(); };
+function wornLock() {
+  if (state.ride) return "Not while you're riding a highway.";
+  if (state.mode === "air") return "Not in the air: land (or float) first.";
+  return null;
+}
+function changeWorn(kind, on) {
+  const why = wornLock();
+  if (why) { logLine(why, "note"); return false; }
+  const next = on ? wear(inv, kind) : takeOff(inv, kind);
+  if (!next) { if (on && wornOf(inv).length >= WORN_MAX) logLine(`You can wear ${WORN_MAX} things at once. Take one off first.`, "note"); return false; }
+  keepInventory(next);
+  sound.chime();
+  logLine(on ? ITEMS[kind].on ?? `You put on the ${ITEMS[kind].name}.` : ITEMS[kind].off ?? `You take off the ${ITEMS[kind].name}.`, "shrine");
+  const at = state.pos.clone();
+  at.y += 4 * creature.size;
+  bursts.emit({ at, colors: [new THREE.Color().setHSL(simT % 1, 0.9, 0.7), new THREE.Color(0xffffff)], n: 12, spread: 2 * creature.size, up: 2, fall: 1.5, life: 0.9 });
+  return true;
+}
 atlasView = buildAtlas({
   maker,
   button: document.getElementById("atlas"),
@@ -1377,7 +1415,7 @@ function seedTick() {
 }
 // Your pouch in your repo, like your creature: brought into step on sign-in and when you come back; written once things settle.
 const carry = { can: false, synced: "", busy: false };
-const invKey = () => JSON.stringify([inv.items, inv.lunation]);
+const invKey = () => JSON.stringify([inv.items, wornOf(inv), inv.kit, inv.lunation]);
 async function syncInventory() {
   if (!account.did || !carry.can || carry.busy) return;
   carry.busy = true;
@@ -1398,19 +1436,45 @@ function carryTick() {
   account.putInventory(makeInventoryRecord(inv, inv.at || Date.now())).then(() => { carry.synced = k; })
     .catch((e) => console.warn("inventory:", e.message)).finally(() => { carry.busy = false; });
 }
+// Your atlas in your repo: merged on sign-in and when you come back (a place found on any device is found), written
+// when you find somewhere new.
+const mapping = { can: false, synced: "", busy: false };
+async function syncAtlas() {
+  if (!account.did || !mapping.can || mapping.busy) return;
+  mapping.busy = true;
+  try {
+    const remote = parseAtlasRecord(await account.getAtlas());
+    const merged = mergeAtlas(found, remote?.shrines);
+    if (atlasKey(merged) !== atlasKey(found)) { Object.assign(found, merged); keepAtlas(); }
+    if (!remote || atlasKey(merged) !== atlasKey(remote.shrines)) await account.putAtlas(makeAtlasRecord(found));
+    mapping.synced = atlasKey(found);
+  } catch (e) { console.warn("atlas:", e.message); }
+  finally { mapping.busy = false; }
+}
+function atlasTick() {
+  if (!account.did || !mapping.can || mapping.busy || people.viewer !== account.did) return;
+  const k = atlasKey(found);
+  if (k === mapping.synced) return;
+  mapping.busy = true;
+  account.putAtlas(makeAtlasRecord(found)).then(() => { mapping.synced = k; })
+    .catch((e) => console.warn("atlas:", e.message)).finally(() => { mapping.busy = false; });
+}
 account.onChange(async (did) => {
   share.can = false;
   keep.can = false;
   keep.synced = "";
   carry.can = false;
   carry.synced = "";
+  mapping.can = false;
+  mapping.synced = "";
   if (did) {
     const name = (await handlesOf([did])).get(did) || null;
     setViewer(did, name);
-    [share.can, keep.can, carry.can] = await Promise.all([account.canShare(), account.canKeep(), account.canCarry()]);
-    maker.setSharing({ on: share.on, can: share.can, keep: keep.can && carry.can });
+    [share.can, keep.can, carry.can, mapping.can] = await Promise.all([account.canShare(), account.canKeep(), account.canCarry(), account.canMap()]);
+    maker.setSharing({ on: share.on, can: share.can, keep: keep.can && carry.can && mapping.can });
     syncCreature();
     syncInventory();
+    syncAtlas();
     account.mutes().then((m) => { setMuted(m); refreshIntents(); refreshEverywhere(); artifactsAt = -Infinity; });
   } else if (people.viewer && people.viewer === account.did) setViewer(null, null);
   else maker.setPerson({ did: people.viewer, handle: people.handle, signedIn: false });
@@ -1502,7 +1566,7 @@ function hearMutuals(on) {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { hearMutuals(false); stopSharing(); }
   else if (people.viewer) { hearMutuals(true); refreshIntents(); }
-  if (!document.hidden && realNow() - keep.checkedAt > 20) { syncCreature(); syncInventory(); } // changed on another device meanwhile?
+  if (!document.hidden && realNow() - keep.checkedAt > 20) { syncCreature(); syncInventory(); syncAtlas(); } // changed on another device meanwhile?
 });
 addEventListener("pagehide", () => { stopSharing(); });
 /** Off to a mutual: arrive 40 m from where their creature is now. */
@@ -1571,7 +1635,7 @@ function placeMyBubble() {
 /** What I'm doing now, as an intent: a ride, a trip, steering, or resting. */
 function myIntent() {
   const p = state.pos, ll = world.frame.toLatLon(p.x, p.z), nowS = realNow();
-  const base = { p: { lat: ll.lat, lon: ll.lon, alt: p.y }, creature: myCreature(), say: fresh(share.say, nowS) ? share.say : null, act: fresh(share.act, nowS) ? share.act : null };
+  const base = { p: { lat: ll.lat, lon: ll.lon, alt: p.y }, creature: { ...myCreature(), worn: wornOf(inv) }, say: fresh(share.say, nowS) ? share.say : null, act: fresh(share.act, nowS) ? share.act : null };
   if (state.ride) {
     const r = state.ride, rl = rideLatLon(r);
     return { ...base, p: { lat: rl.lat, lon: rl.lon, alt: p.y }, kind: "ride", key: `ride:${r.line.i}:${r.dir}`, ride: { line: r.line.i, t: r.t, dir: r.dir } };
@@ -1588,7 +1652,7 @@ function shareTick() {
   if (!share.on || !share.can || !world || rebuilding || share.writing || people.viewer !== account.did || document.hidden) return;
   const nowS = realNow(), want = myIntent(), since = nowS - share.lastAt;
   const ll = want.p, drift = share.last ? driftOf(share.last, nowS, ll.lat, ll.lon) : Infinity;
-  const changed = want.key !== share.lastKey, look = lookKey();
+  const changed = want.key !== share.lastKey, look = shownKey();
   const restyled = look !== share.lastLook && nowS - lookAt > 3 && since > 3; // a new look, once you've stopped fiddling
   const moment = !!(want.say || want.act), clearMoment = share.carried && !moment; // words leave your record once they've been heard
   if (!(share.force || clearMoment || restyled || (changed && since > 1.5) || (drift > 60 && since > 6) || since > HEARTBEAT_S)) return;
@@ -1604,7 +1668,7 @@ function shareTick() {
   }).catch((e) => {
     console.warn("intent:", e.message);
     share.lastAt = nowS; // don't hammer
-    if (/scope|forbidden|403/i.test(e.message)) { share.can = false; maker.setSharing({ on: share.on, can: false, keep: keep.can }); }
+    if (/scope|forbidden|403/i.test(e.message)) { share.can = false; maker.setSharing({ on: share.on, can: false, keep: keep.can && carry.can && mapping.can }); }
   }).finally(() => { share.writing = false; });
 }
 // ---- Your creature in your repo, so it follows you (signed in, with a sign-in that covers it) ----
@@ -1780,7 +1844,7 @@ function frame() {
     scene.fog.far = Math.min(440000, Math.max(40000, horizonM * 1.2)) * sightOf(stats.perception); // perception: how far you see
     scene.fog.near = scene.fog.far * 0.25;
   }
-  if (world) world.highways.group.visible = !underwater;
+  if (world) world.highways.group.visible = !underwater && seesLey();
   sea.underwater = underwater;
   scene.background = scene.fog.color;
 
@@ -1823,6 +1887,7 @@ function frame() {
     keepTick();
     seedTick();
     carryTick();
+    atlasTick();
     const nowS = realNow();
     let gone = false;
     for (const [did, w] of who) if (nowS - w.intent.at > STALE_S) { who.delete(did); gone = true; } // stale: they've left
@@ -1838,6 +1903,7 @@ function frame() {
   if (zoom > GLOBE_AT) {
     // The whole planet.
     const fxg = -Math.sin(state.heading), fzg = -Math.cos(state.heading);
+    globe.showLey(seesLey());
     globe.update(view.ll, { e: fxg, n: -fzg }, zoom, new Date(unixAt(t) * 1000), camera.aspect, t);
     renderer.render(globe.scene, globe.camera);
   } else {
@@ -1913,7 +1979,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, inv: () => inv, wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };
