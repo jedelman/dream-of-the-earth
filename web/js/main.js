@@ -37,7 +37,7 @@ import { logLine } from "./eventlog.js";
 import { buildBursts } from "./bursts.js";
 import { buildDirector, squeakShot, treeShot, butterflyShot, beingShot, arriveShot, boardShot, cairnShot, portraitShot, portraitAngle, portraitDistance } from "./director.js";
 import { buildSkyBeings } from "./skybeings.js";
-import { randomStats, parseStats, speeds, STATS, MAX } from "./stats.js";
+import { randomStats, parseStats, speeds, STATS, MAX, TYPICAL_SCALE } from "./stats.js";
 import { biomeFor, koppenCode } from "./biome.js";
 import { koppenAt } from "./koppen.js";
 import { buildPlants } from "./plants.js";
@@ -152,7 +152,7 @@ let creatureOpacity = 1, footLift = 0;
 let editing = false; // the creature editor is open: the camera looks at it, not through it
 // Shrines' spells (shrinelore.js): a minute of another shape, another camera, another world. Each { id, t0, endAt }.
 const spells = { shape: null, camera: null, world: null };
-let spellZoom = 1, masks = 0;
+let spellZoom = 1, spellLegs = 1, masks = 0;
 function fadeCreature(o) {
   if (Math.abs(o - creatureOpacity) < 0.004) return;
   const was = creatureOpacity < 1, now = o < 0.999;
@@ -193,8 +193,8 @@ function setCreature(next, at = Date.now()) {
   seed = next.seed >>> 0;
   genes = parseGenes(next.genes);
   stats = next.stats;
-  sp = speeds(stats);
   swapBody(generateCreature(seed, genes));
+  sp = speeds(stats, graph.scale / TYPICAL_SCALE);
   myName = creatureName(seed);
   keepCreature(at);
   lookAt = realNow();
@@ -420,6 +420,8 @@ function input() {
 // ---- Movement: fly, run, swim; the stats set the numbers ----
 const GRAVITY = 18;
 function step(dt) {
+  // Speeds from your stats, and your legs: your body's scale, and any shape spell's (a giant strides, a tiny thing patters).
+  sp = speeds(stats, (graph.scale / TYPICAL_SCALE) * spellLegs);
   const manual = input();
   if (manual.turn || manual.thrust || manual.up) { director.input(simT); if (state.target) clearTarget(); } // your hands back on the controls
   const { turn, thrust, up } = (!manual.turn && !manual.thrust && !manual.up && autopilot()) || manual;
@@ -1627,12 +1629,13 @@ function worldView(dt, t) {
   footLift += ((state.mode === "water" ? 0 : creature.foot) - footLift) * Math.min(1, dt * 6);
   creature.group.position.set(p.x, p.y + footLift + hopY + (state.mode === "water" ? Math.sin(t * 2) * 0.4 : 0), p.z);
   creature.group.rotation.y = state.heading;
-  creature.update(t, { mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / 60) });
+  creature.update(t, { mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / (state.mode === "air" ? sp.fly : state.mode === "water" ? sp.swim : sp.run)) });
   // A shape spell: giant, tiny, stretched. It scales the body after it breathes, lifts it to its new feet, and moves the camera to suit.
   const sh = shapeOf(spells.shape?.id, spellNow("shape").w);
   creature.group.scale.multiply(sh);
   creature.group.position.y += footLift * (sh.y - 1);
   spellZoom = sh.zoom;
+  spellLegs = sh.y;
 
   // The camera: the director frames what you're doing.
   let goal = null;

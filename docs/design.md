@@ -387,8 +387,8 @@ breathe. Animals more, plants less, landscapes even less."
   (was 34). Close-ups, the editor's portrait, name tags, hops and puffs all use the creature's size in metres.
 - **On its feet:** a creature now stands on its lowest point (legs and all) instead of its middle, which had left
   bodies half in the ground; in water it floats as before.
-- **Speeds are unchanged,** so near the ground the world goes by faster than it did. Jason's call whether ground
-  speeds shrink too.
+- **Ground speeds shrank too** (11-09, Jason: "Yes let's shrink ground speed… Should be a power law"): see "Creature
+  stats" for the formula. Running, jumping and swimming went down by √0.4 ≈ 0.63; flying didn't.
 - **Small creatures shrank less** (0.6×), so a bunny comes up to about half of you.
 - **Breathing** (`breath.js`): animals the most, plants less, land least.
   - Creatures, yours and your mutuals': 5% up and down, 2.5% around, about every 3.6 s at rest and 1.4 s at full speed.
@@ -456,6 +456,26 @@ Jason: "creature stat customization. Fly/swim/run/gleam (the last one just makes
   only changes how it moves itself.
 - **With no stat, you're slow, not stuck:** zero fly still glides and hops, zero swim still paddles, zero run
   still walks.
+- **The formula (11-09): a power law in each stat, `v = v0 · (1 + stat)^p`** (`speeds()` in `stats.js`). Every point
+  multiplies your speed, the first the most (×2^p) and the sixth the least (×(7/6)^p), so spreading points pays
+  better than piling them on. It replaced straight lines (run `8 + 10·run`, fly `30 + 28·fly`, swim `4 + 6·swim`).
+
+  | | v0 (stat 0) | p | stat 6 |
+  |---|---|---|---|
+  | run | 5 m/s | 1.1 | 42.6 m/s |
+  | jump (off the ground) | 3.8 m/s | 0.71 | 15.2 m/s |
+  | swim | 2.5 m/s | 1.18 | 24.9 m/s |
+  | dive | 1.3 m/s | 1.65 | 32 m/s |
+  | fly | 30 m/s | 0.97 | 198 m/s |
+  | climb | 4 m/s | 1.18 | 39.6 m/s |
+
+  The ends were kept where they were (ground ones scaled for the shrink), so p comes out near 1 and the curve is close
+  to the old line; p is the dial (below 1, each point gives less than the last; above 1, more).
+- **Body-powered movement scales with size** as the square root of leg length (the same Froude number, v²/gL, keeps
+  the same gait): running, jumping, swimming and diving multiply by √(scale / 1.2). So the editor's size gene matters
+  a little (the smallest creature is about 0.82× typical, the biggest 1.15×), and shape spells matter a lot: a giant
+  strides √6 ≈ 2.4× faster, a tiny creature goes at half speed, taffy's long legs give 1.8×. Flying doesn't scale:
+  the wings are the dream's.
 
 ## Artifacts: things left for mutuals (built 11-08, PR #22)
 Jason: "let's use atproto back links to host artifacts for mutuals to discover." The first kind is the **cairn**;
