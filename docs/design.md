@@ -664,9 +664,13 @@ from his first list, "portal items (everyone starts with one) to travel to frien
   version 2), one opens for you at each full moon (a day either side; once a moon, like the moonseed at the new moon),
   five fit, and they can be sent by pigeon. Your own cairns, and everything in your atlas, stay free. With none: "You
   have no portal. One opens for you at each full moon (the next in 14 days), and a friend can send you one by pigeon."
-- **Still to come:** watersheds as regions, with compasses and goal sequences. They need a basin dataset whose licence
-  allows redistribution (HydroBASINS is the likely one; its terms are to be confirmed on HydroSHEDS' own site), or
-  basins worked out from the elevation tiles.
+- **Still to come:** watersheds as regions, with compasses and goal sequences. **Not HydroBASINS:** read on 11-09 in
+  the HydroSHEDS Technical Documentation v1.4 (April 2022), Appendix A, which HydroBASINS shares, its licence is WWF's
+  own: distribution only inside a derivative work "to End Users, subject to the terms and conditions of an end user
+  license agreement with terms that are at least as protective" (2.1.2), and records of "the identity and address of
+  each End User" (10.7). A free web game with anonymous players can't keep either. So the basins will be worked out
+  from the elevation tiles the game already uses (flow directions on a coarse global grid, offline, shipped as small
+  tiles like the Köppen map).
 
 ### Pigeons: things carried between mutuals (built 11-09)
 Jason: "item exchange between repos - via pigeon", then "we should give people reasons to collaborate". The finds
