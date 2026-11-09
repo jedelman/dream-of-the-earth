@@ -1,7 +1,7 @@
 // A dream, drawn (realm.js says its shape): stone islands hanging in the sky with roots of rock beneath, plank-thin
 // bridges between them, three lights turning over the far islands, and, once they're gathered, a gem at the heart.
 import * as THREE from "three";
-import { islandAt, turned, lift } from "./realm.js";
+import { islandAt, turned, lift, BRIDGE_W } from "./realm.js";
 
 const PALETTE = {
   shape: { stone: 0xe7a6c4, under: 0x8a4f78, bridge: 0xf6d2e2, light: 0xff7ad9, fog: 0xf3c4dc },
@@ -35,7 +35,7 @@ export function buildRealmFx(L, anchor) {
   const bridges = L.bridges.map((b) => {
     const A = L.islands[b.a], B = L.islands[b.b], d = Math.hypot(B.x - A.x, B.z - A.z);
     const ux = (B.x - A.x) / d, uz = (B.z - A.z) / d, span = d - A.r - B.r;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.25, 1).translate(0, -0.125, 0.5), plank);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(BRIDGE_W, 0.25, 1).translate(0, -0.125, 0.5), plank);
     spin.add(m);
     return { m, b, A, B, ux, uz, span };
   });

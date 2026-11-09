@@ -173,6 +173,32 @@ export function receive(inv, uri, kind, count) {
 }
 const cleanGot = (got) => (Array.isArray(got) ? [...new Set(got.filter((u) => typeof u === "string" && GOT_URI.test(u)))].slice(-GOT_MAX) : []);
 
+// ---- Your rhizome's gems (rhizome.js): which slot holds which gem. Its seed, set once, so it stays yours whatever
+// creature you are. The rules (colour, reach) are checked against the rhizome itself, by the caller. ----
+const SLOTTED = new Set(["rosegem", "cyangem", "goldgem"]);
+export const rhizomeOfInv = (inv) => inv?.rhizome ?? { seed: null, slots: {} };
+/** A gem from your pouch into slot i: the new inventory, or null (none carried, or the slot's taken). */
+export function slotGem(inv, i, gem) {
+  const r = rhizomeOfInv(inv), n = countOf(inv, gem);
+  if (!SLOTTED.has(gem) || n <= 0 || r.slots[i]) return null;
+  return { ...inv, items: { ...inv.items, [gem]: n - 1 }, rhizome: { ...r, slots: { ...r.slots, [i]: gem } } };
+}
+/** Slot i's gem back into your pouch: the new inventory, or null (empty, or no room for it). */
+export function unslotGem(inv, i) {
+  const r = rhizomeOfInv(inv), gem = r.slots[i];
+  if (!gem || countOf(inv, gem) >= ITEMS[gem].max) return null;
+  const slots = { ...r.slots };
+  delete slots[i];
+  return { ...inv, items: { ...inv.items, [gem]: countOf(inv, gem) + 1 }, rhizome: { ...r, slots } };
+}
+function cleanRhizome(r) {
+  const seed = r && Number.isInteger(r.seed) && r.seed >= 0 && r.seed <= 0xffffffff ? r.seed : null, slots = {};
+  if (r && r.slots && typeof r.slots === "object" && !Array.isArray(r.slots)) {
+    for (const [k, g] of Object.entries(r.slots).slice(0, 200)) if (/^\d{1,3}$/.test(k) && SLOTTED.has(g)) slots[k] = g;
+  }
+  return { seed, slots };
+}
+
 /** One given back (a moonseed eaten for nothing: the stats didn't change). */
 export function refund(inv, kind) {
   return { ...inv, items: { ...inv.items, [kind]: Math.min(ITEMS[kind].max, countOf(inv, kind) + 1) } };
@@ -201,11 +227,11 @@ const cleanKit = (k) => (Number.isInteger(k) && k >= 0 && k <= 1000 ? k : 0);
 
 export function makeInventoryRecord(inv, at = Date.now()) {
   const items = cleanItems(inv.items);
-  return { $type: INVENTORY_NSID, items, worn: cleanWorn(inv.worn, items), kit: cleanKit(inv.kit), lunation: Number.isInteger(inv.lunation) ? inv.lunation : -1, took: cleanTook(inv.took), got: cleanGot(inv.got), updatedAt: new Date(at).toISOString() };
+  return { $type: INVENTORY_NSID, items, worn: cleanWorn(inv.worn, items), kit: cleanKit(inv.kit), lunation: Number.isInteger(inv.lunation) ? inv.lunation : -1, took: cleanTook(inv.took), got: cleanGot(inv.got), rhizome: cleanRhizome(inv.rhizome), updatedAt: new Date(at).toISOString() };
 }
 
 /**
- * An inventory record, checked: { items, worn, kit, lunation, took, got, at (ms) } or null. Unknown kinds and bad counts are
+ * An inventory record, checked: { items, worn, kit, lunation, took, got, rhizome, at (ms) } or null. Unknown kinds and bad counts are
  * dropped, and worn things you don't carry.
  */
 export function parseInventoryRecord(v) {
@@ -214,10 +240,10 @@ export function parseInventoryRecord(v) {
   const at = typeof v.updatedAt === "string" && v.updatedAt.length <= 40 ? Date.parse(v.updatedAt) : NaN;
   const lunation = Number.isInteger(v.lunation) && v.lunation >= -1 && v.lunation < 100000 ? v.lunation : -1;
   const items = cleanItems(v.items);
-  return { items, worn: cleanWorn(v.worn, items), kit: cleanKit(v.kit), lunation, took: cleanTook(v.took), got: cleanGot(v.got), at: Number.isFinite(at) ? at : 0 };
+  return { items, worn: cleanWorn(v.worn, items), kit: cleanKit(v.kit), lunation, took: cleanTook(v.took), got: cleanGot(v.got), rhizome: cleanRhizome(v.rhizome), at: Number.isFinite(at) ? at : 0 };
 }
 
-const inventoryKey = (a) => JSON.stringify([cleanItems(a.items), cleanWorn(a.worn, cleanItems(a.items)), cleanKit(a.kit), a.lunation ?? -1, cleanTook(a.took), cleanGot(a.got)]);
+const inventoryKey = (a) => JSON.stringify([cleanItems(a.items), cleanWorn(a.worn, cleanItems(a.items)), cleanKit(a.kit), a.lunation ?? -1, cleanTook(a.took), cleanGot(a.got), cleanRhizome(a.rhizome)]);
 export const sameInventory = (a, b) => inventoryKey(a) === inventoryKey(b);
 
 /**

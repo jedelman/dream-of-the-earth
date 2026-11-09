@@ -2,7 +2,7 @@
 // (org.jason-edelman.dream.creature, rkey "self"), overwritten when you change it. It holds only what grows the
 // creature (seed, stats, genes) and when you last changed it. Jason, 11-09: "Yes! Your creature should follow you."
 import { parseGenes } from "./creature-graph.js";
-import { STATS, statsFrom } from "./stats.js";
+import { STATS, statsFrom, statsList } from "./stats.js";
 import { BORN, bornOf } from "./birth.js";
 
 export const CREATURE_NSID = "org.jason-edelman.dream.creature";
@@ -10,7 +10,7 @@ export const CREATURE_RKEY = "self";
 
 /** The record for a creature { seed, stats, genes, born } changed at `at` (ms since 1970). */
 export function makeCreatureRecord({ seed, stats, genes, born }, at = Date.now()) {
-  const v = { $type: CREATURE_NSID, seed: seed >>> 0, stats: STATS.map((k) => stats[k]), born: bornOf(stats, born), updatedAt: new Date(at).toISOString() };
+  const v = { $type: CREATURE_NSID, seed: seed >>> 0, stats: statsList(stats), born: bornOf(stats, born), updatedAt: new Date(at).toISOString() };
   const g = parseGenes(genes);
   if (g) v.genes = g;
   return v;

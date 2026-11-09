@@ -102,18 +102,55 @@ const BUILD = {
       tufts.forEach((c, i) => { c.rotation.x = Math.sin(t * 1.3 + i) * 0.08; });
     };
   },
+  // Looks the rhizome gives (its woken links), shown the same way: built here from their names.
+  /** A halo: a thin ring of light over your head, turning. */
+  halo(parts, pivots, box, H) {
+    const head = parts.findIndex((p) => p.kind === "head");
+    const holder = head >= 0 ? pivots[head] : pivots[0], over = head >= 0 ? reach(parts[head]) : box.max.y;
+    const r = Math.max(0.35, 0.22 * H);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.08, 3, 14), mat(0xfff1c4, 0.9, { shininess: 100 }));
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = over + r * 0.6;
+    holder.add(ring);
+    return (t) => { ring.rotation.z = t * 0.6; ring.position.y = over + r * 0.6 + Math.sin(t * 1.7) * r * 0.08; };
+  },
+  /** Motes: five sparks of cyan circling you at the height of your body. */
+  motes(parts, pivots, box, H) {
+    const motes = [], R = Math.max(0.8, 0.45 * (box.max.x - box.min.x + box.max.z - box.min.z) / 2 + 0.3 * H);
+    for (let k = 0; k < 5; k++) {
+      const m = new THREE.Mesh(solid(new THREE.OctahedronGeometry(1, 0)), mat(0x7af0ff, 0.9));
+      m.scale.setScalar(Math.max(0.08, 0.05 * H));
+      pivots[0].add(m);
+      motes.push(m);
+    }
+    const y0 = (box.max.y + box.min.y) / 2;
+    return (t) => motes.forEach((m, k) => {
+      const a = t * 0.9 + (k * Math.PI * 2) / 5;
+      m.position.set(Math.cos(a) * R, y0 + Math.sin(t * 1.3 + k) * 0.25 * H, Math.sin(a) * R);
+      m.rotation.y = t * 2;
+    });
+  },
+  /** Sheen: a golden glow in your own colours, slowly breathing. */
+  sheen(parts, pivots) {
+    const gold = new THREE.Color(0xffc94d), mats = pivots.map((p) => p.children[0]?.material).filter((m) => m?.emissive);
+    const base = mats.map((m) => m.emissive.clone());
+    return (t) => {
+      const k = 0.25 + 0.12 * Math.sin(t * 1.4);
+      mats.forEach((m, i) => m.emissive.copy(base[i]).lerp(gold, k));
+    };
+  },
 };
 
-/** Things you can wear that have a look. */
+/** Things that have a look: what you can wear, and the rhizome's looks. */
 export const LOOKS = Object.keys(BUILD);
 
 /**
  * Put worn things on a creature being built. parts and pivots: the body's (pivots[i] holds parts[i]); box: the body's
  * bounds at scale 1. Returns update(t, motion) for whatever moves.
  */
-export function wearOn(parts, pivots, box, worn = []) {
+export function wearOn(parts, pivots, box, worn = [], looks = []) {
   const H = Math.max(0.5, box.max.y - box.min.y);
   const movers = [];
-  for (const kind of worn) if (BUILD[kind]) movers.push(BUILD[kind](parts, pivots, box, H));
+  for (const kind of [...worn, ...looks]) if (BUILD[kind]) movers.push(BUILD[kind](parts, pivots, box, H));
   return (t, motion) => { for (const f of movers) f(t, motion); };
 }

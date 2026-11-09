@@ -29,14 +29,14 @@ where you are. Every mutual's phone works out where you are from it. Lexicon: `d
     It's replayed along the route; at the end you stop.
   - `ride`: on a golden highway (`line` index, start fraction `tE6`, `dir` ±1), at the highway's speed.
   - `steer`: heading, speed and climb, dead-reckoned for up to 90 s.
-- **Your creature:** `creature: { seed, stats: [climb, swim, run, gleam, perception], genes?, worn? }` (stats each 0–6, total at
+- **Your creature:** `creature: { seed, stats: [climb, swim, run, gleam, perception, fly], genes?, worn?, looks? }` (stats each 0–6, up to 9 with a raised ceiling, total at
   most 12; the old four, `[fly, swim, run, gleam]`, still read, as climb, swim, run, gleam with no perception).
   Mutuals grow the same creature from it. No geometry travels. `genes` is optional, what a player changes in the
   editor: `roll` (a re-roll seed per trait: palette, body, heads, eyes, wings, legs, tail, spikes), `count` (heads 0–3,
   eyes 0–9, wing and leg pairs 0–4, tail 0–4, spikes 0–10), `hue` (1–359, turns the colours) and `size` (80–160 %).
   `generateCreature(seed, genes)` in `web/js/creature-graph.js` shows what you'll look like.
-  `worn` (optional) lists what it wears, at most two names (`prism`, `tidefin`, `mossfoot`, `owleye`); each phone
-  builds the look itself.
+  `worn` (optional) lists what it wears, at most two names (`prism`, `tidefin`, `mossfoot`, `owleye`); `looks`
+  (optional) the rhizome's looks (`halo`, `motes`, `sheen`); each phone builds them itself. Five stats still read (no fly).
 - **Pigeons:** to give a mutual something, write `org.jason-edelman.dream.pigeon` (a TID rkey) to your own repo:
   `{ to: their DID, kind, count, fromLatE6, fromLonE6, sentAt, note? }` (`docs/lexicons/`). It reaches them when a
   pigeon flying 1,000 km/h from `from` would have; they take it once. Honour system: send only what you have. Delete

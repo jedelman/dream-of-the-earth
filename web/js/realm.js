@@ -9,7 +9,7 @@ import { lunationOf } from "./moon.js";
 
 /** Where a dream hangs: this high over the shrine (m above sea level), over the weather. */
 export const REALM_ALT = 2400;
-export const BRIDGE_W = 1.8;
+export const BRIDGE_W = 3; // wide enough to walk without watching your feet
 /** Steepest bridge (rise over run): under tan 18°, a creature with no climb's limit. */
 export const BRIDGE_SLOPE = 0.28;
 /** How near a light (or the gem) gathers it, metres. */

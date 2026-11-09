@@ -3,7 +3,7 @@
 // creature born on land runs, and its swim sleeps until it wears a tidefin; one born in the sea swims, and its run
 // sleeps until it wears a mossfoot. A sleeping stat counts as nothing (you paddle, or crawl), and can't be given points.
 // Pure, so Node can test it.
-import { STATS, MAX } from "./stats.js";
+import { STATS, MAX, CEILING } from "./stats.js";
 import { offset } from "./geo.js";
 
 export const BORN = ["land", "sea"];
@@ -18,14 +18,16 @@ export const bornOf = (stats, born) => (BORN.includes(born) ? born : stats.swim 
 export const asleep = (stat, born, worn = []) => ASLEEP[born] === stat && !worn.includes(WAKER[born]);
 
 /**
- * The stats your body uses: a sleeping stat counts as 0; and what you wear adds (boosts: { stat: points }, from
- * inventory.js), up to the most a stat can be.
+ * The stats your body uses: a sleeping stat counts as 0, and fly counts as 0 without wings; what you wear and your
+ * rhizome add (boosts: { stat: points }), up to each stat's ceiling (six, plus the rhizome's raises: ceilings).
  */
-export function effective(stats, born, worn = [], boosts = {}) {
+export function effective(stats, born, worn = [], { boosts = {}, ceilings = {}, wings = false } = {}) {
   const out = { ...stats };
-  for (const [k, n] of Object.entries(boosts)) if (STATS.includes(k)) out[k] = Math.min(MAX, out[k] + n);
+  for (const k of STATS) out[k] = out[k] ?? 0;
+  for (const [k, n] of Object.entries(boosts)) if (STATS.includes(k)) out[k] = Math.min(Math.min(CEILING, MAX + (ceilings[k] ?? 0)), out[k] + n);
   const a = ASLEEP[born];
   if (asleep(a, born, worn)) out[a] = 0;
+  if (!wings) out.fly = 0;
   return out;
 }
 
@@ -37,7 +39,7 @@ export function bornStats(stats, born) {
   const out = { ...stats }, a = ASLEEP[born];
   let left = out[a];
   out[a] = 0;
-  for (const k of [a === "swim" ? "run" : "swim", "perception", "climb", "gleam"]) {
+  for (const k of [a === "swim" ? "run" : "swim", "perception", "climb", "gleam"]) { // never fly: that waits for Wings
     const take = Math.min(left, MAX - out[k]);
     out[k] += take;
     left -= take;

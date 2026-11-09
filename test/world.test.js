@@ -56,9 +56,9 @@ test("stats: random spends exactly the budget; parse rejects over-budget", () =>
     assert.ok(valid(st));
     assert.equal(Object.values(st).reduce((a, b) => a + b, 0), BUDGET);
   }
-  assert.deepEqual(parseStats("6,0,3,3"), { climb: 6, swim: 0, run: 3, gleam: 3, perception: 0 }); // the old four: fly became climb
+  assert.deepEqual(parseStats("6,0,3,3"), { climb: 6, swim: 0, run: 3, gleam: 3, perception: 0, fly: 0 }); // the old four: fly became climb
   assert.equal(parseStats("6,6,6,6"), null);
-  assert.equal(parseStats("7,0,0,0"), null);
+  assert.equal(parseStats("10,0,0,0"), null, "nothing past nine, whatever the ceilings");
 });
 
 import { subsolarPoint } from "../web/js/sun.js";

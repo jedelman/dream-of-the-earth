@@ -590,7 +590,32 @@ them; flight becomes a sixth stat, from the same budget of 12, once Wings is lit
 - **Dreams are slow:** nothing runs faster than 9 m/s in a dream (a runner with run 5 does about 50 on land and would
   sail off the islands).
 - **Gems:** rose, cyan and gold, one per dream finished, in the shrine's colour, kept in your pouch (24 of each fit) and
-  sendable by pigeon. They go in the rhizome (next).
+  sendable by pigeon. They go in the rhizome.
+
+**The rhizome (built 11-09, `rhizome.js`, `rhizomeview.js`):**
+- **Grown from your own seed** (set once in your inventory record, from your first creature's seed, so it stays yours
+  whatever creature you become): 54 slots in a disc, in three colours by wedge with their borders frayed (rose for your
+  shape, cyan for how you see, gold for the world), each joined to its two nearest neighbours and sometimes a third, so
+  links cross and loop (no root, no trunk). About 90 links.
+- **Every link carries an effect, placed by the seed:** a boost (+1 to a stat; rose links lean to climb, run, swim and
+  fly, cyan to perception and gleam, gold to any); a ceiling (one stat can hold one more point, up to nine); a power
+  (exactly one each: **Wings**, two or three links out in rose; **the high view**; **ley sight**, the ley lines without
+  the prism; **shrine waking**, a sleeping shrine wakes for you once a moon); a deeper dream (one per colour: bigger
+  dreams of that colour, four lights, two gems); a look (a halo, motes that circle you, a golden sheen); or growth
+  (two links near the rim that, woken, add five slots each past the edge).
+- **Filling:** a gem fits its colour. You begin at three open slots in the middle, one of each colour; you can fill a
+  beginning or a slot linked to a filled one; filling shows the slots it links to; the rest is fog (faint points on the
+  map, so you see the rhizome's there, not what it holds). Both ends filled, a link wakes. Wings came within 7 gems
+  on the seeds tested.
+- **Moving gems:** only with a moonseed working (eat one): a gem comes out if what's left still reaches a beginning.
+- **Flight:** fly is a sixth stat from the same 12 points, shut until Wings is woken; nothing flies without it (a slow
+  glide down), which closes the sea's gate. Waking Wings loosens your points once, free, so some can go into fly.
+  Anything without wings now wakes 40 m up, not 350, and steps off a highway near the ground.
+- **The high view:** without it the camera pulls back 60 km at most, and the globe (the whole Earth) is its; the atlas
+  still lists what you've found.
+- **Records:** stats are six numbers now (each up to nine for others' parsing; the editor holds yours to your
+  ceilings); five and four still read. Looks travel in the intent as names. The map: tap a slot to set a gem (or, with
+  a moonseed, take it out), tap a link to read it; framed on what you've grown toward.
 
 ### Pigeons: things carried between mutuals (built 11-09)
 Jason: "item exchange between repos - via pigeon", then "we should give people reasons to collaborate". The finds
