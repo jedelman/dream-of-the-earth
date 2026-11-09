@@ -15,13 +15,12 @@ test("every speed is a power law in its stat: v = v0 · (1 + stat)^p", () => {
   }
 });
 
-test("running shrank with the creatures by √0.4; flying didn't", () => {
-  const old = { run: [8, 68], swim: [4, 40], fly: [30, 198] };
-  for (const [k, [lo, hi]] of Object.entries(old)) {
-    const f = k === "fly" ? 1 : Math.sqrt(0.4);
-    assert.ok(Math.abs(at(0)[k] / (lo * f) - 1) < 0.02, `${k} at 0`);
-    assert.ok(Math.abs(at(6)[k] / (hi * f) - 1) < 0.02, `${k} at 6`);
-  }
+test("p is √3, pinned at 3 points: a balanced creature moves as it did; more is much faster, fewer slower", () => {
+  for (const k of ["run", "jump", "swim", "dive", "fly", "climb"]) assert.equal(POWER[k].p, Math.sqrt(3), k);
+  const mid = { run: 23, swim: 12.8, fly: 115.1 };
+  for (const [k, v] of Object.entries(mid)) assert.ok(Math.abs(at(3)[k] - v) < 1e-9, k);
+  assert.ok(Math.abs(at(6).run / at(0).run - 7 ** Math.sqrt(3)) < 1e-9, "a maxed stat is 7^√3 ≈ 29× none");
+  assert.ok(at(6).fly > 300 && at(0).fly > 10, "a maxed flyer passes 300 m/s; none still flies at 10");
 });
 
 test("bigger legs run faster as the square root of size; wings don't care", () => {
