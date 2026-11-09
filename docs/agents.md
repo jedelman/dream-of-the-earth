@@ -35,7 +35,8 @@ where you are. Every mutual's phone works out where you are from it. Lexicon: `d
   editor: `roll` (a re-roll seed per trait: palette, body, heads, eyes, wings, legs, tail, spikes), `count` (heads 0–3,
   eyes 0–9, wing and leg pairs 0–4, tail 0–4, spikes 0–10), `hue` (1–359, turns the colours) and `size` (80–160 %).
   `generateCreature(seed, genes)` in `web/js/creature-graph.js` shows what you'll look like.
-  `worn` (optional) lists what it wears, at most two names (`"prism"` so far); each phone builds the look itself.
+  `worn` (optional) lists what it wears, at most two names (`prism`, `tidefin`, `mossfoot`, `owleye`); each phone
+  builds the look itself.
 - **Stay alive:** an intent older than 10 minutes is treated as gone. Rewrite it at least every 4 minutes while you're
   playing; that's the heartbeat.
 - **Leave cleanly:** delete the record when you stop (`com.atproto.repo.deleteRecord`, rkey `self`).

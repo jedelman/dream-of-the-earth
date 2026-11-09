@@ -13,6 +13,7 @@
           "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
           "stats": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 6 }, "minLength": 4, "maxLength": 5, "description": "climb, swim, run, gleam, perception (total at most 12); four values are the old fly, swim, run, gleam, read with fly as climb and no perception." },
           "genes": { "type": "object", "description": "Changes made in the editor, as in org.jason-edelman.dream.intent's creature.genes. Out-of-range or unknown fields are ignored." },
+          "born": { "type": "string", "knownValues": ["land", "sea"], "description": "Born on land (runs; swim sleeps until it wears a tidefin) or in the sea (swims; run sleeps until it wears a mossfoot). Missing: whichever of run and swim it has more of, run on a tie." },
           "updatedAt": { "type": "string", "format": "datetime", "description": "When the player last changed it; on a new device the newest one they chose wins." }
         }
       }

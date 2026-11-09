@@ -34,6 +34,74 @@ const BUILD = {
       m.material.emissive.setHSL((hue + 0.33) % 1, 0.9, 0.3);
     };
   },
+  /** The tidefin: a tall fin of sea glass along your back, and two small ones behind, swaying. */
+  tidefin(parts, pivots, box, H) {
+    const b = parts[0], top = reach(b) * 0.8, len = Math.max(0.6, b.size[2]);
+    const glass = mat(0x6ff7e0, 0.45, { side: THREE.DoubleSide, shininess: 90 });
+    // A three-sided blade, leaning back: thick enough to read from behind, where the camera mostly is.
+    const dorsal = new THREE.Mesh(solid(new THREE.ConeGeometry(1, 1, 3).translate(0, 0.5, 0)), glass);
+    dorsal.scale.set(0.09 * H, 0.6 * H, 0.32 * len);
+    dorsal.rotation.x = 0.5;
+    dorsal.position.set(0, top * 0.9, 0.05 * len);
+    pivots[0].add(dorsal);
+    const sides = [-1, 1].map((side) => {
+      const f = new THREE.Mesh(tri([[0, 0, 0], [side * 0.35 * H, -0.05 * H, 0.3 * len], [0, 0, 0.35 * len]]), glass);
+      f.position.set(side * reach({ prim: b.prim, size: [b.size[0], b.size[0]] }) * 0.7, 0, 0.1 * len);
+      pivots[0].add(f);
+      return f;
+    });
+    return (t) => {
+      dorsal.rotation.z = Math.sin(t * 1.8) * 0.12;
+      sides.forEach((f, i) => { f.rotation.z = Math.sin(t * 2.4 + i * Math.PI) * 0.25; });
+    };
+  },
+  /** The mossfoot: a tuft of moss on each foot (or under you, legless), each with a pink flower. */
+  mossfoot(parts, pivots, box, H) {
+    const s = Math.max(0.12, 0.08 * H);
+    const moss = mat(0x7fcf4f, 0.25), petal = mat(0xff9ad5, 0.5);
+    const spots = [];
+    parts.forEach((p, i) => { if (p.kind === "leg") spots.push({ holder: pivots[i], y: -p.size[1] }); });
+    if (!spots.length) for (const dx of [-0.5, 0, 0.5]) spots.push({ holder: pivots[0], y: box.min.y, x: dx * (box.max.x - box.min.x) * 0.6 });
+    const flowers = [];
+    for (const sp of spots) {
+      const tuft = new THREE.Mesh(solid(new THREE.OctahedronGeometry(1, 0)), moss);
+      tuft.scale.set(s * 1.4, s * 0.7, s * 1.4);
+      tuft.position.set(sp.x ?? 0, sp.y + s * 0.3, 0);
+      const flower = new THREE.Mesh(solid(new THREE.TetrahedronGeometry(1, 0)), petal);
+      flower.scale.setScalar(s * 0.45);
+      flower.position.set((sp.x ?? 0) + s * 0.5, sp.y + s * 0.9, 0);
+      sp.holder.add(tuft, flower);
+      flowers.push(flower);
+    }
+    return (t) => flowers.forEach((f, i) => { f.rotation.y = t * 1.2 + i; });
+  },
+  /** The owl's eye: a great amber eye on your brow, and two feather tufts over it. */
+  owleye(parts, pivots, box, H) {
+    const head = parts.findIndex((p) => p.kind === "head");
+    const holder = head >= 0 ? pivots[head] : pivots[0];
+    const r = head >= 0 ? reach(parts[head]) : Math.max(0.5, 0.25 * H);
+    const front = head >= 0 ? -r * 0.95 : box.min.z * 0.95, up = head >= 0 ? r * 0.35 : box.max.y * 0.5;
+    const eye = new THREE.Mesh(solid(new THREE.IcosahedronGeometry(1, 0)), mat(0xffb534, 0.7, { shininess: 100 }));
+    eye.scale.setScalar(r * 0.38);
+    eye.position.set(0, up, front);
+    const pupil = new THREE.Mesh(solid(new THREE.OctahedronGeometry(1, 0)), mat(0x140c05, 0));
+    pupil.scale.set(r * 0.12, r * 0.2, r * 0.06);
+    pupil.position.set(0, up, front - r * 0.36);
+    const tufts = [-1, 1].map((side) => {
+      const c = new THREE.Mesh(solid(new THREE.ConeGeometry(1, 1, 3).translate(0, 0.5, 0)), mat(0xb58a5a, 0.15));
+      c.scale.set(r * 0.22, r * 0.75, r * 0.22);
+      c.position.set(side * r * 0.5, head >= 0 ? r * 0.75 : box.max.y, head >= 0 ? 0 : box.min.z * 0.6);
+      c.rotation.z = -side * 0.45;
+      holder.add(c);
+      return c;
+    });
+    holder.add(eye, pupil);
+    return (t) => {
+      const look = Math.sin(t * 0.7) * r * 0.08; // it looks about
+      pupil.position.x = look;
+      tufts.forEach((c, i) => { c.rotation.x = Math.sin(t * 1.3 + i) * 0.08; });
+    };
+  },
 };
 
 /** Things you can wear that have a look. */

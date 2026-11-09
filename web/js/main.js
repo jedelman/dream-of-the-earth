@@ -26,12 +26,15 @@ import { listen } from "./presence.js";
 import { buildFlock } from "./flock.js";
 import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm, byDistance, metresBetween, distanceText, NSID as ARTIFACT_NSID } from "./artifacts.js";
 import { account, isReturning, takeReturn } from "./account.js";
-import { buildMaker } from "./maker.js";
+import { buildMaker, h } from "./maker.js";
 import { buildEditor } from "./editor.js";
 import { buildBag } from "./bag.js";
 import { makeAtlasRecord, parseAtlasRecord, mergeAtlas, atlasKey } from "./atlas-record.js";
+import { BORN, ASLEEP, WAKER, bornOf, asleep, effective, bornStats, maxDepth, spawnAround } from "./birth.js";
+import { buildFinds, FIND_COLOUR } from "./finds.js";
+import { ensureKoppen, koppenAt } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
-import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX } from "./inventory.js";
+import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere } from "./inventory.js";
 import { whenText } from "./moon.js";
 import { buildShrines } from "./shrines.js";
 import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf, WAKES, skyState, wokeAt } from "./shrinelore.js";
@@ -45,7 +48,6 @@ import { buildDirector, squeakShot, treeShot, butterflyShot, beingShot, arriveSh
 import { buildSkyBeings } from "./skybeings.js";
 import { randomStats, parseStats, speeds, STATS, MAX, TYPICAL_SCALE, statsList, sightOf, SEE_BEINGS } from "./stats.js";
 import { biomeFor, koppenCode } from "./biome.js";
-import { koppenAt } from "./koppen.js";
 import { buildPlants } from "./plants.js";
 import { buildInsects } from "./insects.js";
 import { buildCritters } from "./critters.js";
@@ -65,7 +67,7 @@ function keptCreature() {
     const v = JSON.parse(localStorage.getItem(CREATURE_KEY) || "null");
     if (!v || !Number.isInteger(v.seed) || v.seed < 0 || v.seed > 0xffffffff) return null;
     const stats = Array.isArray(v.stats) ? parseStats(v.stats.join(",")) : null;
-    return { seed: v.seed, genes: parseGenes(v.genes), stats, at: Number.isFinite(v.at) ? v.at : 0, chosen: v.chosen !== false };
+    return { seed: v.seed, genes: parseGenes(v.genes), stats, born: BORN.includes(v.born) ? v.born : null, at: Number.isFinite(v.at) ? v.at : 0, chosen: v.chosen !== false };
   } catch { return null; }
 }
 const kept = keptCreature();
@@ -75,13 +77,16 @@ const yours = urlSeed === null || urlSeed === kept?.seed ? kept : null;
 let seed = urlSeed ?? yours?.seed ?? (Math.random() * 2 ** 32) >>> 0;
 let genes = yours?.genes ?? null;
 let stats = parseStats(params.get("stats")) || yours?.stats || randomStats(mulberry32(hashString(`stats:${seed}`)));
+// Born of land or sea (birth.js): chosen on your first visit; a creature from before (or from a link) leans where its stats do.
+let born = bornOf(stats, BORN.includes(params.get("born")) ? params.get("born") : yours?.born);
+const newcomer = !kept && urlSeed === null && !params.get("born"); // asked where they were born, before they wake
 let sp = speeds(stats);
 let showingMine = yours !== null || urlSeed === null; // the creature on screen is the one you keep
 function keepCreature(at = Date.now(), chosen = true) {
   showingMine = true;
-  try { localStorage.setItem(CREATURE_KEY, JSON.stringify({ seed, genes, stats: STATS.map((k) => stats[k]), at, chosen })); } catch { /* private mode */ }
+  try { localStorage.setItem(CREATURE_KEY, JSON.stringify({ seed, genes, stats: STATS.map((k) => stats[k]), born, at, chosen })); } catch { /* private mode */ }
 }
-if (!kept && urlSeed === null) keepCreature(0, false); // the first creature you meet is yours (until you choose another)
+if (!kept && urlSeed === null && !newcomer) keepCreature(0, false); // the first creature you meet is yours (until you choose another)
 // ---- What you carry (inventory.js): kept on this device and, signed in, in your repo ----
 const INVENTORY_KEY = "dream.inventory";
 /** { items, lunation, at (ms, when it last changed here), changed (false: a pouch this device only started) } */
@@ -89,8 +94,8 @@ function keptInventory() {
   try {
     const v = JSON.parse(localStorage.getItem(INVENTORY_KEY) || "null");
     if (!v) return null;
-    const p = parseInventoryRecord({ items: v.items, worn: v.worn, kit: v.kit, lunation: v.lunation });
-    return p && { items: p.items, worn: p.worn, kit: p.kit, lunation: p.lunation, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
+    const p = parseInventoryRecord({ items: v.items, worn: v.worn, kit: v.kit, lunation: v.lunation, took: v.took });
+    return p && { items: p.items, worn: p.worn, kit: p.kit, lunation: p.lunation, took: p.took, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
   } catch { return null; }
 }
 let inv = keptInventory() || { ...firstInventory(Date.now() / 1000), at: 0, changed: false }; // a moonseed and a prism to begin with
@@ -100,7 +105,7 @@ let bagView = null;
 function keepInventory(next, { changed = true, at = Date.now() } = {}) {
   const wasWorn = wornOf(inv).join(",");
   next = kitUp(next);
-  inv = { items: next.items, worn: wornOf(next), kit: next.kit, lunation: next.lunation, at, changed };
+  inv = { items: next.items, worn: wornOf(next), kit: next.kit, lunation: next.lunation, took: next.took ?? { lunation: -1, keys: [] }, at, changed };
   invAt = Date.now() / 1000;
   try { localStorage.setItem(INVENTORY_KEY, JSON.stringify(inv)); } catch { /* private mode */ }
   bagView?.refresh(); // the BAG button, once it exists
@@ -117,8 +122,9 @@ const spawnRand = mulberry32(hashString(`spawn:${urlSeed ?? (Math.random() * 2 *
 const clock = { base: Date.now() / 1000, at: 0 };
 const unixAt = (sessionSeconds) => clock.base + (sessionSeconds - clock.at);
 
-let spawn;
-if (params.get("lat") && params.get("lon")) {
+let spawn; // where you wake: provisional here, settled by birth at boot (wakePlace)
+const spawnFixed = !!(params.get("lat") && params.get("lon"));
+if (spawnFixed) {
   spawn = { lat: Number(params.get("lat")), lon: Number(params.get("lon")) };
 } else {
   // Map tiles stop near ±85° latitude, so polar nodes (two gravity-wells nodes sit
@@ -187,12 +193,28 @@ let editing = false; // the creature editor is open: the camera looks at it, not
 /** The stat your wings run on: climb, until the dream quest gives flight its own (Jason, 11-09). */
 const wings = () => stats.climb;
 /** Perception 3 and up sees the sky beings. */
-const seesBeings = () => stats.perception >= SEE_BEINGS;
+/**
+ * The stats your body uses now: the one your birth put to sleep counts as nothing until you wear what wakes it, and
+ * what you wear adds (the owl's eye: perception).
+ */
+const body = () => effective(stats, born, wornOf(inv), boostsOf(inv));
+const seesBeings = () => body().perception >= SEE_BEINGS;
 /** The ley lines (the highways) show, and carry you, only while you wear a prism (Jason, 11-09: "ley lines are invisible without the correct item"). */
 const seesLey = () => wearing(inv, "prism");
-/** The HUD's stats, on two lines. */
-const statsLines = () => [STATS.slice(0, 3), STATS.slice(3)].map((ks) => ks.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  ")).join("\n");
-let steepAt = -Infinity;
+/** The HUD's stats, on two lines: as your body has them (a sleeping stat says so; one your worn things lift shows +). */
+const statsLines = () => {
+  const b = body();
+  const one = (k) => asleep(k, born, wornOf(inv)) ? `${k.toUpperCase()} ASLEEP (${ITEMS[WAKER[born]].name.toUpperCase()})` : `${k.toUpperCase()} ${bar(b[k])}${b[k] > stats[k] ? "+" : ""}`;
+  return [STATS.slice(0, 3), STATS.slice(3)].map((ks) => ks.map(one).join("  ")).join("\n");
+};
+let steepAt = -Infinity, deepAt = -Infinity;
+/** Diving past your depth: said once in a while. */
+function tooDeep() {
+  if (simT - deepAt < 20) return;
+  deepAt = simT;
+  const m = Math.round(maxDepth(body().swim));
+  logLine(asleep("swim", born, wornOf(inv)) ? `${myName}'s swim sleeps: born on land, it can only duck under. A tidefin would wake it.` : `Too deep for ${myName}: ${m} m is as far down as it can go. More swim would take it deeper.`, "note");
+}
 /** Walking into a slope too steep for you: said once in a while. */
 function tooSteep() {
   if (simT - steepAt < 20) return;
@@ -216,8 +238,8 @@ function fadeCreature(o) {
 scene.add(creature.group);
 layerTransparent(creature.group);
 /** Your creature as it is: { seed, genes, stats }, and a key that changes when its look does. */
-const myCreature = () => ({ seed, genes, stats });
-const keyOf = (c) => `${c.seed}:${STATS.map((k) => c.stats[k]).join(",")}:${JSON.stringify(parseGenes(c.genes))}`;
+const myCreature = () => ({ seed, genes, stats, born });
+const keyOf = (c) => `${c.seed}:${STATS.map((k) => c.stats[k]).join(",")}:${JSON.stringify(parseGenes(c.genes))}:${bornOf(c.stats, c.born)}`;
 const lookKey = () => keyOf(myCreature());
 /** What mutuals see of you: your look and what you wear. */
 const shownKey = () => `${lookKey()}:${wornOf(inv).join(",")}`;
@@ -244,8 +266,9 @@ function setCreature(next, at = Date.now()) {
   seed = next.seed >>> 0;
   genes = parseGenes(next.genes);
   stats = next.stats;
+  born = bornOf(stats, next.born);
   swapBody(generateCreature(seed, genes));
-  sp = speeds(stats, graph.scale / TYPICAL_SCALE);
+  sp = speeds(body(), graph.scale / TYPICAL_SCALE);
   myName = creatureName(seed);
   keepCreature(at);
   lookAt = realNow();
@@ -450,10 +473,12 @@ async function buildWorld(lat, lon) {
   const insects = buildInsects(frame, terrain);
   const critters = buildCritters(frame, terrain, plants);
   const shrines = buildShrines(frame, terrain);
+  const finds = buildFinds(frame, terrain);
+  finds.setTaken((f) => tookHere(inv, f.key, realNow())); // one you've had this moon isn't there for you
   const group = new THREE.Group();
-  group.add(terrain.mesh, highways.group, beings.group, plants.group, insects.group, critters.group, shrines.group);
+  group.add(terrain.mesh, highways.group, beings.group, plants.group, insects.group, critters.group, shrines.group, finds.group);
   layerTransparent(group); // glows, sparkles and fireflies draw after the sky
-  return { frame, terrain, highways, beings, plants, insects, critters, shrines, group };
+  return { frame, terrain, highways, beings, plants, insects, critters, shrines, finds, group };
 }
 function swapWorld(next, place) {
   if (place) {
@@ -579,7 +604,7 @@ function input() {
 const GRAVITY = 18;
 function step(dt) {
   // Speeds from your stats, and your legs: your body's scale, and any shape spell's (a giant strides, a tiny thing patters).
-  sp = speeds(stats, (graph.scale / TYPICAL_SCALE) * spellLegs);
+  sp = speeds(body(), (graph.scale / TYPICAL_SCALE) * spellLegs);
   const manual = input();
   if (manual.turn || manual.thrust || manual.up) { director.input(simT); if (state.target) clearTarget(); } // your hands back on the controls
   const { turn, thrust, up } = (!manual.turn && !manual.thrust && !manual.up && autopilot()) || manual;
@@ -640,6 +665,9 @@ function step(dt) {
   if (state.mode === "water") {
     if (p.y > -1.5 && !(up > 0 && wings() > 0)) { p.y = -1.5; state.vy = Math.min(state.vy, 0); } // float at the surface
     if (p.y < g2 + 2) p.y = g2 + 2;
+    // Dive depth is the sea's gate (Jason, 11-09: "Oceans gate by being large - dive depth is the unlock").
+    const deepest = -1.5 - maxDepth(body().swim);
+    if (p.y < deepest) { p.y = deepest; state.vy = Math.max(0, state.vy); if (up < 0) tooDeep(); }
   }
   // Land only on purpose: a flyer not heading down skims a slope too steep to climb, still flying.
   if (g2 >= 0 && p.y < g2) { p.y = state.mode === "air" && wings() > 0 && up >= 0 ? g2 + 0.5 : g2; state.vy = Math.max(0, state.vy); }
@@ -817,6 +845,8 @@ function pick(clientX, clientY) {
   }
   const bh = seesBeings() ? tapRay.intersectObject(world.beings.group, true)[0] : null;
   if (bh) { let o = bh.object; while (o && !o.userData.being) o = o.parent; if (o) found.push({ kind: "being", d: bh.distance, being: o.userData.being, obj: o }); }
+  const fh = tapRay.intersectObjects(world.finds.pickables(), true)[0], fe = fh && world.finds.entryOf(fh.object);
+  if (fe) found.push({ kind: "find", d: fh.distance, f: fe });
   const sh = tapRay.intersectObjects(world.shrines.pickables(), true)[0], se = sh && world.shrines.entryOf(sh.object);
   if (se) found.push({ kind: "shrine", d: sh.distance, s: se });
   const ch = tapRay.intersectObject(cairns.group, true)[0], ce = ch && cairns.entryOf(ch.object);
@@ -852,6 +882,10 @@ function onTap(clientX, clientY) {
   if (hit.kind === "butterfly") {
     const b = hit.b, act = () => chirp(hit.b.k);
     return Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z) < RANGE.butterfly ? act() : moveTo({ x: b.x, z: b.z, h: b.y }, { range: RANGE.butterfly * 0.6, act });
+  }
+  if (hit.kind === "find") {
+    const f = hit.f, act = () => pickUp(f);
+    return flat(f.x, f.z) < RANGE.find ? act() : moveTo({ x: f.x, z: f.z, h: Math.max(f.y, world.terrain.heightAt(f.x, f.z)) }, { range: RANGE.find * 0.6, act });
   }
   if (hit.kind === "shrine") {
     const s = hit.s, act = () => castSpell(s);
@@ -1045,6 +1079,10 @@ function inReach() {
     const d = Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z);
     if (d < RANGE.butterfly) add({ kind: "butterfly", key: `b${b.seed}`, seed: b.seed, k: b.k, hue: b.hue, d, range: RANGE.butterfly }, b.x, b.z);
   }
+  for (const f of world.finds.near(p.x, p.z, RANGE.find)) {
+    const d = Math.hypot(f.x - p.x, f.y - p.y, f.z - p.z); // in three dimensions: one on the seabed is down there
+    if (d < RANGE.find) add({ kind: "find", key: f.key, name: ITEMS[f.holds].name, d, range: RANGE.find, f }, f.x, f.z);
+  }
   for (const s of world.shrines.near(p.x, p.z, RANGE.shrine)) {
     add({ kind: "shrine", key: s.key, name: SPELLS[s.spell].name, state: s.state, d: Math.hypot(s.x - p.x, s.z - p.z), range: RANGE.shrine, s }, s.x, s.z);
   }
@@ -1081,6 +1119,7 @@ function glintSpot(c, v, bs) {
     return v.set(r.x + (cx / L) * off, r.y + Math.min(r.height * 0.55, 6 + r.height * 0.15), r.z + (cz / L) * off);
   }
   if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
+  if (c.kind === "find") return v.set(c.f.x, c.f.y + 0.7, c.f.z);
   if (c.kind === "shrine") return v.set(c.s.x, c.s.y + 2.4, c.s.z);
   if (c.kind === "critter") { const q = world.critters.near(c.c.x, c.c.z, 40).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 1.3, q.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
@@ -1129,6 +1168,7 @@ function interact() {
   scanAt = 0; // look again next frame: a highway takes you away, a butterfly moves on
   if (c.kind === "tree") return shakeTree(c.rec);
   if (c.kind === "butterfly") { const b = world.insects.butterflies().find((q) => q.seed === c.seed); return b ? chirp(b.k) : squeak(); }
+  if (c.kind === "find") return pickUp(c.f);
   if (c.kind === "shrine") return castSpell(c.s);
   if (c.kind === "critter") return touchCritter(c.key);
   if (c.kind === "being") return hum(c.being, c.obj);
@@ -1322,12 +1362,13 @@ const editor = buildEditor({
     },
     name: creatureName,
     isMine: () => showingMine,
+    birth: (c) => { const b = bornOf(c.stats, c.born); return { asleep: ASLEEP[b], waker: WAKER[b], wakerName: `a ${ITEMS[WAKER[b]].name}`, awake: !asleep(ASLEEP[b], b, wornOf(inv)) }; },
     respec: () => ({ open: respec.open, seeds: countOf(inv, "moonseed"), next: nextSeedAt(inv, realNow()) - realNow() }),
     eatMoonseed,
     settle: () => {
       if (!respec.open) return;
       respec.open = false;
-      if (statsList(stats).join(",") === respec.before) { keepInventory(refund(inv, "moonseed")); logLine("Nothing changed, so the moonseed is still yours.", "note"); }
+      if (`${statsList(stats).join(",")}:${born}` === respec.before) { keepInventory(refund(inv, "moonseed")); logLine("Nothing changed, so the moonseed is still yours.", "note"); }
       else logLine("Your new stats settle in.", "shrine");
     },
     portrait: (on) => {
@@ -1348,7 +1389,7 @@ function eatMoonseed() {
   if (!next) return false;
   keepInventory(next);
   respec.open = true;
-  respec.before = statsList(stats).join(",");
+  respec.before = `${statsList(stats).join(",")}:${born}`;
   sound.chime();
   logLine("You eat a moonseed. Your points loosen: move them, then close the editor.", "shrine");
   return true;
@@ -1374,6 +1415,21 @@ function wornLock() {
   if (state.ride) return "Not while you're riding a highway.";
   if (state.mode === "air") return "Not in the air: land (or float) first.";
   return null;
+}
+// ---- Finds (findlore.js): each spot gives you its thing once a moon ----
+function pickUp(f) {
+  const p = state.pos, below = p.y - f.y;
+  if (below > RANGE.find) { logLine(`The ${ITEMS[f.holds].name} lies ${Math.round(below)} m down. Dive (Shift or ▼) to reach it.`, "note"); return; }
+  const r = take(inv, f, realNow());
+  const name = ITEMS[f.holds].name;
+  if (!r.ok) { logLine(r.why === "full" ? `Your pouch holds no more ${ITEMS[f.holds].plural} (${ITEMS[f.holds].max}).` : `You've had this moon's ${name} here.`, "note"); return; }
+  keepInventory(r.inv);
+  sound.chime();
+  const at = new THREE.Vector3(f.x, f.y + 0.5, f.z);
+  bursts.emit({ at, colors: [new THREE.Color(FIND_COLOUR[f.holds]), new THREE.Color(0xffffff)], n: 14, spread: 1.2, up: 2, fall: 1, life: 1 });
+  const wakes = WAKER[born] === f.holds && asleep(ASLEEP[born], born, wornOf(inv));
+  const where = { shore: "washed up here", seabed: "on the seabed", meadow: "in the grass", summit: "on the summit" }[f.place];
+  logLine(`You pick up a ${name}, ${where}.${wakes ? ` Wear it (BAG ▾) and your ${ASLEEP[born]} wakes.` : ""}`, "shrine");
 }
 function changeWorn(kind, on) {
   const why = wornLock();
@@ -1415,7 +1471,7 @@ function seedTick() {
 }
 // Your pouch in your repo, like your creature: brought into step on sign-in and when you come back; written once things settle.
 const carry = { can: false, synced: "", busy: false };
-const invKey = () => JSON.stringify([inv.items, wornOf(inv), inv.kit, inv.lunation]);
+const invKey = () => JSON.stringify([inv.items, wornOf(inv), inv.kit, inv.lunation, inv.took]);
 async function syncInventory() {
   if (!account.did || !carry.can || carry.busy) return;
   carry.busy = true;
@@ -1841,7 +1897,7 @@ function frame() {
     const horizonM = Math.sqrt(2 * 6371008.8 * h + h * h);
     scene.fog.color.copy(horizon);
     // Capped inside the outer terrain ring, so from high up its edge melts into haze.
-    scene.fog.far = Math.min(440000, Math.max(40000, horizonM * 1.2)) * sightOf(stats.perception); // perception: how far you see
+    scene.fog.far = Math.min(440000, Math.max(40000, horizonM * 1.2)) * sightOf(body().perception); // perception: how far you see
     scene.fog.near = scene.fog.far * 0.25;
   }
   if (world) world.highways.group.visible = !underwater && seesLey();
@@ -1859,6 +1915,8 @@ function frame() {
   if (world && !state.ride) {
     world.shrines.update(state.pos.x, state.pos.z, t);
     discoverShrines();
+    world.finds.update(state.pos.x, state.pos.z, t);
+    world.finds.group.visible = zoom < 6000;
     if (t - shrineTickAt > 5) { shrineTickAt = t; shrineTick(); }
     world.shrines.group.visible = zoom < 60000;
     const life = zoom < 6000;
@@ -1979,16 +2037,87 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, inv: () => inv, wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, inv: () => inv, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };
 }
 setStatus("dreaming…");
-regrow(spawn.lat, spawn.lon, (w) => {
+// ---- Waking: born of land or sea (birth.js), and somewhere that fits ----
+/** A newcomer is asked where they were born, before they wake. Closing the question is "on land". */
+function chooseBirth() {
+  return new Promise((resolve) => {
+    let done = false;
+    const pick = (b) => { if (done) return; done = true; maker.close(); resolve(b); };
+    const choice = (b, title, words) => h("button", { class: `go born-${b}`, onclick: () => pick(b) }, h("b", {}, title), h("span", {}, words));
+    maker.custom("birth", [
+      h("h2", {}, "Where were you born?"),
+      h("p", {}, "You're about to wake on the Earth, near one of its ley nodes."),
+      h("div", { class: "births" },
+        choice("land", "On land", "You run, and wake on land. Your swim sleeps until you wear a tidefin."),
+        choice("sea", "In the sea", "You swim and dive, and wake in coastal water. Your run sleeps until you wear a mossfoot.")),
+      h("p", { class: "small" }, "Tidefins lie on the seabed, mossfeet in meadows inland, and now and then the tide leaves one on a beach. Eat a moonseed to be born again."),
+    ], { classes: ["birth"], onClose: () => pick("land") });
+  });
+}
+/** Near a random ley node, where your birth belongs: land well inland, or coastal water (the Köppen map's land mask). */
+async function wakePlace(tried = new Set()) {
+  if (spawnFixed) return spawn;
+  const nodes = network().nodes.filter((n) => Math.abs(n.lat) <= 80 && !tried.has(n)).map((n) => ({ n, k: spawnRand() })).sort((a, b) => a.k - b.k).map((o) => o.n);
+  for (let i = 0; i < 48; i += 6) {
+    const batch = nodes.slice(i, i + 6);
+    await Promise.all(batch.map((n) => ensureKoppen(n.lat, n.lon, 1)));
+    const p = spawnAround(born, batch, (la, lo) => koppenAt(la, lo) > 0, spawnRand);
+    if (p) return p;
+  }
+  return spawn; // nothing found (offline tiles?): near a node, as before
+}
+/**
+ * The last few hundred metres, on the terrain itself: a land-born creature on ground, a sea-born one in water. False if
+ * there's none within 12 km (the land mask was wrong here).
+ */
+function settleWaking(w) {
+  if (spawnFixed) return true;
+  // Born in the sea, over the shelf if there's one near (a seabed in reach, and the shore), else any water.
+  const tests = born === "land" ? [(hh) => hh >= 3] : [(hh) => hh <= -6 && hh >= -200, (hh) => hh <= -6];
+  for (const ok of tests) {
+    if (ok(w.terrain.heightAt(0, 0))) return true;
+    for (let r = 150; r <= 12000; r += 150) {
+      for (let b = 0; b < 24; b++) {
+        const a = (b / 24) * Math.PI * 2, x = Math.cos(a) * r, z = Math.sin(a) * r;
+        if (ok(w.terrain.heightAt(x, z))) { state.pos.x = x; state.pos.z = z; return true; }
+      }
+    }
+  }
+  return false;
+}
+(async () => {
+  if (newcomer) {
+    setStatus("");
+    born = await chooseBirth();
+    stats = bornStats(stats, born);
+    keepCreature(0, false); // the first creature you meet is yours (until you choose another)
+    swapBody(graph);
+    logLine(born === "land" ? `${myName} was born on land.` : `${myName} was born in the sea.`, "creature");
+  }
+  setStatus("waking…");
+  spawn = await wakePlace();
+  window.__dream.spawn = spawn;
+  regrow(spawn.lat, spawn.lon, boot);
+})();
+const wakeTries = new Set();
+function boot(w) {
   swapWorld(w);
-  const ground = w.terrain.heightAt(0, 0);
-  state.pos.set(0, Math.max(0, ground) + (altParam !== null ? Math.max(5, Number(altParam)) : 350), 0);
+  state.pos.set(0, 0, 0);
+  // The land mask is coarse: if the terrain here disagrees with your birth, try another node (twice, then wake anyway).
+  if (!settleWaking(w) && spawn.node && wakeTries.size < 2) {
+    wakeTries.add(spawn.node);
+    wakePlace(wakeTries).then((p) => { spawn = p; window.__dream.spawn = p; regrow(p.lat, p.lon, boot); });
+    return;
+  }
+  const ground = w.terrain.heightAt(state.pos.x, state.pos.z);
+  // In the air over land (the opening shot cranes down onto you); afloat, born in the sea.
+  state.pos.y = !spawnFixed && born === "sea" && ground < 0 ? -1.5 : Math.max(0, ground) + (altParam !== null ? Math.max(5, Number(altParam)) : 350);
   establishing(); // the opening shot: a crane down onto you
   setStatus(w.terrain.failed ? `${w.terrain.failed} elevation tiles didn't load; that ground is drawn at sea level` : "");
   // ?ride=N starts on highway N, halfway along (a shortcut for trying the ride).
@@ -1998,4 +2127,4 @@ regrow(spawn.lat, spawn.lon, (w) => {
   }
   window.__dream.ready = true;
   requestAnimationFrame(frame);
-});
+}

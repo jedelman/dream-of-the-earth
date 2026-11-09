@@ -36,7 +36,7 @@ test("spend and refund", () => {
 test("the record: integers, known kinds only, round-trips", () => {
   const v = makeInventoryRecord({ items: { moonseed: 2 }, lunation: 333 }, Date.parse("2026-11-09T22:00:00Z"));
   assert.equal(v.$type, INVENTORY_NSID);
-  assert.deepEqual(parseInventoryRecord(v), { items: { moonseed: 2 }, worn: [], kit: 0, lunation: 333, at: Date.parse("2026-11-09T22:00:00Z") });
+  assert.deepEqual(parseInventoryRecord(v), { items: { moonseed: 2 }, worn: [], kit: 0, lunation: 333, took: { lunation: -1, keys: [] }, at: Date.parse("2026-11-09T22:00:00Z") });
   assert.deepEqual(parseInventoryRecord({ ...v, items: { moonseed: 99, sword: 1, x: "y" } }).items, { moonseed: 13 });
   assert.deepEqual(parseInventoryRecord({ ...v, items: { moonseed: -2 } }).items, {});
   assert.equal(parseInventoryRecord({ ...v, $type: "app.bsky.feed.post" }), null);

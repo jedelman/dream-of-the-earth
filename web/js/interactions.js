@@ -4,7 +4,7 @@
 import { hash2 } from "./plantforms.js";
 
 /** How close you need to be (metres) before a tapped thing answers. */
-export const RANGE = { tree: 20, butterfly: 30, being: 3000, highway: 170, artifact: 30, critter: 26, shrine: 24 };
+export const RANGE = { tree: 20, butterfly: 30, being: 3000, highway: 170, artifact: 30, critter: 26, shrine: 24, find: 7 };
 
 export const TREE_NAMES = {
   ceiba: "kapok", ficus: "banyan", cocos: "coconut palm", adansonia: "baobab", vachellia: "umbrella thorn",
@@ -88,6 +88,7 @@ export function promptFor(c) {
     return `Shake the ${TREE_NAMES[c.species] ?? c.species}`;
   }
   if (c.kind === "butterfly") return `Greet the ${hueName(c.hue)} butterfly`;
+  if (c.kind === "find") return `Pick up the ${c.name}`;
   if (c.kind === "shrine") return c.state === "asleep" ? `${c.name[0].toUpperCase()}${c.name.slice(1)} sleeps` : c.state === "resting" ? `${c.name[0].toUpperCase()}${c.name.slice(1)} rests` : `Touch ${c.name}`;
   if (c.kind === "critter") return c.species === "bunny" ? `Pet the ${c.name}` : c.species === "frog" ? `Boop the ${c.name}` : `Whistle to the ${c.name}`;
   if (c.kind === "being") return "Hum to the sky being";
@@ -99,7 +100,7 @@ export function promptFor(c) {
 
 // Small things close at hand come before big things far off: under a highway,
 // beside a tree, with a sky being on the horizon, the tree is what you meant.
-const BIAS = { shrine: -0.08, artifact: -0.05, critter: -0.02, butterfly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
+const BIAS = { find: -0.12, shrine: -0.08, artifact: -0.05, critter: -0.02, butterfly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
 
 /**
  * How much a thing in reach wants the prompt (lower wins). c: { kind, d, range, facing, species? },

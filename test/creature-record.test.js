@@ -9,7 +9,11 @@ test("a creature record round-trips", () => {
   assert.equal(v.$type, CREATURE_NSID);
   assert.deepEqual(v.stats, [1, 5, 4, 2, 0]);
   assert.deepEqual(parseCreatureRecord({ ...v, stats: [1, 5, 4, 2] }).stats, nyo.stats, "a record from before perception");
-  assert.deepEqual(parseCreatureRecord(v), { ...nyo, at: Date.parse("2026-11-09T02:00:00Z") });
+  assert.deepEqual(parseCreatureRecord(v), { ...nyo, born: "sea", at: Date.parse("2026-11-09T02:00:00Z") }, "Nyo leans to the sea (swim 5, run 4)");
+  assert.equal(parseCreatureRecord(makeCreatureRecord({ ...nyo, born: "land" })).born, "land", "a chosen birth stands");
+  const old = { ...v }; delete old.born;
+  assert.equal(parseCreatureRecord(old).born, "sea", "a record from before births leans where its stats do");
+  assert.equal(parseCreatureRecord({ ...v, born: "air" }).born, "sea");
   assert.equal(makeCreatureRecord({ ...nyo, genes: null }).genes, undefined, "no genes, no field");
 });
 
