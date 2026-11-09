@@ -20,7 +20,9 @@ import { planPath } from "./pathfind.js";
 import { RANGE, critterLine, fledLine, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
 import { buildGlints } from "./glints.js";
 import { buildCairns } from "./cairns.js";
-import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted, isBot } from "./atproto.js";
+import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted, isBot, pigeonsFor } from "./atproto.js";
+import { PIGEON_NSID, makePigeon, parsePigeon, arrivalOf, flownOff } from "./pigeons.js";
+import { buildPigeonFx } from "./pigeonfx.js";
 import { makeIntent, parseIntent, driftOf, whereAt, fresh, INTENT_NSID, HEARTBEAT_S, STALE_S, MOMENT_S } from "./intents.js";
 import { listen } from "./presence.js";
 import { buildFlock } from "./flock.js";
@@ -34,7 +36,7 @@ import { BORN, ASLEEP, WAKER, bornOf, asleep, effective, bornStats, maxDepth, sp
 import { buildFinds, FIND_COLOUR } from "./finds.js";
 import { ensureKoppen, koppenAt } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
-import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere } from "./inventory.js";
+import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon } from "./inventory.js";
 import { whenText } from "./moon.js";
 import { buildShrines } from "./shrines.js";
 import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf, WAKES, skyState, wokeAt } from "./shrinelore.js";
@@ -94,8 +96,8 @@ function keptInventory() {
   try {
     const v = JSON.parse(localStorage.getItem(INVENTORY_KEY) || "null");
     if (!v) return null;
-    const p = parseInventoryRecord({ items: v.items, worn: v.worn, kit: v.kit, lunation: v.lunation, took: v.took });
-    return p && { items: p.items, worn: p.worn, kit: p.kit, lunation: p.lunation, took: p.took, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
+    const p = parseInventoryRecord({ items: v.items, worn: v.worn, kit: v.kit, lunation: v.lunation, took: v.took, got: v.got });
+    return p && { items: p.items, worn: p.worn, kit: p.kit, lunation: p.lunation, took: p.took, got: p.got, at: Number.isFinite(v.at) ? v.at : 0, changed: !!v.changed };
   } catch { return null; }
 }
 let inv = keptInventory() || { ...firstInventory(Date.now() / 1000), at: 0, changed: false }; // a moonseed and a prism to begin with
@@ -105,7 +107,7 @@ let bagView = null;
 function keepInventory(next, { changed = true, at = Date.now() } = {}) {
   const wasWorn = wornOf(inv).join(",");
   next = kitUp(next);
-  inv = { items: next.items, worn: wornOf(next), kit: next.kit, lunation: next.lunation, took: next.took ?? { lunation: -1, keys: [] }, at, changed };
+  inv = { items: next.items, worn: wornOf(next), kit: next.kit, lunation: next.lunation, took: next.took ?? { lunation: -1, keys: [] }, got: next.got ?? [], at, changed };
   invAt = Date.now() / 1000;
   try { localStorage.setItem(INVENTORY_KEY, JSON.stringify(inv)); } catch { /* private mode */ }
   bagView?.refresh(); // the BAG button, once it exists
@@ -1404,6 +1406,13 @@ const bag = buildBag({
     wear: (kind) => changeWorn(kind, true),
     takeOff: (kind) => changeWorn(kind, false),
     whyNot: () => wornLock(),
+    canSend: () => !!account.did && flying.can && people.viewer === account.did,
+    send: (kind, handle, note) => sendPigeon(kind, handle, note),
+    mutuals: () => [...new Set([...who.values()].map((w) => w.handle).concat(everywhere.filter((a) => !a.own).map((a) => a.handle)).filter(Boolean))].sort(),
+    incoming: () => {
+      const ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn, now = realNow();
+      return flying.list.filter((p) => !hadPigeon(inv, p.uri)).map((p) => ({ handle: p.handle, kind: p.kind, count: p.count, eta: arrivalOf(p, ll.lat, ll.lon) <= now ? "here soon" : `in ${whenWords(arrivalOf(p, ll.lat, ll.lon) - now)}` }));
+    },
   },
 });
 bagView = bag;
@@ -1471,7 +1480,7 @@ function seedTick() {
 }
 // Your pouch in your repo, like your creature: brought into step on sign-in and when you come back; written once things settle.
 const carry = { can: false, synced: "", busy: false };
-const invKey = () => JSON.stringify([inv.items, wornOf(inv), inv.kit, inv.lunation, inv.took]);
+const invKey = () => JSON.stringify([inv.items, wornOf(inv), inv.kit, inv.lunation, inv.took, inv.got]);
 async function syncInventory() {
   if (!account.did || !carry.can || carry.busy) return;
   carry.busy = true;
@@ -1515,7 +1524,82 @@ function atlasTick() {
   account.putAtlas(makeAtlasRecord(found)).then(() => { mapping.synced = k; })
     .catch((e) => console.warn("atlas:", e.message)).finally(() => { mapping.busy = false; });
 }
+// ---- Pigeons (pigeons.js): things carried between mutuals. Yours fly from your repo; theirs are found by the backlink
+// index, only from mutuals, and arrive when a pigeon flying 1,000 km/h would have got here. ----
+const flying = { can: false, list: [], polledAt: -Infinity, landing: false, busy: false };
+const pigeonFx = buildPigeonFx(scene);
+const whenWords = (s) => (s < 90 ? "a minute" : s < 5400 ? `${Math.round(s / 60)} minutes` : s < 129600 ? `${Math.round(s / 3600)} hours` : `${Math.round(s / 86400)} days`);
+async function pollPigeons() {
+  if (!account.did || people.viewer !== account.did || flying.busy) return;
+  flying.busy = true;
+  flying.polledAt = realNow();
+  try { flying.list = await pigeonsFor({ viewer: account.did }); bagView?.refresh(); }
+  catch (e) { console.warn("pigeons:", e.message); }
+  finally { flying.busy = false; }
+}
+/** Your own pigeons that have flown off (a moon on), cleared from your repo. */
+async function clearFlownPigeons() {
+  try {
+    for (const p of await account.ownPigeons()) {
+      const at = typeof p.value?.sentAt === "string" ? Date.parse(p.value.sentAt) / 1000 : NaN;
+      if (Number.isFinite(at) && flownOff(at, realNow())) await account.clearPigeon(p.rkey);
+    }
+  } catch (e) { console.warn("pigeons:", e.message); }
+}
+async function sendPigeon(kind, handle, note) {
+  if (!account.did || !flying.can) throw new Error("Sign in (BLUESKY ▾) to send pigeons.");
+  const name = String(handle || "").trim().replace(/^@/, "");
+  if (!name) throw new Error("Who's it for? Type their handle.");
+  const did = await didOf(name);
+  if (!did) throw new Error(`Couldn't find @${name}.`);
+  if (did === account.did) throw new Error("A pigeon won't fly to you from you.");
+  if (!(await visibleAmong(account.did, [did])).has(did)) throw new Error(`Pigeons fly only to mutuals, and @${name} isn't one (or can't be seen).`);
+  if (countOf(inv, kind) <= 0) throw new Error(`You have no ${ITEMS[kind].plural} to send.`);
+  const ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn;
+  await account.sendPigeon(makePigeon({ to: did, kind, count: 1, from: ll, note }));
+  const next = spend(inv, kind);
+  if (next) keepInventory(next);
+  const there = who.get(did)?.intent, toward = there && world ? world.frame.toLocal(there.lat, there.lon) : null;
+  const from = state.pos.clone();
+  from.y += 2 * creature.size;
+  pigeonFx.depart(from, toward && new THREE.Vector3(toward.x, 0, toward.z), creature.size * 3);
+  sound.flutter();
+  logLine(`A pigeon takes the ${ITEMS[kind].name} and flies off to @${name}.`, "creature");
+}
+/** Once a second: a pigeon whose flight is done comes down to you with its gift (one at a time). */
+function pigeonTick() {
+  if (!world || state.ride || flying.landing || !account.did || people.viewer !== account.did) return;
+  if (realNow() - flying.polledAt > 180) pollPigeons();
+  const ll = world.frame.toLatLon(state.pos.x, state.pos.z), now = realNow();
+  const p = flying.list.find((q) => !hadPigeon(inv, q.uri) && !(q.waitUntil > now) && arrivalOf(q, ll.lat, ll.lon) <= now);
+  if (p) landPigeon(p);
+}
+/** A pigeon comes down to you with its gift. */
+function landPigeon(p) {
+  flying.landing = true;
+  // It comes down out of the sky ahead of the camera and hovers beside you and a little above, side on, where the
+  // camera can see it (just beyond you, your own body hid it).
+  const ahead = new THREE.Vector3(); camera.getWorldDirection(ahead);
+  ahead.setY(0).normalize();
+  const right = new THREE.Vector3(-ahead.z, 0, ahead.x);
+  const to = state.pos.clone().addScaledVector(right, 2.6 * creature.size);
+  to.y += 4.5 * creature.size;
+  pigeonFx.arrive(to, to.clone().addScaledVector(ahead, 60).addScaledVector(right, 30), creature.size * 3.5, () => {
+    flying.landing = false;
+    const r = receive(inv, p.uri, p.kind, p.count), what = p.count > 1 ? `${p.count} ${ITEMS[p.kind].plural}` : `a ${ITEMS[p.kind].name}`, who2 = p.handle ? `@${p.handle}` : "a mutual";
+    if (!r.ok) {
+      if (r.why === "full") { p.waitUntil = realNow() + 600; logLine(`A pigeon from ${who2} brings ${what}, but your pouch is full of them. It waits nearby.`, "note"); }
+      return;
+    }
+    keepInventory(r.inv);
+    sound.chime();
+    bursts.emit({ at: to.clone(), colors: [new THREE.Color(0xc9cfdc), new THREE.Color(0x6fd6a8)], n: 16, spread: 1.5 * creature.size, up: 2, fall: 1, life: 1 });
+    logLine(`A pigeon from ${who2} brings you ${what}${p.note ? `: “${p.note}”` : "."}`, "creature");
+  }, Math.atan2(-right.x, -right.z));
+}
 account.onChange(async (did) => {
+  flying.can = false;
+  flying.list = [];
   share.can = false;
   keep.can = false;
   keep.synced = "";
@@ -1526,11 +1610,13 @@ account.onChange(async (did) => {
   if (did) {
     const name = (await handlesOf([did])).get(did) || null;
     setViewer(did, name);
-    [share.can, keep.can, carry.can, mapping.can] = await Promise.all([account.canShare(), account.canKeep(), account.canCarry(), account.canMap()]);
+    [share.can, keep.can, carry.can, mapping.can, flying.can] = await Promise.all([account.canShare(), account.canKeep(), account.canCarry(), account.canMap(), account.canFly()]);
     maker.setSharing({ on: share.on, can: share.can, keep: keep.can && carry.can && mapping.can });
     syncCreature();
     syncInventory();
     syncAtlas();
+    if (flying.can) clearFlownPigeons();
+    flying.polledAt = -Infinity; // look for pigeons on the next tick
     account.mutes().then((m) => { setMuted(m); refreshIntents(); refreshEverywhere(); artifactsAt = -Infinity; });
   } else if (people.viewer && people.viewer === account.did) setViewer(null, null);
   else maker.setPerson({ did: people.viewer, handle: people.handle, signedIn: false });
@@ -1590,11 +1676,15 @@ function hearMutuals(on) {
   if (!on) { hearing?.close(); hearing = null; return; }
   if (hearing) return;
   hearing = listen({
-    collections: [INTENT_NSID, ARTIFACT_NSID],
+    collections: [INTENT_NSID, ARTIFACT_NSID, PIGEON_NSID],
     onOpen: () => refreshIntents(),
     onCommit: async (e) => {
       const viewer = people.viewer, c = e.commit;
       if (!viewer || e.did === viewer && c.collection === INTENT_NSID) return; // your own creature is you
+      if (c.collection === PIGEON_NSID) { // one setting off for you: look properly (only mutuals' count, as always)
+        if (c.operation !== "delete" && viewer === account.did && parsePigeon(c.record, realNow())?.to === viewer) flying.polledAt = -Infinity;
+        return;
+      }
       if (c.operation === "delete") {
         if (c.collection === INTENT_NSID) { who.delete(e.did); setWho(); }
         else { const uri = `at://${e.did}/${ARTIFACT_NSID}/${c.rkey}`; showArtifacts(artifacts.filter((a) => a.uri !== uri)); setEverywhere(everywhere.filter((a) => a.uri !== uri)); }
@@ -1933,6 +2023,7 @@ function frame() {
   drawRoute(t);
   simT = t;
   bursts.update(dt);
+  pigeonFx.update(dt, t);
   if (world && cairnsWorld !== world) { cairns.place(world); cairnsWorld = world; artifactsAt = -Infinity; } // regrown: re-place, then look again
   if (people.viewer && world && !rebuilding && simT - artifactsAt > 90) refreshArtifacts();
   if (people.viewer && simT - everywhereAt > 180) refreshEverywhere();
@@ -1946,6 +2037,7 @@ function frame() {
     seedTick();
     carryTick();
     atlasTick();
+    pigeonTick();
     const nowS = realNow();
     let gone = false;
     for (const [did, w] of who) if (nowS - w.intent.at > STALE_S) { who.delete(did); gone = true; } // stale: they've left
@@ -2037,7 +2129,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, inv: () => inv, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, inv: () => inv, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

@@ -144,6 +144,22 @@ function cleanTook(took) {
   return { lunation: took.lunation, keys: [...new Set(took.keys.filter((k) => typeof k === "string" && TOOK_KEY.test(k)))].slice(-TOOK_MAX) };
 }
 
+/** Pigeons you've had (pigeons.js), by record URI, newest last: so each one's gift comes once. */
+export const GOT_MAX = 200;
+const GOT_URI = /^at:\/\/did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.%-]{1,253})\/org\.jason-edelman\.dream\.pigeon\/[A-Za-z0-9._:~-]{1,64}$/;
+export const hadPigeon = (inv, uri) => (inv?.got ?? []).includes(uri);
+/**
+ * A pigeon's gift: { inv, ok, why } (why: "had", already; or "full", it doesn't all fit, so the pigeon waits for
+ * room).
+ */
+export function receive(inv, uri, kind, count) {
+  if (hadPigeon(inv, uri)) return { inv, ok: false, why: "had" };
+  const n = countOf(inv, kind);
+  if (!ITEMS[kind] || n + count > ITEMS[kind].max) return { inv, ok: false, why: "full" };
+  return { ok: true, why: null, inv: { ...inv, items: { ...inv.items, [kind]: n + count }, got: [...(inv.got ?? []), uri].slice(-GOT_MAX) } };
+}
+const cleanGot = (got) => (Array.isArray(got) ? [...new Set(got.filter((u) => typeof u === "string" && GOT_URI.test(u)))].slice(-GOT_MAX) : []);
+
 /** One given back (a moonseed eaten for nothing: the stats didn't change). */
 export function refund(inv, kind) {
   return { ...inv, items: { ...inv.items, [kind]: Math.min(ITEMS[kind].max, countOf(inv, kind) + 1) } };
@@ -172,11 +188,11 @@ const cleanKit = (k) => (Number.isInteger(k) && k >= 0 && k <= 1000 ? k : 0);
 
 export function makeInventoryRecord(inv, at = Date.now()) {
   const items = cleanItems(inv.items);
-  return { $type: INVENTORY_NSID, items, worn: cleanWorn(inv.worn, items), kit: cleanKit(inv.kit), lunation: Number.isInteger(inv.lunation) ? inv.lunation : -1, took: cleanTook(inv.took), updatedAt: new Date(at).toISOString() };
+  return { $type: INVENTORY_NSID, items, worn: cleanWorn(inv.worn, items), kit: cleanKit(inv.kit), lunation: Number.isInteger(inv.lunation) ? inv.lunation : -1, took: cleanTook(inv.took), got: cleanGot(inv.got), updatedAt: new Date(at).toISOString() };
 }
 
 /**
- * An inventory record, checked: { items, worn, kit, lunation, took, at (ms) } or null. Unknown kinds and bad counts are
+ * An inventory record, checked: { items, worn, kit, lunation, took, got, at (ms) } or null. Unknown kinds and bad counts are
  * dropped, and worn things you don't carry.
  */
 export function parseInventoryRecord(v) {
@@ -185,10 +201,10 @@ export function parseInventoryRecord(v) {
   const at = typeof v.updatedAt === "string" && v.updatedAt.length <= 40 ? Date.parse(v.updatedAt) : NaN;
   const lunation = Number.isInteger(v.lunation) && v.lunation >= -1 && v.lunation < 100000 ? v.lunation : -1;
   const items = cleanItems(v.items);
-  return { items, worn: cleanWorn(v.worn, items), kit: cleanKit(v.kit), lunation, took: cleanTook(v.took), at: Number.isFinite(at) ? at : 0 };
+  return { items, worn: cleanWorn(v.worn, items), kit: cleanKit(v.kit), lunation, took: cleanTook(v.took), got: cleanGot(v.got), at: Number.isFinite(at) ? at : 0 };
 }
 
-const inventoryKey = (a) => JSON.stringify([cleanItems(a.items), cleanWorn(a.worn, cleanItems(a.items)), cleanKit(a.kit), a.lunation ?? -1, cleanTook(a.took)]);
+const inventoryKey = (a) => JSON.stringify([cleanItems(a.items), cleanWorn(a.worn, cleanItems(a.items)), cleanKit(a.kit), a.lunation ?? -1, cleanTook(a.took), cleanGot(a.got)]);
 export const sameInventory = (a, b) => inventoryKey(a) === inventoryKey(b);
 
 /**

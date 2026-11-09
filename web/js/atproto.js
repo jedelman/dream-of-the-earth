@@ -7,6 +7,7 @@
 import { placesAround } from "./places.js";
 import { NSID, WORLD_URL, parseArtifact, fadeOf } from "./artifacts.js";
 import { INTENT_NSID, INTENT_RKEY, parseIntent, allowed } from "./intents.js";
+import { PIGEON_NSID, parsePigeon } from "./pigeons.js";
 
 export const CONSTELLATION = "https://constellation.microcosm.blue";
 export const APPVIEW = "https://public.api.bsky.app";
@@ -174,5 +175,24 @@ export async function currentIntents({ viewer, nowS = Date.now() / 1000 }) {
   const names = await handlesOf(ok);
   const out = [];
   ok.forEach((did, k) => { const it = parseIntent(values[k], nowS); if (it) out.push({ did, handle: names.get(did) || null, intent: it }); });
+  return out;
+}
+
+/**
+ * Pigeons flying to the viewer: [{ uri, did, handle, to, kind, count, from, at, note }], only from mutuals (the same
+ * rule as everything else), checked, at most 30, newest first. Flown-off ones (older than a moon) are left out.
+ */
+export async function pigeonsFor({ viewer, nowS = Date.now() / 1000 }) {
+  if (!DID_RE.test(viewer)) return [];
+  const links = (await linksTo(viewer, "to", 2, PIGEON_NSID)).filter((l) => l.did !== viewer);
+  const ok = await visibleAmong(viewer, [...new Set(links.map((l) => l.did))]);
+  const wanted = links.filter((l) => ok.has(l.did)).slice(0, 30);
+  const values = await pool(wanted, 6, (w) => getRecord(w.did, w.rkey, PIGEON_NSID));
+  const names = await handlesOf([...new Set(wanted.map((w) => w.did))]);
+  const out = [];
+  wanted.forEach((w, k) => {
+    const p = parsePigeon(values[k], nowS);
+    if (p && p.to === viewer) out.push({ ...p, did: w.did, uri: `at://${w.did}/${PIGEON_NSID}/${w.rkey}`, handle: names.get(w.did) || null });
+  });
   return out;
 }

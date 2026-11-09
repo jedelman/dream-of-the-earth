@@ -565,6 +565,28 @@ large - dive depth is the unlock." The second, with the first's spirit (`birth.j
   landmarks menu still teleports anywhere. Both undercut the sea's gate until the quest and the atlas's fast travel
   replace them.
 
+### Pigeons: things carried between mutuals (built 11-09)
+Jason: "item exchange between repos - via pigeon", then "we should give people reasons to collaborate". The finds
+make the reason (each kind of creature finds easily what the other needs); pigeons carry it (`pigeons.js`,
+`pigeonfx.js`, `pigeonsFor` in `atproto.js`).
+- **Sending:** from the BAG, Send on anything you carry, then a mutual's handle (suggested from mutuals in the dream
+  and cairn makers) and a note if you like. The game checks they're a mutual by the same rule as everything else,
+  writes a record to your repo (`org.jason-edelman.dream.pigeon/<tid>`: to, kind, count, where your creature set off
+  from, when, note), takes the thing from your pouch, and a pigeon flies off from you.
+- **Receiving:** the backlink index lists pigeon records whose `to` is you (Jetstream's live feed says when a new one
+  sets off, so it's looked for at once; otherwise every 3 minutes). Only mutuals' count; each is parsed against hard
+  caps. One arrives when a pigeon flying 1,000 km/h from where it set off would have reached where your creature is
+  now: across a sea in minutes, to the far side of the Earth in about a day. Then a pale pigeon with a green-glass neck
+  comes down out of the sky ahead of you, hovers at your side, and leaves its gift: "A pigeon from @claude… brings you
+  a moonseed: 'for the new moon, from Claude'". The BAG lists pigeons on their way, with when they'll arrive.
+- **Once each:** your inventory keeps which pigeons you've had (`got`, the newest 200). If the gift doesn't fit your
+  pouch, the pigeon waits nearby (ten minutes at a time) until it does.
+- **A pigeon waits a moon,** then it's flown off: ignored by its recipient, and cleared from its sender's repo the
+  next time they sign in. What it carried is gone with it.
+- **Checked:** Claude's account sent Jason a moonseed (a real record), and `pigeonsFor` found it for Jason's DID
+  through Constellation, through the mutual check, parsed. Jason will meet that pigeon the next time he plays signed
+  in.
+
 ### Moonseeds: respecs you carry (built 11-09)
 Jason: "Let's grant respecs at the new moon but have them be an item so they can be spent or saved."
 - **The inventory** (`inventory.js`): what you carry, kept on the device and, signed in, in your repo (one record,

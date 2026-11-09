@@ -1,0 +1,65 @@
+{
+  "lexicon": 1,
+  "id": "org.jason-edelman.dream.pigeon",
+  "description": "A pigeon carrying something from one Dream of the Earth player to a mutual. Kept in the sender's repo; the recipient finds it by the backlink index (its 'to'), only from a mutual, and it arrives when a pigeon flying 1,000 km/h would have covered the distance from where it set off. Each recipient takes a pigeon's gift once (their inventory keeps which). After a lunar month it has flown off and the sender's game clears it away.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": [
+          "to",
+          "kind",
+          "count",
+          "fromLatE6",
+          "fromLonE6",
+          "sentAt"
+        ],
+        "properties": {
+          "to": {
+            "type": "string",
+            "format": "did",
+            "description": "Who it's for: a mutual."
+          },
+          "kind": {
+            "type": "string",
+            "knownValues": [
+              "moonseed",
+              "prism",
+              "tidefin",
+              "mossfoot",
+              "owleye"
+            ],
+            "description": "What it carries."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "How many (at most what fits in a pouch)."
+          },
+          "fromLatE6": {
+            "type": "integer",
+            "minimum": -90000000,
+            "maximum": 90000000,
+            "description": "Where it set off: the sender's creature (never the player's own location)."
+          },
+          "fromLonE6": {
+            "type": "integer",
+            "minimum": -180000000,
+            "maximum": 180000000
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "note": {
+            "type": "string",
+            "maxGraphemes": 80,
+            "description": "A few words to go with it."
+          }
+        }
+      }
+    }
+  }
+}

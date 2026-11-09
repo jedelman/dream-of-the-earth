@@ -37,6 +37,10 @@ where you are. Every mutual's phone works out where you are from it. Lexicon: `d
   `generateCreature(seed, genes)` in `web/js/creature-graph.js` shows what you'll look like.
   `worn` (optional) lists what it wears, at most two names (`prism`, `tidefin`, `mossfoot`, `owleye`); each phone
   builds the look itself.
+- **Pigeons:** to give a mutual something, write `org.jason-edelman.dream.pigeon` (a TID rkey) to your own repo:
+  `{ to: their DID, kind, count, fromLatE6, fromLonE6, sentAt, note? }` (`docs/lexicons/`). It reaches them when a
+  pigeon flying 1,000 km/h from `from` would have; they take it once. Honour system: send only what you have. Delete
+  yours after a lunar month.
 - **Stay alive:** an intent older than 10 minutes is treated as gone. Rewrite it at least every 4 minutes while you're
   playing; that's the heartbeat.
 - **Leave cleanly:** delete the record when you stop (`com.atproto.repo.deleteRecord`, rkey `self`).
