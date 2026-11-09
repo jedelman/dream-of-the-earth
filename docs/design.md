@@ -617,6 +617,39 @@ them; flight becomes a sixth stat, from the same budget of 12, once Wings is lit
   ceilings); five and four still read. Looks travel in the intent as names. The map: tap a slot to set a gem (or, with
   a moonseed, take it out), tap a link to read it; framed on what you've grown toward.
 
+### The phone's HUD, made over (built 11-09)
+Jason: "Let's give the mobile HUD a makeover as well. Minimalist and context driven. Maybe we can use the
+accelerometer?" (touch screens only, by `(pointer: coarse)`; `tilt.js`; the desktop is unchanged)
+- **One ☰ instead of seven buttons.** It opens the menus as a column (equal widths, bigger touch targets) and shuts
+  when you pick one, tap the world or press Escape.
+  - A pink dot on ☰ means something new came while it was shut: a find, a pigeon, an atlas place, a sign-in. This is
+    read from the menus' own labels, and only after the first 12 s, so start-up syncs don't count.
+- **The HUD keeps one line,** the place (biome · on the ground, afloat, n m up). It shows when you stop or arrive
+  somewhere new (another biome, the water, the air, a dream), and hushes after about a second on the move.
+  - A spell's countdown, the far feather, a trip you tapped for, a ride and the ring always show.
+  - The sky line, coordinates and stats are behind a tap on the HUD. The camera's distance shows only while it changes.
+- **▲ and ▼ show only when they'd do something, and say what:**
+  - ▲: JUMP, FLY, CLIMB or RISE (under water).
+  - ▼: CROUCH (on the ground, only near small creatures, which crouching doesn't startle), DOWN, DIVE, STEP OFF (a ride)
+    or LET GO (a ley node's ring).
+  - Each lingers 0.8 s after it's no longer needed, so a hop doesn't make it blink. A tap shorter than a frame still
+    counts, because the press is latched for one frame.
+  - They're round, translucent, and fade and shrink away rather than vanish.
+- **The log keeps three lines** on a phone (six on a desktop), fading after 5.5 s, clear of the buttons. The starting hint
+  is its first line, so the two never overlap. The ring's and the ride's words name the touch controls (DRAG ◀ ▶, ✦, ▼).
+- **Tilt to steer** (opt-in, in ☰; remembered on this device):
+  - **Steering:** tip the phone right or left to turn, away to go, toward you to slow.
+  - **Level:** however you held it when you switched it on (and again after the screen rotates).
+  - **Dead zones:** 5° for turning and 9° for going, with full effect at 24° and 28°. Readings are smoothed, and
+    crossing ±180° doesn't swing it. The axes follow the screen's rotation, so landscape works.
+  - **Shake:** two hard jolts (over 24 m/s², gravity included) within half a second squeak, then it rests 1.5 s.
+  - **Permission:** on iOS it asks first, from the tap that switches it on (or the first tap after a reload).
+  - **Menus:** while one is open, tilt does nothing.
+  - **Privacy:** the motion is read on the phone and never sent anywhere. It isn't location, which this game still never asks for.
+- Checked in Chromium emulating an iPhone 13 (portrait and landscape) with synthetic orientation and motion events
+  (lean right turned right, tip away went forward, a shake squeaked). **Unverified on a real phone,** above all the
+  landscape axes and iOS's permission prompt.
+
 ### A controller (built 11-09)
 Jason: "Then let's build in gamepad support." (`gamepad.js`, `pollPad` in `main.js`)
 - **The Gamepad API, standard mapping** (Xbox, PlayStation and Switch Pro pads read alike), polled each frame from

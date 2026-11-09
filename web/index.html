@@ -182,6 +182,31 @@
     #act { bottom: 62px; }
     #hud { max-width: 72vw; }
   }
+  /* Touch screens (Jason, 11-09: "Let's give the mobile HUD a makeover as well. Minimalist and context driven. Maybe we
+     can use the accelerometer?"): one ☰ holds the menus (a dot when something new has come); ▲▼ show only when they do
+     something, saying what; the HUD keeps one line and hushes while you move; the log keeps three lines, clear of the
+     buttons. */
+  #menubtn { display: none; }
+  #tiltbtn { font: 11px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: .03em; color: #d9ecff; background: rgba(20, 12, 40, .6); border: 1px solid rgba(160, 210, 255, .6); padding: 4px 8px; cursor: pointer; }
+  #tiltbtn[aria-pressed="true"] { color: var(--gold); border-color: var(--gold); }
+  @media (pointer: coarse) {
+    #menubtn { display: grid; place-items: center; position: relative; width: 42px; height: 42px; padding: 0; font: 19px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, "Segoe UI Symbol", monospace; color: var(--ink); background: rgba(14, 8, 30, .4); border: 1px solid rgba(255, 211, 77, .5); text-shadow: 1px 1px 0 #000; -webkit-tap-highlight-color: transparent; }
+    #menubtn.news::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #ff7ad9; box-shadow: 0 0 6px #ff7ad9; }
+    #corner > #menubtn { min-width: 0; }
+    #corner.open > #menubtn { color: var(--gold); border-color: var(--gold); background: rgba(14, 8, 30, .75); }
+    #corner:not(.open) > button:not(#menubtn) { display: none; }
+    #corner > button:not(#menubtn) { width: 15em; min-width: 0; padding: 10px 12px; font-size: 12px; }
+    #hud { max-width: calc(100vw - 76px); transition: opacity .9s ease; }
+    #hud.hush { opacity: 0; }
+    #help { display: none; } /* the hint is the log's first line instead (main.js) */
+    #log { bottom: max(30px, calc(env(safe-area-inset-bottom) + 24px)); max-width: calc(100vw - 96px); }
+    .btn { width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid rgba(255, 211, 77, .7); background: rgba(14, 8, 30, .35); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; font-size: 17px; text-shadow: 1px 1px 0 #000; transition: opacity .25s ease-out, transform .25s ease-out; -webkit-tap-highlight-color: transparent; }
+    .btn .w { font-size: 8px; letter-spacing: .08em; }
+    .btn:active { background: rgba(255, 211, 77, .25); }
+    .btn.off { opacity: 0; transform: scale(.85); pointer-events: none; }
+    #up { bottom: max(96px, calc(env(safe-area-inset-bottom) + 90px)); } #down { bottom: max(30px, calc(env(safe-area-inset-bottom) + 24px)); }
+  }
+  @media (pointer: coarse) and (prefers-reduced-motion: reduce) { #hud, .btn { transition: none; } }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
@@ -189,6 +214,7 @@
 <canvas id="view" aria-label="Dream of the Earth: a low-poly view of a real place on Earth, with your creature"></canvas>
 <div id="hud" aria-live="off"></div>
 <div id="corner">
+<button id="menubtn" aria-expanded="false" aria-label="Menu" hidden>☰&#xFE0E;</button>
 <button id="mine" aria-haspopup="dialog" aria-expanded="false" aria-label="Your creature">YOUR CREATURE ▾</button>
 <button id="bag" aria-haspopup="dialog" aria-expanded="false" aria-label="What you carry">BAG ▾</button>
 <button id="rhizome" aria-haspopup="dialog" aria-expanded="false" aria-label="Your rhizome">RHIZOME ▾</button>
@@ -197,6 +223,7 @@
 <button id="me" aria-haspopup="dialog" aria-expanded="false">BLUESKY ▾</button>
 <button id="cairns" aria-haspopup="dialog" aria-expanded="false" hidden>CAIRNS ▾</button>
 <button id="saybtn" hidden aria-label="Say something to mutuals nearby">SAY</button>
+<button id="tiltbtn" aria-pressed="false" hidden>TILT TO STEER · OFF</button>
 <button id="helpbtn" aria-haspopup="dialog" aria-expanded="false" aria-label="Help: how to play" title="How to play (?)">? HELP</button>
 <div id="sheet" class="sheet" role="dialog" aria-label="Bluesky" hidden></div>
 </div>
@@ -206,8 +233,8 @@
 <form id="sayform" hidden autocomplete="off"><input id="saytext" maxlength="80" placeholder="Say something to mutuals nearby" aria-label="Say something" enterkeyhint="send"><button type="submit">Say</button></form>
 <div id="help">WASD OR DRAG: MOVE · TAP ANYTHING: GO TO IT · E: TOUCH WHAT GLINTS · ? HELP: EVERYTHING ELSE</div>
 <button id="act" aria-hidden="true"><span class="key" aria-hidden="true">E</span><span class="what"></span></button>
-<button class="btn" id="up" aria-label="Up">▲</button>
-<button class="btn" id="down" aria-label="Down">▼</button>
+<button class="btn" id="up" aria-label="Up">▲<span class="w"></span></button>
+<button class="btn" id="down" aria-label="Down">▼<span class="w"></span></button>
 <script type="module" src="./js/main.js"></script>
 </body>
 </html>
