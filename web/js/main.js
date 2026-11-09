@@ -28,6 +28,9 @@ import { makeCairn, parseArtifact, renew, fadeOf, MOON_S, cairnForm, byDistance,
 import { account, isReturning, takeReturn } from "./account.js";
 import { buildMaker } from "./maker.js";
 import { buildEditor } from "./editor.js";
+import { buildShrines } from "./shrines.js";
+import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf } from "./shrinelore.js";
+import { buildWorldview } from "./worldview.js";
 import { makeCreatureRecord, parseCreatureRecord, reconcile } from "./creature-record.js";
 import { sound } from "./sound.js";
 import { logLine } from "./eventlog.js";
@@ -147,6 +150,9 @@ let eyeLocal = eyeOf(graph);
 /** How see-through the creature is (1 = solid). Translucent, it draws after the sky, or the sky pass would paint over it. */
 let creatureOpacity = 1, footLift = 0;
 let editing = false; // the creature editor is open: the camera looks at it, not through it
+// Shrines' spells (shrinelore.js): a minute of another shape, another camera, another world. Each { id, t0, endAt }.
+const spells = { shape: null, camera: null, world: null };
+let spellZoom = 1, masks = 0;
 function fadeCreature(o) {
   if (Math.abs(o - creatureOpacity) < 0.004) return;
   const was = creatureOpacity < 1, now = o < 0.999;
@@ -166,13 +172,10 @@ const keyOf = (c) => `${c.seed}:${STATS.map((k) => c.stats[k]).join(",")}:${JSON
 const lookKey = () => keyOf(myCreature());
 let lookAt = -Infinity; // when the look last changed (real seconds), so mutuals get it once you've settled
 /** A new look (from the editor, or your repo): regrow the creature where it stands, keep it, and tell mutuals once you've settled. */
-function setCreature(next, at = Date.now()) {
+/** Swap the body on screen for one grown from g (your own, or a shrine's mask), where it stands. */
+function swapBody(g) {
   const was = creature;
-  seed = next.seed >>> 0;
-  genes = parseGenes(next.genes);
-  stats = next.stats;
-  sp = speeds(stats);
-  graph = generateCreature(seed, genes);
+  graph = g;
   creature = buildCreature(graph, stats);
   creature.group.position.copy(was.group.position);
   creature.group.rotation.copy(was.group.rotation);
@@ -184,6 +187,14 @@ function setCreature(next, at = Date.now()) {
   creatureOpacity = 1;
   fadeCreature(o);
   eyeLocal = eyeOf(graph);
+}
+function setCreature(next, at = Date.now()) {
+  if (spells.shape?.id === "mask") spells.shape = null; // a new look takes the mask off
+  seed = next.seed >>> 0;
+  genes = parseGenes(next.genes);
+  stats = next.stats;
+  sp = speeds(stats);
+  swapBody(generateCreature(seed, genes));
   myName = creatureName(seed);
   keepCreature(at);
   lookAt = realNow();
@@ -198,6 +209,69 @@ function setCreature(next, at = Date.now()) {
 }
 // The camera is run by a director (director.js): framing by what you're doing, and shots for what happens.
 const director = buildDirector(camera);
+const worldview = buildWorldview(); // the full-screen pass a world spell (or the fisheye) draws through
+
+/** How a spell of this kind holds now: { id, age, w (its strength, eased), fade (1, falling once you end it) }. */
+function spellNow(kind) {
+  const s = spells[kind], none = { id: null, age: 0, w: 0, fade: 0 };
+  if (!s) return none;
+  const age = simT - s.t0, f = s.endAt === null ? 1 : Math.max(0, 1 - (simT - s.endAt) / EASE_S), fade = f * f * (3 - 2 * f);
+  if (age >= SPELL_S || f <= 0) { endSpell(kind); return none; }
+  return { id: s.id, age, w: spellWeight(age) * fade, fade };
+}
+const LIFTED = { shape: "You're yourself again.", camera: "The view settles.", world: "The world comes back to itself." };
+function endSpell(kind, quiet = false) {
+  const s = spells[kind];
+  if (!s) return;
+  spells[kind] = null;
+  if (s.id === "mask") swapBody(generateCreature(seed, genes));
+  if (kind === "world" && s.id === "days") lastSun = -Infinity; // the sun comes straight back to now
+  if (!quiet && s.endAt === null) logLine(LIFTED[kind], "shrine"); // ended by you, it was already said
+}
+/** A shrine touched: its spell takes you (the same again renews it; another of its kind replaces it). */
+function castSpell(sh) {
+  const def = SPELLS[sh.spell], cur = spells[def.kind];
+  if (cur && cur.id === sh.spell && cur.endAt === null) {
+    if (sh.spell !== "turning" && sh.spell !== "days") cur.t0 = Math.max(cur.t0, simT - EASE_S); // another minute, at full strength
+  } else {
+    if (cur) endSpell(def.kind, true);
+    spells[def.kind] = { id: sh.spell, t0: simT, endAt: null };
+    if (sh.spell === "mask") swapBody(generateCreature(hashString(`${sh.key}:${masks++}`))); // the same masks, in the same order, for everyone
+  }
+  sound.shrine(def.kind);
+  bursts.emit({ at: new THREE.Vector3(sh.x, sh.y, sh.z), colors: [new THREE.Color(KIND_COLOUR[def.kind]), new THREE.Color(0xffffff)], n: 26, spread: 2.5, up: 3, fall: 0.5, life: 2.2 });
+  logLine(def.line, "shrine");
+}
+/** Escape: every spell eases off. */
+function endSpells() {
+  let any = false;
+  for (const k of Object.keys(spells)) if (spells[k] && spells[k].endAt === null) { spells[k].endAt = simT; any = true; }
+  return any;
+}
+/** After the director has placed the camera: the upturned sky, the slow turning, the fisheye's wide eye. */
+function cameraSpell() {
+  const c = spellNow("camera");
+  if (c.id === "upturned") camera.rotateZ(Math.PI * c.w);
+  else if (c.id === "turning") camera.rotateZ(turnOf(c.age) * c.fade);
+  else if (c.id === "fisheye") { camera.fov += (118 - camera.fov) * c.w; camera.updateProjectionMatrix(); }
+}
+/** What the full-screen pass does this frame. */
+function worldSpell() {
+  const w = spellNow("world"), c = spells.camera?.id === "fisheye" ? spellNow("camera") : null;
+  worldview.uniforms.uHue.value = w.id === "colours" ? w.w : 0;
+  worldview.uniforms.uKaleido.value = w.id === "kaleido" ? w.w : 0;
+  worldview.uniforms.uMelt.value = w.id === "melt" ? w.w : 0;
+  worldview.uniforms.uBarrel.value = c ? c.w * 0.8 : 0;
+}
+/** The HUD's line for spells in force: "GIANT 42 S · TURNING 12 S". */
+function spellsLine() {
+  return Object.values(spells).filter(Boolean).map((s) => `${SPELLS[s.id].short} ${Math.max(0, Math.ceil(SPELL_S - (simT - s.t0)))} S`).join("  ·  ");
+}
+// Escape lifts the spells, unless it's closing a sheet or the say box (those listeners run after this one).
+addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !document.getElementById("sheet").hidden || !document.getElementById("sayform").hidden) return;
+  if (endSpells()) logLine("You shake off the spells.", "shrine");
+}, { capture: true });
 let sunInfo = { dir: null, gold: 0 };
 const establishing = () => director.play("arrive", simT, arriveShot(state.heading, cameraRig(), 3.5), { dur: 3.5, blendIn: 0, blendOut: 1.4, start: true });
 // ?heading= (degrees clockwise from north) and ?alt= (metres above the ground
@@ -217,10 +291,11 @@ async function buildWorld(lat, lon) {
   const plants = buildPlants(frame, terrain);
   const insects = buildInsects(frame, terrain);
   const critters = buildCritters(frame, terrain, plants);
+  const shrines = buildShrines(frame, terrain);
   const group = new THREE.Group();
-  group.add(terrain.mesh, highways.group, beings.group, plants.group, insects.group, critters.group);
+  group.add(terrain.mesh, highways.group, beings.group, plants.group, insects.group, critters.group, shrines.group);
   layerTransparent(group); // glows, sparkles and fireflies draw after the sky
-  return { frame, terrain, highways, beings, plants, insects, critters, group };
+  return { frame, terrain, highways, beings, plants, insects, critters, shrines, group };
 }
 function swapWorld(next, place) {
   if (place) {
@@ -571,6 +646,8 @@ function pick(clientX, clientY) {
   }
   const bh = tapRay.intersectObject(world.beings.group, true)[0];
   if (bh) { let o = bh.object; while (o && !o.userData.being) o = o.parent; if (o) found.push({ kind: "being", d: bh.distance, being: o.userData.being, obj: o }); }
+  const sh = tapRay.intersectObjects(world.shrines.pickables(), true)[0], se = sh && world.shrines.entryOf(sh.object);
+  if (se) found.push({ kind: "shrine", d: sh.distance, s: se });
   const ch = tapRay.intersectObject(cairns.group, true)[0], ce = ch && cairns.entryOf(ch.object);
   if (ce) found.push({ kind: "artifact", d: ch.distance, entry: ce });
   const tree = world.plants.pick(tapRay);
@@ -603,6 +680,10 @@ function onTap(clientX, clientY) {
   if (hit.kind === "butterfly") {
     const b = hit.b, act = () => chirp(hit.b.k);
     return Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z) < RANGE.butterfly ? act() : moveTo({ x: b.x, z: b.z, h: b.y }, { range: RANGE.butterfly * 0.6, act });
+  }
+  if (hit.kind === "shrine") {
+    const s = hit.s, act = () => castSpell(s);
+    return flat(s.x, s.z) < RANGE.shrine ? act() : moveTo({ x: s.x, z: s.z, h: world.terrain.heightAt(s.x, s.z) }, { range: RANGE.shrine * 0.6, act });
   }
   if (hit.kind === "critter") {
     // Walking up to it, it doesn't run (others on the way might).
@@ -792,6 +873,9 @@ function inReach() {
     const d = Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z);
     if (d < RANGE.butterfly) add({ kind: "butterfly", key: `b${b.seed}`, seed: b.seed, k: b.k, hue: b.hue, d, range: RANGE.butterfly }, b.x, b.z);
   }
+  for (const s of world.shrines.near(p.x, p.z, RANGE.shrine)) {
+    add({ kind: "shrine", key: s.key, name: SPELLS[s.spell].name, d: Math.hypot(s.x - p.x, s.z - p.z), range: RANGE.shrine, s }, s.x, s.z);
+  }
   for (const c of world.critters.near(p.x, p.z, RANGE.critter + 4)) {
     const d = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z);
     if (d < RANGE.critter) add({ kind: "critter", key: c.key, species: c.kind, name: c.name, d, range: RANGE.critter, c }, c.x, c.z);
@@ -825,6 +909,7 @@ function glintSpot(c, v, bs) {
     return v.set(r.x + (cx / L) * off, r.y + Math.min(r.height * 0.55, 6 + r.height * 0.15), r.z + (cz / L) * off);
   }
   if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
+  if (c.kind === "shrine") return v.set(c.s.x, c.s.y + 2.4, c.s.z);
   if (c.kind === "critter") { const q = world.critters.near(c.c.x, c.c.z, 40).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 1.3, q.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
   if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
@@ -872,6 +957,7 @@ function interact() {
   scanAt = 0; // look again next frame: a highway takes you away, a butterfly moves on
   if (c.kind === "tree") return shakeTree(c.rec);
   if (c.kind === "butterfly") { const b = world.insects.butterflies().find((q) => q.seed === c.seed); return b ? chirp(b.k) : squeak(); }
+  if (c.kind === "shrine") return castSpell(c.s);
   if (c.kind === "critter") return touchCritter(c.key);
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "highway") return boardTapped(c.line);
@@ -1387,6 +1473,7 @@ function updateHud() {
     STATS.map((k) => `${k.toUpperCase()} ${bar(stats[k])}`).join("  "),
     zoomLine(),
     targetLine(),
+    spellsLine(),
   ].join("\n").replace(/\n+$/, "");
 }
 function targetLine() {
@@ -1403,7 +1490,7 @@ function zoomLine() {
 }
 
 // ---- Loop ----
-let sunState = null, lastSun = -Infinity, lastHud = -Infinity;
+let sunState = null, lastSun = -Infinity, lastHud = -Infinity, sunAheadWas = false;
 const t0 = performance.now();
 let last = t0;
 // ?film: for recording. After __dream.filmStart(), the loop stops and __dream.filmStep(n) renders n frames exactly
@@ -1421,9 +1508,12 @@ function frame() {
   const view = state.ride ? rideView(dt, t) : worldView(dt, t);
 
   // The real sun for this place and moment (refreshed every 10 s).
-  if (t - lastSun > 10 || !sunState) {
-    sunState = sunPosition(new Date(unixAt(t) * 1000), view.ll.lat, view.ll.lon);
+  const days = spells.world?.id === "days" ? spellNow("world") : null;
+  if (t - lastSun > 10 || !sunState || days || sunAheadWas) {
+    const ahead = days ? sunAhead(days.age) * days.fade : 0; // a whole day in a minute, then back to now
+    sunState = sunPosition(new Date((unixAt(t) + ahead) * 1000), view.ll.lat, view.ll.lon);
     lastSun = t;
+    sunAheadWas = !!days;
   }
   const dir = sunDirection(sunState);
   sunInfo = { dir, gold: sunState.altitude > -2 ? 1 - Math.min(1, Math.max(0, (sunState.altitude - 2) / 14)) : 0 };
@@ -1462,6 +1552,8 @@ function frame() {
   if (world) { window.__dream.beings = world.beings.update(unix, t); layerTransparent(world.beings.group); }
   // Plants and insects around you; too small to matter from far up.
   if (world && !state.ride) {
+    world.shrines.update(state.pos.x, state.pos.z, t);
+    world.shrines.group.visible = zoom < 60000;
     const life = zoom < 6000;
     world.plants.group.visible = world.insects.group.visible = world.critters.group.visible = life;
     if (life) {
@@ -1506,7 +1598,9 @@ function frame() {
   } else {
     curveUniform.value.copy(camera.position); // the Earth curves away from the eye
     skyPass.update({ frame: world ? world.frame : makeFrame(view.ll.lat, view.ll.lon), camera, unix, sun: { altitude: sunState.altitude, dir }, day, fog: scene.fog, clouds: !underwater && !state.ride && !!world, underwater, steps: 20 + 44 * detail.scale });
-    skyPass.render(renderer, scene, camera);
+    worldSpell();
+    if (worldview.active) { skyPass.render(renderer, scene, camera, worldview.target(renderer)); worldview.render(renderer, t); }
+    else skyPass.render(renderer, scene, camera);
   }
   window.__dream.frames++;
   if (!film?.manual) requestAnimationFrame(frame);
@@ -1516,7 +1610,8 @@ function frame() {
 function cameraRig() {
   const k = THREE.MathUtils.smoothstep(Math.log(zoom), Math.log(ZOOM_HOME), Math.log(150000));
   const pitch = THREE.MathUtils.degToRad(18 + 52 * k);
-  return { back: zoom * Math.cos(pitch), up: zoom * Math.sin(pitch), near: zoom < 400 };
+  const z = zoom * spellZoom; // a giant needs the camera farther off, a tiny creature nearer
+  return { back: z * Math.cos(pitch), up: z * Math.sin(pitch), near: z < 400 };
 }
 
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
@@ -1533,6 +1628,11 @@ function worldView(dt, t) {
   creature.group.position.set(p.x, p.y + footLift + hopY + (state.mode === "water" ? Math.sin(t * 2) * 0.4 : 0), p.z);
   creature.group.rotation.y = state.heading;
   creature.update(t, { mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / 60) });
+  // A shape spell: giant, tiny, stretched. It scales the body after it breathes, lifts it to its new feet, and moves the camera to suit.
+  const sh = shapeOf(spells.shape?.id, spellNow("shape").w);
+  creature.group.scale.multiply(sh);
+  creature.group.position.y += footLift * (sh.y - 1);
+  spellZoom = sh.zoom;
 
   // The camera: the director frames what you're doing.
   let goal = null;
@@ -1540,8 +1640,9 @@ function worldView(dt, t) {
   // Zoomed all the way in, you look through its eyes, and it fades so you can see past it.
   const eyes = editing ? 0 : THREE.MathUtils.smoothstep(14 - zoom, 0, 7); // in the editor you look at it, not through it
   fadeCreature(1 - 0.85 * eyes);
-  const eye = eyeLocal.clone().multiplyScalar(creature.size).applyAxisAngle(UP_AXIS, state.heading);
-  director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: creature.size, eyes, eye });
+  const eye = eyeLocal.clone().multiplyScalar(creature.size).multiply(sh).applyAxisAngle(UP_AXIS, state.heading);
+  director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: creature.size * sh.y, eyes, eye });
+  cameraSpell();
   const underwater = camera.position.y < 0 && world.terrain.heightAt(camera.position.x, camera.position.z) < camera.position.y;
   return { ll: world.frame.toLatLon(p.x, p.z), pos: p, underwater };
 }
@@ -1565,7 +1666,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, triangles: creature.triangles, editor: () => editor, editing: () => editing, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

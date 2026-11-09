@@ -350,6 +350,33 @@ customization." The design's editor verbs were randomize, mutate, edit; all thre
 - **Not yet:** voices (Operator Field patches), part-by-part editing beyond counts, and the plain-shape option for
   non-mutuals' creatures (only mutuals are shown, so it isn't needed yet).
 
+## Shrines (11-09)
+Jason: "let's make the game more psychedelic by scattering shrines that temporarily alter your shape, camera, or
+worldview!"
+- **Computed, like everything else** (`shrinelore.js`, tested): on land only, one cell in ~2.5 of a 1.4 km grid, so
+  six or seven within 3.6 km of you. The same shrine in the same place on every phone, holding the same spell. A spell
+  is yours alone and changes nothing, so leave-no-trace holds.
+- **What one looks like** (`shrines.js`, about 70 triangles): a stepped plinth, an arch about 9 m tall (nearly twice
+  your height), a crystal turning inside it, and a column of light 180 m tall you can see from kilometres away. The
+  colour says what it does: pink, your shape; cyan, the camera; gold, the world.
+- **Touch one** ("(E) Touch the shrine of giants", or tap it and walk there): a shimmer of sound and sparkles, a line
+  in the log, and a spell for a minute. It eases in and out over 2.5 s; the HUD counts it down; Escape lifts every
+  spell. One of each kind at once, so a giant can see the world in six mirrors with the sky underfoot. Touching the
+  same shrine again renews it; another of its kind replaces it.
+- **The eleven spells:**
+  - Shape: **giant** (×6: the kapoks come up to your chest), **tiny** (×¼: the grass is a forest), **taffy** (stretched
+    3.2× tall and thin), **mask** (another creature's body, a different one each touch, the same sequence for
+    everyone). The camera pulls back or comes in to suit. Shape spells are only on your screen; mutuals still see you.
+  - Camera: **the upturned sky** (rolls the view upside down), **fisheye** (a 118° view with a bulging lens),
+    **turning** (four slow turns of the horizon, back level at the end).
+  - World: **colours** (every colour slides round the rainbow, a little more saturated), **kaleidoscope** (six
+    mirrors round the middle, turning), **melting** (the picture sways and runs, with the colours split), **spinning
+    days** (the sun races a whole day round the sky in a minute, then it's now again; only the sun, so clouds and
+    sky beings keep the shared clock).
+- **The world spells (and the fisheye's lens) are one extra full-screen pass** (`worldview.js`) over the finished frame,
+  sea and sparkles included, drawn only while one holds. The sky pass hands it linear colour; without that the first
+  try came out washed out, encoded twice.
+
 ## A smaller you, and a breathing world (11-09)
 Jason: "lets make everything bigger relative to the player by shrinking the player. Two, lets make everything
 breathe. Animals more, plants less, landscapes even less."
