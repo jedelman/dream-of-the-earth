@@ -7,7 +7,7 @@ import { layerTransparent } from "./skyshader.js";
 
 const REGROW_M = 600;
 const SPARKLE_M = 260; // how far off a find's sparkle shows
-export const FIND_COLOUR = { tidefin: 0x6ff7e0, mossfoot: 0x8be05a, owleye: 0xffb534 };
+export const FIND_COLOUR = { tidefin: 0x6ff7e0, mossfoot: 0x8be05a, owleye: 0xffb534, farfeather: 0xcfeeff };
 
 const lit = (hex, glow) => { const c = new THREE.Color(hex); return curved(new THREE.MeshLambertMaterial({ color: c, emissive: c.clone().multiplyScalar(glow), flatShading: true }), `-find-${glow}`); };
 const SHAPES = {
@@ -44,6 +44,19 @@ const SHAPES = {
     pupil.scale.set(0.05, 0.08, 0.02);
     pupil.position.set(0, 0.34, -0.12);
     g.add(stone, eye, pupil);
+    return g;
+  },
+  // A long pale feather, its quill stuck in the ground, leaning in a wind from very high up.
+  farfeather: () => {
+    const g = new THREE.Group();
+    const vane = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), lit(FIND_COLOUR.farfeather, 0.6));
+    vane.scale.set(0.08, 0.34, 0.02);
+    vane.position.y = 0.3;
+    const tip = new THREE.Mesh(new THREE.TetrahedronGeometry(1, 0), lit(0x7ac8ff, 0.7));
+    tip.scale.setScalar(0.05);
+    tip.position.y = 0.6;
+    g.add(vane, tip);
+    g.rotation.z = 0.35;
     return g;
   },
 };

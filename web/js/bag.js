@@ -3,7 +3,7 @@
 import { h } from "./maker.js";
 import { ITEMS, ITEM_KINDS, WORN_MAX, countOf, wornOf } from "./inventory.js";
 
-const USE = { moonseed: "Eat one" };
+const USE = { moonseed: "Eat one", farfeather: "Hold one up" };
 
 /**
  * hooks: { inventory() -> { items, worn, lunation }, use(kind), nextSeed() -> words for when the next moonseed falls,
