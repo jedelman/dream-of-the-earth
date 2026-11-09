@@ -158,11 +158,11 @@ export function buildDirector(camera) {
 // ---- Event shots: each returns { off, look, fov } relative to the creature ----
 const side = (dx, dz) => new THREE.Vector3(-dz, 0, dx).normalize();
 
-/** A close-up: three-quarters front, at eye level, a little closer than you were. */
-export function squeakShot(heading, scale, zoom) {
+/** A close-up: three-quarters front, at eye level, a little closer than you were. size: metres per body unit. */
+export function squeakShot(heading, size, zoom) {
   const f = new THREE.Vector3(-Math.sin(heading), 0, -Math.cos(heading)).applyAxisAngle(UP, 0.6);
-  const off = f.multiplyScalar(Math.max(26 + 14 * scale, zoom * 0.8)).add(new THREE.Vector3(0, 4 * scale, 0));
-  return () => ({ off, look: new THREE.Vector3(0, 2 * scale, 0), fov: 50 });
+  const off = f.multiplyScalar(Math.max(10 + 14 * size, zoom * 0.8)).add(new THREE.Vector3(0, 4 * size, 0));
+  return () => ({ off, look: new THREE.Vector3(0, 2 * size, 0), fov: 50 });
 }
 /** A low angle on a tree you shook: you and its crown in frame, leaves falling between. */
 export function treeShot(subject, rec) {

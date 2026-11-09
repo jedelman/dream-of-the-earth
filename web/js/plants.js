@@ -7,6 +7,7 @@ import { SPECIES, SPECIES_NAMES, VARIANTS, plantForm, midShape, lodFor, cellsAro
 import { biomeFor, BIOMES } from "./biome.js";
 import { koppenAt } from "./koppen.js";
 import { curved } from "./curvature.js";
+import { breathUniforms } from "./breath.js";
 
 const LAYERS = [
   { cell: 40, radius: Math.max(...SPECIES_NAMES.map((n) => SPECIES[n].far)), salt: 101, pick: (b) => [b.density, b.plants] },
@@ -174,14 +175,19 @@ function plantMaterial(species, form, time, far = false) {
     shader.uniforms.uTime = time;
     shader.uniforms.uSway = sway;
     shader.uniforms.uShake = shake;
+    shader.uniforms.uBreathPlant = breathUniforms.uBreathPlant;
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nattribute float aWood;\nuniform float uTime;\nuniform float uSway;\nuniform vec4 uShake;")
+      .replace("#include <common>", "#include <common>\nattribute float aWood;\nuniform float uTime;\nuniform float uSway;\nuniform vec4 uShake;\nuniform float uBreathPlant;")
       .replace("#include <begin_vertex>", `#include <begin_vertex>
         #ifdef USE_INSTANCING
           float ph = dot(instanceMatrix[3].xz, vec2(0.013, 0.017));
         #else
           float ph = 0.0;
         #endif
+        // Plants breathe, slower and less than animals: the crown swells and settles, out of step with its neighbours.
+        float br = sin(uTime * 1.05 + ph * 5.0) * uBreathPlant, crown = smoothstep(0.25, 1.0, position.y);
+        transformed.xz *= 1.0 + 0.03 * br * crown;
+        transformed.y *= 1.0 + 0.012 * br;
         // The wind bends a plant more the higher up you go.
         float bend = position.y * position.y * uSway;
         transformed.x += bend * (sin(uTime * 1.1 + ph) + 0.4 * sin(uTime * 2.7 + ph * 1.9));

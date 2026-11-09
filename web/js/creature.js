@@ -1,7 +1,8 @@
 // Builds a creature's meshes from its body graph and animates it from the body
 // and the motion. Nothing here is sent over a network: only position is.
 import * as THREE from "three";
-import { TRIANGLE_CAP } from "./creature-graph.js";
+import { BREATH } from "./breath.js";
+import { TRIANGLE_CAP, sizeOf } from "./creature-graph.js";
 
 function geometryFor(part) {
   switch (part.prim) {
@@ -26,7 +27,10 @@ function geometryFor(part) {
 
 const triCount = (g) => (g.index ? g.index.count : g.attributes.position.count) / 3;
 
-/** Returns { group, update(t, motion), triangles }. */
+/**
+ * Returns { group, update(t, motion), triangles, size (metres per body unit), foot (metres from its origin down to
+ * its lowest point, so it can stand on the ground) }.
+ */
 export function buildCreature(graph, stats) {
   const group = new THREE.Group();
   const gleam = stats.gleam / 6;
@@ -79,11 +83,24 @@ export function buildCreature(graph, stats) {
     group.add(sparkles);
   }
 
-  group.scale.setScalar(graph.scale);
+  const size = sizeOf(graph);
+  group.scale.setScalar(size);
+  // Where its feet are: the lowest point of its parts (not its sparkles), at rest.
+  group.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  group.traverse((o) => { if (o.isMesh) box.expandByObject(o); });
+  const foot = Math.max(0, -box.min.y);
+  // It breathes: slow at rest, quicker on the move. Animals breathe the most of anything in the dream.
+  let breath = (graph.seed % 1000) / 159, lastT = null;
 
   function update(t, motion) {
     // motion: { mode: "air" | "ground" | "water", speed01 }
     const s = motion.speed01;
+    const dt = lastT === null ? 0 : Math.min(0.1, Math.max(0, t - lastT));
+    lastT = t;
+    breath += dt * (Math.PI * 2) / (3.6 - 2.2 * s);
+    const b = Math.sin(breath) * BREATH.animal;
+    group.scale.set(size * (1 + 0.025 * b), size * (1 + 0.05 * b), size * (1 + 0.025 * b));
     for (const a of animated) {
       const { part, pivot } = a;
       if (a.gleamOnly) {
@@ -105,5 +122,5 @@ export function buildCreature(graph, stats) {
     if (sparkles) sparkles.rotation.y = t * 0.8;
   }
 
-  return { group, update, triangles };
+  return { group, update, triangles, size, foot };
 }

@@ -74,7 +74,8 @@ export function buildFlock(scene, labelsEl) {
         else e.pos.lerp(tmp, Math.min(1, dt * 3));
         e.body.group.position.copy(e.pos);
         const hop = t - e.hopAt;
-        if (hop < 0.45) e.body.group.position.y += Math.sin((Math.PI * hop) / 0.45) * 3 * e.graph.scale;
+        e.body.group.position.y += w.mode === "ride" ? 0 : e.body.foot; // on its feet
+        if (hop < 0.45) e.body.group.position.y += Math.sin((Math.PI * hop) / 0.45) * 3 * e.body.size;
         // Facing: compass bearing (0 = north = -z) to the creature's yaw.
         const yaw = -w.bearing;
         e.heading += Math.atan2(Math.sin(yaw - e.heading), Math.cos(yaw - e.heading)) * Math.min(1, dt * 4);
@@ -82,7 +83,7 @@ export function buildFlock(scene, labelsEl) {
         const onGround = y - g < 1 && w.mode !== "ride";
         e.body.update(t, { mode: onGround ? "ground" : "air", speed01: w.moving ? 0.7 : 0 });
         // The label: over its head, when near and in front of the camera.
-        tmp.copy(e.pos).add({ x: 0, y: 7 * e.graph.scale, z: 0 });
+        tmp.copy(e.pos).add({ x: 0, y: e.body.foot + 7 * e.body.size, z: 0 });
         const d = camera.position.distanceTo(e.pos);
         tmp.project(camera);
         const show = d < LABEL_M && tmp.z < 1 && Math.abs(tmp.x) < 1.1 && Math.abs(tmp.y) < 1.1 && !!e.who.handle;
@@ -103,7 +104,7 @@ export function buildFlock(scene, labelsEl) {
       const e = live.get(did);
       if (!e || !e.pos || !e.body.group.visible) return null;
       e.hopAt = t;
-      return { pos: e.pos.clone(), scale: e.graph.scale };
+      return { pos: e.pos.clone(), scale: e.graph.scale, size: e.body.size }; // scale for its voice, size in metres
     },
     /** Mutuals within r metres of (x, z) in this world: [{ did, handle, x, y, z, entry }]. */
     near(x, z, r) {

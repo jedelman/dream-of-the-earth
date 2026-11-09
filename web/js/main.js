@@ -5,7 +5,8 @@ import { makeFrame, offset, vecToLatLon } from "./geo.js";
 import { network, nearestNode, CLASSES } from "./ley.js";
 import { sunPosition, sunDirection } from "./sun.js";
 import { mulberry32, hashString } from "./rng.js";
-import { generateCreature, parseGenes } from "./creature-graph.js";
+import { generateCreature, parseGenes, sizeOf } from "./creature-graph.js";
+import { breathUniforms } from "./breath.js";
 import { buildCreature } from "./creature.js";
 import { buildTerrain } from "./terrain.js";
 import { buildSea } from "./water.js";
@@ -144,7 +145,7 @@ function eyeOf(graph) {
 }
 let eyeLocal = eyeOf(graph);
 /** How see-through the creature is (1 = solid). Translucent, it draws after the sky, or the sky pass would paint over it. */
-let creatureOpacity = 1;
+let creatureOpacity = 1, footLift = 0;
 let editing = false; // the creature editor is open: the camera looks at it, not through it
 function fadeCreature(o) {
   if (Math.abs(o - creatureOpacity) < 0.004) return;
@@ -266,8 +267,9 @@ function meterFrame(dtMs, t, governing) {
 
 // ---- Zoom: from just behind you out to the whole planet ----
 // Below GLOBE_AT the camera orbits in the world; beyond it, the globe.
-const ZOOM_MIN = 15, ZOOM_MAX = 4e7, GLOBE_AT = 400000;
-let zoom = params.get("zoom") ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(params.get("zoom")))) : 85;
+// The camera scales with the creature (CREATURE_M): close and low behind a creature now about 5 m long.
+const ZOOM_MIN = 6, ZOOM_MAX = 4e7, GLOBE_AT = 400000, ZOOM_HOME = 34;
+let zoom = params.get("zoom") ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(params.get("zoom")))) : ZOOM_HOME;
 const zoomBy = (factor) => { zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * factor)); };
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0018)); }, { passive: false });
 const globe = buildGlobe();
@@ -482,7 +484,7 @@ function teleport(l) {
   clearTarget();
   if (state.ride) { state.ride = null; rideFx.group.visible = false; if (world) world.group.visible = true; }
   if (l.t) { clock.base = Date.parse(l.t) / 1000; clock.at = (performance.now() - t0) / 1000; lastSun = -Infinity; }
-  zoom = l.zoom ?? 85;
+  zoom = l.zoom ?? ZOOM_HOME;
   if (l.heading !== undefined) state.heading = (-l.heading * Math.PI) / 180;
   state.speed = 0; state.vy = 0; state.captureCooldown = 3;
   setStatus(`the dream carries you to ${l.name.split(" · ")[0]}…`);
@@ -687,9 +689,9 @@ function squeak() {
   if (canSpeak()) { share.act = { kind: "squeak", at: realNow() }; share.force = true; } // mutuals nearby hear it too
   sound.squeak(1.25 / graph.scale);
   hopAt = simT;
-  director.play("squeak", simT, squeakShot(state.heading, graph.scale, zoom), { dur: 2.4, blendIn: 0.4, blendOut: 0.8 });
+  director.play("squeak", simT, squeakShot(state.heading, creature.size, zoom), { dur: 2.4, blendIn: 0.4, blendOut: 0.8 });
   const at = state.pos.clone();
-  at.y += 4 * graph.scale;
+  at.y += 4 * creature.size;
   bursts.emit({ at, colors: [new THREE.Color(0xff9ec7), new THREE.Color(0xfff3b0)], n: 14, spread: 2.5, up: 4, fall: 2, life: 1.2 });
   logLine(selfLine(myName, squeaks++), "creature");
 }
@@ -826,7 +828,7 @@ function glintSpot(c, v, bs) {
   if (c.kind === "critter") { const q = world.critters.near(c.c.x, c.c.z, 40).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 1.3, q.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
   if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
-  if (c.kind === "mutual") return v.set(c.m.x, c.m.y + 6 * c.m.entry.graph.scale, c.m.z);
+  if (c.kind === "mutual") return v.set(c.m.x, c.m.y + 6 * c.m.entry.body.size, c.m.z);
   return v.set(c.x, c.alt, c.z);
 }
 function updateReach(t, dt) {
@@ -1043,7 +1045,7 @@ const maker = buildMaker({
 });
 // Your creature's editor, under its name in the top-right stack. While it's open the camera turns to face the creature.
 /** The creature's radius in metres, for framing it. */
-const reachOf = (g) => g.scale * Math.max(...g.parts.map((p) => Math.hypot(...p.pos) + Math.max(...p.size)));
+const reachOf = (g) => sizeOf(g) * Math.max(...g.parts.map((p) => Math.hypot(...p.pos) + Math.max(...p.size)));
 const editor = buildEditor({
   maker,
   button: document.getElementById("mine"),
@@ -1055,8 +1057,8 @@ const editor = buildEditor({
       editor.setName(myName);
       // A puff of its own colours, and a squeak in its new voice (smaller creatures squeak higher).
       const at = state.pos.clone();
-      at.y += 3 * graph.scale;
-      bursts.emit({ at, colors: graph.palette.map((c) => new THREE.Color().setHSL(c.h, c.s, c.l)), n: 18, spread: 3 * graph.scale, up: 3, fall: 2, life: 1.1 });
+      at.y += 3 * creature.size;
+      bursts.emit({ at, colors: graph.palette.map((c) => new THREE.Color().setHSL(c.h, c.s, c.l)), n: 18, spread: 3 * creature.size, up: 3, fall: 2, life: 1.1 });
       sound.squeak(1.25 / graph.scale);
       if (newName) logLine(`Meet ${myName}.`, "creature");
     },
@@ -1187,7 +1189,7 @@ function travelToMutual(did) {
 function squeakAt(m) {
   sound.squeak(1.25 / m.entry.graph.scale);
   hopAt = simT;
-  bursts.emit({ at: new THREE.Vector3(m.x, m.y + 4 * m.entry.graph.scale, m.z), colors: [new THREE.Color(0xff9ec7), new THREE.Color(0xfff3b0)], n: 14, spread: 2.5, up: 4, fall: 2, life: 1.2 });
+  bursts.emit({ at: new THREE.Vector3(m.x, m.y + 4 * m.entry.body.size, m.z), colors: [new THREE.Color(0xff9ec7), new THREE.Color(0xfff3b0)], n: 14, spread: 2.5, up: 4, fall: 2, life: 1.2 });
   logLine(`You squeak at @${m.handle || "them"}.`, "creature");
 }
 
@@ -1201,7 +1203,7 @@ function heard(did, handle, it, prev) {
     const h = flock.hop(did, simT);
     if (h && h.pos.distanceTo(camera.position) < 600) {
       sound.squeak(1.25 / h.scale);
-      bursts.emit({ at: h.pos.clone().add(new THREE.Vector3(0, 4 * h.scale, 0)), colors: [new THREE.Color(0xff9ec7), new THREE.Color(0xfff3b0)], n: 14, spread: 2.5, up: 4, fall: 2, life: 1.2 });
+      bursts.emit({ at: h.pos.clone().add(new THREE.Vector3(0, 4 * h.size, 0)), colors: [new THREE.Color(0xff9ec7), new THREE.Color(0xfff3b0)], n: 14, spread: 2.5, up: 4, fall: 2, life: 1.2 });
       if (metres < 2000) logLine(`${name} squeaks!`, "creature");
     }
   }
@@ -1234,7 +1236,7 @@ function placeMyBubble() {
   const show = !!say && fresh(say, realNow()) && !!world && !state.ride;
   myBubble.hidden = !show;
   if (!show) return;
-  const r = canvas.getBoundingClientRect(), v = creature.group.position.clone().add(new THREE.Vector3(0, 7 * graph.scale, 0)).project(camera);
+  const r = canvas.getBoundingClientRect(), v = creature.group.position.clone().add(new THREE.Vector3(0, 7 * creature.size, 0)).project(camera);
   if (v.z > 1) { myBubble.hidden = true; return; }
   if (myBubble.textContent !== say.text) myBubble.textContent = makeIntent({ kind: "rest", p: { lat: 0, lon: 0 }, creature: { seed, stats }, say }).say?.text ?? say.text;
   myBubble.style.transform = `translate(${((v.x + 1) / 2) * r.width + r.left}px, ${((1 - v.y) / 2) * r.height + r.top}px) translate(-50%, -100%)`;
@@ -1512,7 +1514,7 @@ function frame() {
 
 /** Camera distance and pitch from the zoom: low and close behind you, then pulling back and tilting down. */
 function cameraRig() {
-  const k = THREE.MathUtils.smoothstep(Math.log(zoom), Math.log(85), Math.log(150000));
+  const k = THREE.MathUtils.smoothstep(Math.log(zoom), Math.log(ZOOM_HOME), Math.log(150000));
   const pitch = THREE.MathUtils.degToRad(18 + 52 * k);
   return { back: zoom * Math.cos(pitch), up: zoom * Math.sin(pitch), near: zoom < 400 };
 }
@@ -1520,10 +1522,15 @@ function cameraRig() {
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
 function worldView(dt, t) {
   step(dt);
+  breathUniforms.uBreathT.value = t; // the land's swell rolls out from you
+  breathUniforms.uBreathCentre.value.x = state.pos.x;
+  breathUniforms.uBreathCentre.value.y = state.pos.z;
   if (state.ride) return rideView(0, t); // boarded this frame
   const p = state.pos;
-  const hopAge = t - hopAt, hopY = hopAge < 0.45 ? Math.sin((Math.PI * hopAge) / 0.45) * 3 * graph.scale : 0;
-  creature.group.position.set(p.x, p.y + hopY + (state.mode === "water" ? Math.sin(t * 2) * 0.4 : 0), p.z);
+  const hopAge = t - hopAt, hopY = hopAge < 0.45 ? Math.sin((Math.PI * hopAge) / 0.45) * 3 * creature.size : 0;
+  // On its feet on land and in the air; in the water it floats, half in.
+  footLift += ((state.mode === "water" ? 0 : creature.foot) - footLift) * Math.min(1, dt * 6);
+  creature.group.position.set(p.x, p.y + footLift + hopY + (state.mode === "water" ? Math.sin(t * 2) * 0.4 : 0), p.z);
   creature.group.rotation.y = state.heading;
   creature.update(t, { mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / 60) });
 
@@ -1531,10 +1538,10 @@ function worldView(dt, t) {
   let goal = null;
   if (state.target) { const g = state.target.pts[state.target.pts.length - 1], q = world.frame.toLocal(g.lat, g.lon); goal = new THREE.Vector3(q.x, state.target.ground, q.z); }
   // Zoomed all the way in, you look through its eyes, and it fades so you can see past it.
-  const eyes = editing ? 0 : THREE.MathUtils.smoothstep(34 - zoom, 0, 17); // in the editor you look at it, not through it
+  const eyes = editing ? 0 : THREE.MathUtils.smoothstep(14 - zoom, 0, 7); // in the editor you look at it, not through it
   fadeCreature(1 - 0.85 * eyes);
-  const eye = eyeLocal.clone().multiplyScalar(graph.scale).applyAxisAngle(UP_AXIS, state.heading);
-  director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: graph.scale, eyes, eye });
+  const eye = eyeLocal.clone().multiplyScalar(creature.size).applyAxisAngle(UP_AXIS, state.heading);
+  director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: creature.size, eyes, eye });
   const underwater = camera.position.y < 0 && world.terrain.heightAt(camera.position.x, camera.position.z) < camera.position.y;
   return { ll: world.frame.toLatLon(p.x, p.z), pos: p, underwater };
 }
@@ -1552,7 +1559,7 @@ function rideView(dt, t) {
   creature.group.position.copy(rideOrigin);
   creature.group.rotation.y = state.heading;
   creature.update(t, { mode: "air", speed01: r.leaving ? 0.2 : 1 });
-  director.update({ t, dt, subject: rideOrigin, heading: state.heading, mode: "air", speed01: r.leaving ? 0.2 : 1, riding: true, rig: cameraRig(), heightAt: null, goal: null, sunDir: sunInfo.dir, gold: 0, scale: graph.scale });
+  director.update({ t, dt, subject: rideOrigin, heading: state.heading, mode: "air", speed01: r.leaving ? 0.2 : 1, riding: true, rig: cameraRig(), heightAt: null, goal: null, sunDir: sunInfo.dir, gold: 0, scale: creature.size });
   rideFx.update(r, makeFrame(ll.lat, ll.lon), t, state.heading, dt);
   return { ll, pos: rideOrigin, underwater: false };
 }

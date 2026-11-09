@@ -6,12 +6,14 @@ import { KINDS, critterHomes, idleAt, startledAt, RETURN_S } from "./critterlife
 import { biomeFor } from "./biome.js";
 import { koppenAt } from "./koppen.js";
 import { curved } from "./curvature.js";
+import { BREATH } from "./breath.js";
 
 const REGROW_M = 100;
 const CALM_S = 20; // touched gently, it trusts you for a while
 const TOUCH_S = 1.1;
 const BODY = 0, ACCENT = 1, FIXED = 2;
 const DARK = [0.06, 0.05, 0.08], PINK = [1, 0.62, 0.7], BEAK = [1, 0.62, 0.15];
+const BREATH_RATE = { bunny: 5.5, frog: 2.6, bird: 7 }, BREATH_AMP = { bunny: 0.06, frog: 0.09, bird: 0.06 }; // radians a second; fraction
 
 // ---- Shapes: forward is -z, feet at y = 0, about a metre long (scaled by each one's size) ----
 function shape(kind) {
@@ -197,7 +199,9 @@ export function buildCritters(frame, terrain, plants) {
         }
         e.set(-(now.pitch || 0), now.yaw + twist, 0);
         q.setFromEuler(e);
-        const sq = now.squash * puff;
+        // They breathe, small and quick: a bunny's flanks, a frog's whole body, a bird's puffed chest.
+        const br = Math.sin(t * BREATH_RATE[c.kind] + c.seed * 40) * BREATH_AMP[c.kind] * BREATH.animal;
+        const sq = now.squash * puff * (1 + br);
         sc.set(c.size / Math.sqrt(sq), c.size * sq, c.size / Math.sqrt(sq));
         p3.set(now.x, y + lift, now.z);
         M.m.setMatrixAt(c.i, m4.compose(p3, q, sc));

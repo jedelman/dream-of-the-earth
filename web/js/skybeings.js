@@ -1,6 +1,7 @@
 // Sky beings in the world: their meshes, their slow sway and travelling glow,
 // their sparkles, and their drift along the ley lines near you.
 import * as THREE from "three";
+import { BREATH } from "./breath.js";
 import { generateBeing, beingsOnLine } from "./beings.js";
 import { lineAt, lineCount, pointOn, tangentEN, highwayAltitude } from "./ride.js";
 import { latLonToVec, vecToLatLon, R_EARTH } from "./geo.js";
@@ -189,6 +190,9 @@ export function buildSkyBeings(frame, heightAt) {
         e.mesh.group.position.set(l.x, highwayAltitude(heightAt(l.x, l.z)) + e.being.altitude + bob, l.z);
         const tg = tangentEN(nl.line, tt, b.dir);
         e.mesh.group.rotation.y = Math.atan2(-tg.e, tg.n) + Math.sin(t * 0.05 + b.k) * 0.3 + t * e.being.spin;
+        // Vast and slow, they breathe too: once every eight seconds or so, each in its own time.
+        const br = Math.sin(t * 0.8 + (b.seed % 997)) * 0.04 * BREATH.animal;
+        e.mesh.group.scale.set(1 + br * 0.6, 1 + br, 1 + br * 0.6);
         e.mesh.update(t);
       }
     }
