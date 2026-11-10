@@ -134,6 +134,15 @@ export const sound = {
       tone("sine", f, f * (i % 2 ? 1.25 : 0.85), t + i * 0.11, 0.08, v);
     }
   },
+  /** A river's song, from its spring stone: its heights from source to sea, a soft note each (freqs, Hz), with an echo. */
+  river(freqs = []) {
+    if (!audio()) return;
+    const t = ctx.currentTime;
+    freqs.forEach((f, i) => {
+      tone("triangle", f, f, t + i * 0.26, 0.5, 0.16);
+      tone("sine", f * 2, f * 2, t + i * 0.26 + 0.13, 0.35, 0.05);
+    });
+  },
   /** Wings: little birds taking off. */
   flutter() {
     if (!audio()) return;

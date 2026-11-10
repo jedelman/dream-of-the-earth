@@ -62,6 +62,13 @@ export const ITEMS = {
     on: "The owl's eye opens on your brow. The world comes from further off.",
     off: "You take the owl's eye off. The distance closes in.",
   },
+  // The river quests (quests.js; Jason, 11-10: "You choose! Different compasses for different things"): the first compass.
+  rivercompass: {
+    name: "river compass", plural: "river compasses", max: 3, wear: true,
+    about: "A compass whose needle swims. Worn, it points up the river whose basin you're in: to its next waymark, then to the spring at its source. (Everyone has one.)",
+    on: "You hang the river compass round your neck. Its needle swims, then settles upstream.",
+    off: "You take the river compass off. You'll have to go by the waymarks' words now.",
+  },
   // Jason, 11-09: "let's limit zoom out distance. We can have shrines and items that temporarily boost it and zoom way out."
   farfeather: {
     name: "far feather", plural: "far feathers", max: 9,
@@ -72,15 +79,16 @@ export const ITEM_KINDS = Object.keys(ITEMS);
 export const WEARABLE = ITEM_KINDS.filter((k) => ITEMS[k].wear);
 /** How many things you can wear at once. */
 export const WORN_MAX = 2;
-/** The starting kit's version: a pouch from an older kit is given what it lacks (kitUp). 1: the prism; 2: a portal. */
-export const KIT = 2;
+/** The starting kit's version: a pouch from an older kit is given what it lacks (kitUp). 1: the prism; 2: a portal; 3: a
+ *  river compass, worn if there's room. */
+export const KIT = 3;
 
 /**
- * A creature's first pouch: one moonseed to begin with (and, born at a new moon, that moon's seed is this one), and a
- * prism, worn.
+ * A creature's first pouch: one moonseed to begin with (and, born at a new moon, that moon's seed is this one), a portal,
+ * and a prism and a river compass, worn.
  */
 export function firstInventory(t) {
-  return { items: { moonseed: 1, prism: 1, portal: 1 }, worn: ["prism"], kit: KIT, lunation: seedFalls(t) ? lunationOf(t) : -1, portalMoon: portalFalls(t) ? fullLunationOf(t) : -1 };
+  return { items: { moonseed: 1, prism: 1, portal: 1, rivercompass: 1 }, worn: ["prism", "rivercompass"], kit: KIT, lunation: seedFalls(t) ? lunationOf(t) : -1, portalMoon: portalFalls(t) ? fullLunationOf(t) : -1 };
 }
 
 /** A pouch from before the prism (kit 0) is given one, worn if there's room. Returns the same object if nothing changes. */
@@ -94,6 +102,10 @@ export function kitUp(inv) {
     if (!worn.includes("prism") && worn.length < WORN_MAX) worn = [...worn, "prism"];
   }
   if (kit < 2) items.portal = Math.min(ITEMS.portal.max, (items.portal ?? 0) + 1);
+  if (kit < 3) {
+    if (!(items.rivercompass > 0)) items.rivercompass = 1;
+    if (!worn.includes("rivercompass") && worn.length < WORN_MAX) worn = [...worn, "rivercompass"];
+  }
   return { ...inv, items, worn, kit: KIT };
 }
 

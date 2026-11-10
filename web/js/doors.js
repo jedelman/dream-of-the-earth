@@ -12,8 +12,9 @@ const PANE_W = 4.3, PANE_H = 6.4, PANE_Y = 1.6;
 
 const box = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 
-/** A light shader on the curved Earth: vUv from the geometry, alpha from body (GLSL using vUv, uColour, uTime, uPulse). */
-function lightMaterial(colour, body) {
+/** A light shader on the curved Earth: vUv from the geometry, alpha from body (GLSL using vUv, uColour, uTime, uPulse).
+ *  (The waymarks and springs use it too.) */
+export function lightMaterial(colour, body) {
   return new THREE.ShaderMaterial({
     uniforms: { uColour: { value: colour }, uTime: { value: 0 }, uPulse: { value: 1 }, uCurve: curveUniform },
     vertexShader: /* glsl */ `

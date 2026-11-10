@@ -891,6 +891,41 @@ special shrine and unique unlock"; the compasses, "You choose! Different compass
   shrine, veiled until you've found the clues, whose unlock is that river's own; then seeing basins (their edges, the
   water's way) and entering them (riding a river), and the other compasses.
 
+### River quests: waymarks up each river, the spring at its source (built 11-10)
+Jason: "Rivers way, but in reverse; you get the quest when you reach the basin, then clues point you to the headwaters.
+The headwaters have a special shrine and unique unlock." On the compasses: "You choose! Different compasses for
+different things." Then: "Let's get to work on quests." (`scripts/basins/quests.py`, `quests.js`, `waymarks.js`, the
+hooks in `main.js`.)
+- **Scale first.** Running at 3 points is 23 m/s and flying 115 m/s: 100 km is an hour on foot. A main stem runs 185 km
+  to 5,440 km (the Nile; the median 674 km), so a quest can't be a walk up the river. The water carries you instead.
+- **Waymarks** (217 quests, one for each basin named for a river or a lake; 917 waymarks): 3 to 12 up each main stem,
+  about 300 km apart, the first 4% of the way from the sea, the last as far below the source as the spacing. Each stands
+  on Natural Earth's line of the river there (snapped within 12 km, if that's still the basin), on dry ground. The same
+  for everyone, so mutuals can meet at one. A cairn of four river stones, a band of water-light, a pale blue column
+  seen from kilometres off; brighter until you've read it.
+- **Reading one** ("Read the waymark") gives the clue, in the river's own words: "Waymark 9 of 12 of the Amazon River, on
+  the Amazonas, near Iquitos. Upstream, 324 km south-west, near Contamana, the river is called the Ucayali. Touch the
+  waymark again, and the water carries you there." (The local name is the commonest along that stretch of the stem, so
+  a confluence doesn't name the river for its tributary; the town is Natural Earth's nearest within 150 km.)
+- **Following** ("Follow the river upstream") carries you, free, to 1.5 km below the next waymark (downstream of it, by
+  the river's way there), facing it; set down in water, you step onto the nearest dry ground toward it. The clouds on
+  your map clear along that stretch of river: the quest draws the river.
+- **The spring** at the source (the stem's top), the headwaters shrine, is built only once you've read the last
+  waymark: seven standing stones round a pool of light, a spout of it rising, a wide aquamarine beam. You can join a
+  river anywhere (the compass points to its nearest waymark first), but each waymark only tells you the next one up.
+- **The unlock** ("Drink from the spring"): the river's spring stone, its own (a colour and a shape from its key, and a
+  song: the river's heights at 12 points from source to sea, as pentatonic notes; it plays then, and from its mark on
+  the map, ♪); the whole river drawn shining on your map, source to sea, with the clouds cleared along it; and the
+  water carries you back down to the sea from the spring ("Follow the river down to the sea"). Read waymarks and drunk-
+  from springs are places in your atlas, to travel back to.
+- **The river compass**, the first compass: something to wear (everyone has one: the starting kit's version 3 gives it,
+  worn beside the prism if there's room). Worn, the HUD's line reads "↗ 378 KM · WAYMARK 4 OF 12": an arrow from the way
+  you face toward the next waymark (or the spring) of the river whose basin you're in. On you, a bronze disc with a
+  swimming blue needle.
+- **Your atlas record** gains `ways` (`seine-river:2`) and `springs` (`seine-river`), a lexicon change.
+- **Next:** riding a river (the "enter" stage) instead of being carried, seeing basins, and the other compasses (sky,
+  ley, kin).
+
 ### The atlas as a map, clouded where you haven't been (built 11-10)
 Jason: "For the atlas, let's offer it as a map only - but anything not visited is fogged/clouded over." (`fog.js`,
 `atlas.js`, the hooks in `main.js`.)
@@ -1525,7 +1560,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 | SoilGrids 2.0 (ISRIC) | soil | CC BY 4.0 (JRC catalogue) |
 | ETH Global Canopy Height 2020 (Lang et al. 2023) | canopy height | CC BY 4.0 (ETH record) |
 | Köppen-Geiger (Beck et al. 2023, Scientific Data 10:724), 1991–2020 at 0.1°, from figshare 10.6084/m9.figshare.21937571 | climate class (biomes) | CC0 on the figshare record (its API, checked 11-08); an earlier session's search found the maps' page saying CC BY 4.0 **(not rechecked)**, so credit them either way |
-| Natural Earth 1:10m rivers and lake centerlines, lakes, physical regions and populated places (5.0.0, per each download's VERSION.txt) | the river basins: the rivers cut into the terrain, the lakes with no outlet, the names (`scripts/basins`); the basin tiles and names ship | Public domain (as below) |
+| Natural Earth 1:10m rivers and lake centerlines, lakes, physical regions and populated places (5.0.0, per each download's VERSION.txt) | the river basins: the rivers cut into the terrain, the lakes with no outlet, the names (`scripts/basins`); the basin tiles and names ship, and the river quests' waymarks (set on its river lines) with its rivers' and towns' names (`quests.json`) | Public domain (as below) |
 | Natural Earth 1:10m populated places, marine areas and physical regions, and 1:50m countries (naturalearthdata.com, v5) | the ley nodes' names (`nodenames.js`), worked out once offline; no data ships | Public domain: "All versions of Natural Earth raster + vector map data found on this website are in the public domain… No permission is needed" (its Terms of Use page, read 11-10). Credited anyway: Made with Natural Earth |
 | leylines-solids (Joerg Roth) | ley geometry | Apache-2.0 (package.json) |
 | Becker & Hagens; Leland (judsyn.weebly.com); McCooey's Visual Polyhedra | grid origins | credit |

@@ -39,7 +39,9 @@ fireflies blink at night.
 
 **Watersheds:** every bit of land drains somewhere. The first time you're in one of 321 river basins (worked out from
 the terrain and Natural Earth's rivers, `scripts/basins`), you know it: its name, its size, where its rain goes. It goes in
-your atlas. Clues upstream to each river's source are next.
+your atlas. Then the quest: waymarks stand up each river from near the sea, each telling you the next (and the
+water carries you up to it), and at the source a spring wakes, with the river's own spring stone. A river compass,
+worn, points the way.
 
 **Your atlas** is a map of where you've been: the Earth in its climate's colours, under cloud everywhere else. The
 shrines, ley nodes and landmarks you've found are marked on it, to tap and travel back to.

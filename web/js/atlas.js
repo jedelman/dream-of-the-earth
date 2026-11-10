@@ -63,7 +63,8 @@ function buildFog(seen, spots) {
 }
 
 /**
- * hooks: { places() -> [{ key, kind ("shrine" | "node" | "mark"), name, lat, lon, colour (css), note }], here() -> { lat, lon },
+ * hooks: { places() -> [{ key, kind ("shrine" | "node" | "mark" | "way" | "spring"), name, lat, lon, colour (css), note, song? }],
+ * rivers() -> [[{ lat, lon }]] (rivers whose springs you've drunk from, drawn shining), here() -> { lat, lon },
  * seen() -> Set of cells, tally() -> string, spotWords(lat, lon) -> Promise<string> (what's at a clear spot), landReady()
  * -> Promise, landColour(lat, lon) -> 0xrrggbb | null (sea), travel(key), globe() }.
  */
@@ -125,6 +126,20 @@ export function buildAtlas({ maker, button, hooks }) {
     };
     layer(base);
     layer(ui.fog);
+    // The rivers whose springs you've drunk from, shining from source to sea (each copy east or west that shows).
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    for (const path of hooks.rivers()) {
+      for (const [width, colour] of [[4, "rgba(127, 255, 224, .25)"], [1.6, "#9ff7ff"]]) {
+        ctx.beginPath(); ctx.lineWidth = width; ctx.strokeStyle = colour;
+        let last = null;
+        for (const pt of path) {
+          const q = project(pt.lat, pt.lon, view, w, hgt);
+          if (last && Math.abs(q.x - last.x) > w / 2) ctx.moveTo(q.x, q.y); else if (last) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y);
+          last = q;
+        }
+        ctx.stroke();
+      }
+    }
     // Far out, a cleared patch is smaller than a pixel: show each seen cell as a speck of its land, so you can see where
     // you've been on the whole Earth.
     const cw = view.ppd * 0.25;
@@ -161,7 +176,8 @@ export function buildAtlas({ maker, button, hooks }) {
     ui.selected = pl;
     const here = hooks.here(), km = distanceText(metres(here, pl));
     const go = h("button", { class: "go", "data-pad": "atlas-go", onclick: () => { maker.close(); hooks.travel(pl.key); } }, "Go");
-    ui.caption.replaceChildren(go, h("span", { class: "who" }, pl.name), h("span", { class: "where" }, ` · ${km}${pl.note ? ` · ${pl.note}` : ""}`));
+    const song = pl.song ? h("button", { class: "song", "data-pad": "atlas-song", title: "Its spring stone's song", "aria-label": "Hear its spring stone's song", onclick: () => pl.song() }, "♪") : null;
+    ui.caption.replaceChildren(go, song ?? "", h("span", { class: "who" }, pl.name), h("span", { class: "where" }, ` · ${km}${pl.note ? ` · ${pl.note}` : ""}`));
     draw();
     go.focus({ preventScroll: true }); // so A, then A again, goes there (and Enter, from the keyboard)
   }
