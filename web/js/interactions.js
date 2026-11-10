@@ -4,7 +4,7 @@
 import { hash2 } from "./plantforms.js";
 
 /** How close you need to be (metres) before a tapped thing answers. */
-export const RANGE = { tree: 20, butterfly: 30, being: 3000, highway: 170, artifact: 30, critter: 26, shrine: 24, find: 7, stones: 24 };
+export const RANGE = { tree: 20, butterfly: 30, firefly: 14, being: 3000, highway: 170, artifact: 30, critter: 26, shrine: 24, find: 7, stones: 24 };
 
 export const TREE_NAMES = {
   ceiba: "kapok", ficus: "banyan", cocos: "coconut palm", adansonia: "baobab", vachellia: "umbrella thorn",
@@ -57,6 +57,9 @@ export function butterflyLine(hue, seed, n = 0) {
   const c = hueName(hue);
   return pickOf([`The ${c} butterfly squeaks and loops around you.`, `A ${c} butterfly squeaks hello and lands on your nose.`, `The ${c} butterfly squeaks, then pretends it didn't.`], hash2(seed, n, 41));
 }
+export function fireflyLine(seed, n = 0) {
+  return pickOf(["You cup your wings around a firefly. It blinks inside, steady as a heartbeat.", "The fireflies near you all flash at once, then go back to their own time.", "A firefly lands on your nose and glows there, very proud.", "A few fireflies drift in close and blink in step with you."], hash2(seed, n, 43));
+}
 export function beingLine(seed, n = 0) {
   return pickOf(["The sky being hums, low and slow, and the air shimmers.", "Something vast hums back at you. Your feathers tingle.", "The sky being turns one of its many eyes toward you, and hums."], hash2(seed, n, 51));
 }
@@ -88,6 +91,7 @@ export function promptFor(c) {
     return `Shake the ${TREE_NAMES[c.species] ?? c.species}`;
   }
   if (c.kind === "butterfly") return `Greet the ${hueName(c.hue)} butterfly`;
+  if (c.kind === "firefly") return "Cup the firefly";
   if (c.kind === "find") return `Pick up the ${c.name}`;
   if (c.kind === "shrine" && c.dream) return `Enter the dream of ${c.name}`;
   if (c.kind === "shrine" && c.wake) return `Wake ${c.name}`;
@@ -104,7 +108,7 @@ export function promptFor(c) {
 
 // Small things close at hand come before big things far off: under a highway,
 // beside a tree, with a sky being on the horizon, the tree is what you meant.
-const BIAS = { find: -0.12, stones: -0.2, shrine: -0.08, artifact: -0.05, critter: -0.02, butterfly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
+const BIAS = { find: -0.12, stones: -0.2, shrine: -0.08, artifact: -0.05, critter: -0.02, butterfly: 0, firefly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
 
 /**
  * How much a thing in reach wants the prompt (lower wins). c: { kind, d, range, facing, species? },

@@ -82,6 +82,13 @@ export const sound = {
     tone("sine", 2600, 3400, t, 0.06, 0.25);
     tone("sine", 2900, 3800, t + 0.09, 0.06, 0.2);
   },
+  /** A firefly's glow: one soft rising bell. */
+  glow() {
+    if (!audio()) return;
+    const t = ctx.currentTime;
+    tone("sine", 880, 1320, t, 0.5, 0.14);
+    tone("sine", 1320, 1980, t + 0.12, 0.6, 0.07);
+  },
   /** Something vast humming back: two low voices, slightly apart. */
   hum() {
     if (!audio()) return;

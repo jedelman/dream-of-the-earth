@@ -20,6 +20,12 @@ export function butterflyHomes(lat, lon, at) {
   return out;
 }
 
+/** Where a firefly is at clock t: its home plus the slow drift the vertex shader flies (the same sums, so a touch finds it). */
+export function fireflyAt(f, t) {
+  const s = f.seed * 40;
+  return { x: f.x + Math.sin(t * 0.4 + s) * 3, y: f.y + Math.sin(t * 0.7 + s * 0.3) * 0.8, z: f.z + Math.cos(t * 0.33 + s * 0.4) * 3 };
+}
+
 /** Fireflies near a point, where the biome has them: [{ x, y, z, seed }]. */
 export function fireflyHomes(lat, lon, at) {
   const out = [];

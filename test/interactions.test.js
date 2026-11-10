@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, TREE_NAMES, TREE_LINES, RANGE, promptFor, focusScore, chooseFocus, glinting, cairnLine, ago } from "../web/js/interactions.js";
+import { fireflyLine } from "../web/js/interactions.js";
+import { fireflyAt } from "../web/js/insecthomes.js";
 import { SPECIES_NAMES } from "../web/js/plantforms.js";
 
 test("every species has a name and something to say when shaken", () => {
@@ -87,4 +89,17 @@ test("cairns: the prompt, and the line when you read one", () => {
   assert.equal(cairnLine({ handle: null, note: "", since: 0 }, 10, 0.5), "someone left a cairn here today. It's fading with the moon.");
   const cairn = { key: "a", kind: "artifact", d: 10, range: 25, facing: 1 }, tree = { key: "t", kind: "tree", species: "quercus", d: 10, range: 28, facing: 1 };
   assert.equal(chooseFocus([tree, cairn]), cairn, "a cairn beside a tree gets the prompt");
+});
+
+test("fireflies: a prompt, a line that varies, and a drift that stays within a few metres of home", () => {
+  assert.equal(promptFor({ kind: "firefly" }), "Cup the firefly");
+  assert.ok(RANGE.firefly > 5 && RANGE.firefly < RANGE.butterfly);
+  assert.equal(fireflyLine(5, 0), fireflyLine(5, 0));
+  assert.ok(new Set([0, 1, 2, 3, 4, 5].map((n) => fireflyLine(9, n))).size > 1);
+  const home = { x: 10, y: 4, z: -7, seed: 0.37 };
+  for (const t of [0, 13, 999, 86400]) {
+    const q = fireflyAt(home, t);
+    assert.ok(Math.abs(q.x - home.x) <= 3 && Math.abs(q.y - home.y) <= 0.8 && Math.abs(q.z - home.z) <= 3);
+  }
+  assert.notDeepEqual(fireflyAt(home, 0), fireflyAt(home, 5));
 });
