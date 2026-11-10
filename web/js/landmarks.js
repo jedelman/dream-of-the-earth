@@ -1,6 +1,9 @@
 // Places to visit from the HUD's menu: one in every biome (each checked on the
-// live site to land in the biome named), plus a few views of the sky. The clock
-// is always the real one (11-09), so you see each at whatever hour it is there.
+// live site to land in the biome named), plus a few views of the sky, and the
+// doors to other games (doorways.js). The clock is always the real one (11-09),
+// so you see each at whatever hour it is there.
+import { DOORWAYS, doorLandmark } from "./doorways.js";
+
 export const LANDMARKS = [
   { name: "Amazon · rainforest", lat: -3.1, lon: -60.0, alt: 25 },
   { name: "Amazon · forest floor, butterflies", lat: -3.1, lon: -60.0, alt: 4, zoom: 30, heading: 20 },
@@ -23,6 +26,7 @@ export const LANDMARKS = [
   { name: "The Alps · tundra, 3 km up", lat: 46.5, lon: 8.0, alt: 200, heading: 180 },
   { name: "Greenland · ice", lat: 72.0, lon: -40.0, alt: 25 },
   { name: "The globe · Africa", lat: 10, lon: 20, zoom: 16000000 },
+  ...DOORWAYS.map(doorLandmark),
 ];
 
 /** The URL query for a landmark, keeping other parameters (seed, stats, detail). */

@@ -860,6 +860,27 @@ from his first list, "portal items (everyone starts with one) to travel to frien
   from the elevation tiles the game already uses (flow directions on a coarse global grid, offline, shipped as small
   tiles like the Köppen map).
 
+### A door to the Shinjuku Megadungeon (built 11-10)
+Jason, on his other game (Shinjuku Station as a PS1-style dungeon, played as a 30 cm kitten): "a shrine in Dream can
+link to the page." (`doorways.js`, `doors.js`, the door hooks in `main.js`.)
+- **Where:** Shinjuku Station, 35.6910° N, 139.7000° E. `DOORWAYS` lists it (key, name, landmark name, lat/lon, link); a door is built
+  into any world whose middle is within 25 km of it. Like everything else it's computed: nothing is stored, and the
+  world around it is the same as without it.
+- **What it looks like** (about 80 triangles): a gate in the shrines' lavender stone (a stepped plinth, two posts, a tie
+  beam and a wider top beam, about 10.6 m tall), with a doorway of green light between the posts, brightest low down,
+  in hard bands that slide down. The stone takes a faint green from it, so the gate reads at night. Like a shrine, it
+  has a 420 m column of light and, past 900 m, a star. Green is a colour no shrine uses.
+- **Touch it:** within 24 m it glints and the prompt says "(E) Enter the Shinjuku Megadungeon ↗". E, the ✦ prompt, or a
+  tap on the door opens https://shinjuku-megadungeon.jason-edelman.org in a new tab (`window.open` with `noopener`),
+  from inside that key or tap's own handler, so popup blockers let it through. Tapped from farther off, you walk up,
+  and there the prompt opens it. A browser opens tabs only from a key, click or tap just pressed. When the press
+  wasn't one (a controller's button, the end of a walk), the log says how instead ("A controller can't open a new tab:
+  press E, or click or tap the prompt…").
+- **Found like a landmark:** "Shinjuku · the megadungeon door" is in `LANDMARKS`, so the atlas lists it under "Still to
+  find" with how far, and once you've been within 3 km it has Go, arriving 14 m south of the door, facing it, with the
+  prompt already up. Its name rides in the atlas record like any other landmark.
+- No lore: the prompt and plain log lines only.
+
 ### The menus as a bar, and feet on the ground (built 11-09)
 Jason: "For desktop, let's run the menus across the bottom of the screen, WoW style. Once that's done, I'm getting some
 skidding for non-flying, where my creature rapidly goes from flying to non-flying state as I move. Can we pin state to
