@@ -1,13 +1,17 @@
 // Gamepads (Jason, 11-09: "Then let's build in gamepad support."). The browser's Gamepad API, standard mapping (an Xbox,
 // PlayStation or Switch Pro pad all read the same way): polled each frame, read here into what the game wants. Pure, so
 // Node can test it; main.js does the polling and the acting.
-//   left stick   move and turn          right stick   turn (x); the camera nearer or farther (y)
+//   left stick   move and turn (so does the D-pad, outside the menus: in a ley node's ring it picks the lane, up sets off)
+//   right stick  turn (x); the camera nearer or farther (y)
 //   A            jump; with Wings, take off and climb (and, held in a ley node's ring, set off)
 //   B            crouch; flying, go down; on a highway, step off (in a ring, let go; in a menu, close it)
 //   X            touch what glints (E)  Y             take a picture (P)
 //   LB / RB      the camera farther / nearer
-//   D-pad        through the menus along the bottom, and through whatever a menu holds (A presses, B closes)
-//   Start        help                   Back / Select  Escape (shake off spells, wake from a dream, close a menu)
+//   Start        into the menus (again to leave); in a menu the D-pad walks it, A presses, B closes
+//   Back / Select  Escape (shake off spells, wake from a dream, close a menu)
+// (11-10: the D-pad used to walk the menus even in the world, so "left" in a ring wandered onto the bar and the next A
+// pressed a menu button, say ATLAS and its first Go, instead of setting off. Jason: "when I try to turn left at a ley
+// node it either sends me to another one or reloads the current one".)
 
 /** Stick travel below this reads as nothing (worn sticks rest a little off centre). */
 export const DEAD = 0.18;
@@ -33,6 +37,16 @@ export function readPad(pad, prevHeld = new Set()) {
   const turn = ax(0), thrust = -ax(1), look = ax(2);
   const zoom = ax(3) + (held.has("lb") ? 1 : 0) - (held.has("rb") ? 1 : 0);
   return { turn, thrust, look, zoom, held, down, active: held.size > 0 || turn !== 0 || thrust !== 0 || look !== 0 || zoom !== 0 };
+}
+
+/** The D-pad as a stick (outside the menus): { turn, thrust } from the buttons held. */
+export function dpadAxes(held) {
+  return { turn: (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0), thrust: (held.has("up") ? 1 : 0) - (held.has("down") ? 1 : 0) };
+}
+
+/** What Start does: "close" an open menu, "leave" the bar for the world, or "enter" the menus. */
+export function startAction({ sheet, onBar }) {
+  return sheet ? "close" : onBar ? "leave" : "enter";
 }
 
 /** The first pad that's connected and uses the standard mapping (or any, failing that), or null. */

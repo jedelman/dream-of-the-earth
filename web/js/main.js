@@ -15,7 +15,7 @@ import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount, linesNear, lanesAt, laneFacing } from "./ride.js";
 import { buildStones, CIRCLE_R } from "./stones.js";
-import { readPad, firstPad, stepFocus } from "./gamepad.js";
+import { readPad, firstPad, stepFocus, dpadAxes, startAction } from "./gamepad.js";
 import { screenTilt, tiltSteer, shakeDetector } from "./tilt.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
@@ -723,8 +723,10 @@ function pollPad(dt) {
   const r = readPad(gp, pad.held);
   pad.held = r.held;
   if (r.active && !pad.using) { pad.using = true; setActGlyph(); }
-  if (r.active && !pad.said) { pad.said = true; logLine("A controller: the left stick moves, A jumps, X touches what glints, Y takes a picture, the D-pad walks the menus. Start for the rest.", "note"); }
-  for (const dir of ["up", "down", "left", "right"]) {
+  if (r.active && !pad.said) { pad.said = true; logLine("A controller: the left stick (or the D-pad) moves, A jumps, X touches what glints, Y takes a picture. Start for the menus.", "note"); }
+  // In a menu the D-pad walks it; in the world it moves like the left stick (so in a ley node's ring it picks the lane).
+  const inMenu = sheetOpen() || !!padFocused();
+  for (const dir of inMenu ? ["up", "down", "left", "right"] : []) {
     if (!r.down.has(dir)) continue;
     const a = document.activeElement;
     if (a?.matches?.("input[type=range]") && (dir === "left" || dir === "right")) {
@@ -740,8 +742,9 @@ function pollPad(dt) {
     if (r.down.has("a")) padFocused()?.click();
     if (r.down.has("b")) { if (sheetOpen()) padEscape(); else { document.activeElement?.blur(); clearPadFocus(); } }
   } else {
-    pad.turn = r.turn || r.look;
-    pad.thrust = r.thrust;
+    const d = dpadAxes(r.held);
+    pad.turn = r.turn || r.look || d.turn;
+    pad.thrust = r.thrust || d.thrust;
     if (state.gate) {
       // Held in a ley node's ring: A sets off, B lets go.
       pad.up = 0;
@@ -752,7 +755,12 @@ function pollPad(dt) {
     if (r.down.has("y")) takePicture();
   }
   if (r.zoom && !sheetOpen()) zoomBy(Math.exp(r.zoom * 2.4 * dt));
-  if (r.down.has("start")) openHelp();
+  if (r.down.has("start")) {
+    const act = startAction({ sheet: sheetOpen(), onBar: !!padFocused() });
+    if (act === "close") padEscape();
+    else if (act === "leave") { document.activeElement?.blur(); clearPadFocus(); }
+    else padFocus("right"); // onto the first menu
+  }
   if (r.down.has("back")) padEscape();
 }
 // Two fingers pinch to zoom; one finger steers.
@@ -1167,6 +1175,12 @@ function leaveGate(words = "You step back out of the light.") {
   const g = state.gate;
   laneMarks.visible = false;
   if (wings() > 0) { state.gate = null; state.mode = "air"; state.captureCooldown = 3; logLine("You let go of the light and fly.", "highway"); return; }
+  // Over open sea with a sleeping swim, letting go would strand you: say so once, and let a second press mean it.
+  if (g.st.sea && body().swim === 0 && simT - (g.warnedAt ?? -Infinity) > 5) {
+    g.warnedAt = simT;
+    logLine(`Below is open sea, and your swim sleeps: you'd be adrift. Choose a lane on, or let go again (${gateKeys().off}) to drop anyway.`, "highway");
+    return;
+  }
   g.phase = "sink"; g.t0 = simT; g.from = state.pos.clone();
   logLine(words, "highway");
 }
@@ -1195,9 +1209,13 @@ function takeLane() {
 }
 function gateStep(dt) {
   const g = state.gate, p = state.pos, { turn, thrust, up } = input(), age = simT - g.t0;
-  // Edges only: a key still held from before (W walking in, Space from a jump) does nothing until it's let go.
-  const goNow = thrust > 0 && !g.held.go, upNow = up !== 0 && !g.held.up;
-  g.held.go = thrust > 0; g.held.up = up !== 0;
+  // Edges only: a key still held from before (W walking in, Space from a jump) does nothing until it's let go. A stick
+  // must mean it: forward clearly more than sideways to set off, sideways clearly more than forward to choose (11-10:
+  // a stick pushed left drifts a little forward, and that used to set off along the lane you were leaving).
+  const forward = thrust > 0.6 && thrust > 1.5 * Math.abs(turn);
+  const side = Math.abs(turn) > 0.5 && Math.abs(turn) >= Math.abs(thrust) ? Math.sign(turn) : 0;
+  const goNow = forward && !g.held.go, upNow = up !== 0 && !g.held.up;
+  g.held.go = forward; g.held.up = up !== 0;
   state.speed = 0; state.vy = 0;
   if (g.phase !== "sink" && upNow) return leaveGate();
   const lane = g.lanes[g.pick], want = (-lane.bearing * Math.PI) / 180;
@@ -1214,8 +1232,8 @@ function gateStep(dt) {
     p.set(g.st.x, g.st.top + Math.sin(simT * 1.6) * 0.4, g.st.z);
     state.mode = "air";
     // A tap moves one lane; held, it keeps going.
-    if (turn !== 0 && (g.held.turn !== Math.sign(turn) || simT - g.turnAt > 0.32)) gatePick(Math.sign(turn));
-    g.held.turn = Math.sign(turn);
+    if (side !== 0 && (g.held.turn !== side || simT - g.turnAt > 0.32)) gatePick(side);
+    g.held.turn = side;
     turnTo(6);
     if (goNow) takeLane();
     return;
@@ -1303,6 +1321,10 @@ function leaveRide(arrived) {
     const st = arrived && w.stones.near(0, 0, 600)[0];
     if (st && holdInRing(st, (Math.atan2(tg.e, tg.n) * 180) / Math.PI)) { logLine(`You arrive at a node: ${nodeName(ll)}. The light holds you in its ring: choose a lane on (${gateKeys().pick}, then ${gateKeys().go}), or let go (${gateKeys().off}).`, "highway"); setTimeout(() => setStatus(""), 4000); return; }
     logLine(arrived ? `You arrive at a node: ${nodeName(ll)}.` : "You step off the highway.", "highway");
+    // Down over open sea with a sleeping swim and no wings: say how to get out (the line is still overhead).
+    if (!arrived && w.terrain.heightAt(0, 0) < -20 && wings() === 0 && body().swim === 0) {
+      logLine(`Open sea, and your swim sleeps. The highway is still overhead: touch it (${pad.using ? "X" : COARSE ? "✦" : "E"}) to ride on. Or your atlas carries you back to anywhere you've been, free.`, "highway");
+    }
     if (arrived) setTimeout(() => setStatus(""), 4000);
   });
 }
@@ -2686,7 +2708,7 @@ function openHelp() {
     ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space", "jump; with Wings, take off and climb (▲)"], ["Shift", "crouch, slow and quiet (small creatures don't start); flying, go down (▼)"], ["Tap anything", "go to it; close enough, it answers"], ["E at a ley node's stones", "the light lifts you to its ring: A/D chooses a lane, E or W sets off, Space or Shift lets go"], ["Wheel · + − · pinch", "the camera nearer or farther (about 500 m back; a far feather, or a shrine of the soaring eye, lifts it higher)"]]),
     ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
     ...group("On a phone", [["Drag", "move and turn"], ["Tap", "go there; close enough, it answers"], ["Pinch", "the camera nearer or farther"], ["✦", "touch what glints"], ["▲ ▼", "show when they do something, and say what (jump, fly, climb; crouch, dive, step off, let go)"], ["☰", "the menus; a dot means something new came"], ["Tilt to steer (in ☰)", "tip the phone to turn, away to go, toward you to slow; a shake squeaks"]]),
-    ...group("A controller", [["Left stick", "move and turn"], ["Right stick", "turn; up or down, the camera nearer or farther (or LB · RB)"], ["A", "jump; with Wings, take off and climb; in a ley node's ring, set off"], ["B", "crouch; flying, go down; on a highway, step off; in a ring, let go"], ["X · Y", "touch what glints · take a picture"], ["D-pad", "through the menus along the bottom and what they hold: A presses, B closes"], ["Start · Back", "this help · Esc"]]),
+    ...group("A controller", [["Left stick", "move and turn"], ["Right stick", "turn; up or down, the camera nearer or farther (or LB · RB)"], ["A", "jump; with Wings, take off and climb; in a ley node's ring, set off"], ["B", "crouch; flying, go down; on a highway, step off; in a ring, let go"], ["X · Y", "touch what glints · take a picture"], ["D-pad", "moves like the left stick (in a ley node's ring: left and right choose, up sets off)"], ["Start", "into the menus (again to leave): the D-pad walks them, A presses, B closes"], ["Back", "Esc"]]),
     ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: fly along one to ride it)"], ["ATLAS ▾", "places you've found, to travel back to"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
   ], { trigger: helpBtn, classes: ["help"] });
 }
@@ -2913,7 +2935,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, pad: () => ({ turn: pad.turn, thrust: pad.thrust, up: pad.up, held: [...pad.held], using: pad.using }), input: () => input(), inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };
