@@ -15,6 +15,7 @@ import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount, linesNear, lanesAt, laneFacing } from "./ride.js";
 import { buildStones, CIRCLE_R } from "./stones.js";
+import { placeOfNode } from "./nodenames.js";
 import { readPad, firstPad, stepFocus, dpadAxes, startAction } from "./gamepad.js";
 import { screenTilt, tiltSteer, shakeDetector } from "./tilt.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
@@ -397,7 +398,7 @@ function discoverPlaces() {
   const { node, meters } = nearestNode(ll.lat, ll.lon), i = network().nodes.indexOf(node);
   if (!state.ride && meters < NODE_REACH_M && i >= 0 && been.nodes[i] == null) {
     been.nodes[i] = now; added = true;
-    logLine(`This ley node (${nodeName(ll)}) is in your atlas now: you can travel back to it.`, "highway");
+    logLine(`This ley node, ${nodeName(ll)}, is in your atlas now: you can travel back to it.`, "highway");
   }
   for (const l of LANDMARKS) {
     if (been.marks[l.name] != null || metresBetween(ll.lat, ll.lon, l.lat, l.lon) > MARK_REACH_M) continue;
@@ -425,7 +426,7 @@ const foundList = () => [
 function travelToShrine(key) {
   if (key.startsWith("node")) {
     const i = Number(key.slice(4)), n = network().nodes[i];
-    if (n && been.nodes[i] != null) teleport({ name: `a ley node (${nodeName(n)})`, lat: n.lat - 30 / 111320, lon: n.lon, alt: 2, heading: 0, zoom: ZOOM_HOME * 1.5 }); // before its stones, facing them
+    if (n && been.nodes[i] != null) teleport({ name: nodeTitle(n), lat: n.lat - 30 / 111320, lon: n.lon, alt: 2, heading: 0, zoom: ZOOM_HOME * 1.5 }); // before its stones, facing them
     return;
   }
   if (key.startsWith("mark:")) {
@@ -1159,7 +1160,7 @@ function enterStones(st) {
   state.gate = { st, lanes, pick: laneFacing(lanes, bearingOfHeading(state.heading)), phase: "rise", t0: simT, from: state.pos.clone(), held: { turn: 0, go: true, up: true }, turnAt: 0 };
   state.speed = 0; state.vy = 0; state.mode = "air";
   sound.chime();
-  logLine(`You step into the stones. The light of ${nodeName(st.node)} takes hold of you and lifts.`, "highway");
+  logLine(`You step into the stones (${nodeName(st.node)}). The light takes hold of you and lifts.`, "highway");
 }
 /** Held in the ring at the top, choosing (straight off a highway, too). arrivedAlong: the bearing you came in on. */
 function holdInRing(st, arrivedAlong) {
@@ -1225,7 +1226,7 @@ function gateStep(dt) {
     p.set(g.from.x + (g.st.x - g.from.x) * c, g.from.y + (g.st.top - g.from.y) * e, g.from.z + (g.st.z - g.from.z) * c);
     turnTo(2);
     state.mode = "air";
-    if (k >= 1) { g.phase = "choose"; g.t0 = simT; sound.whoosh(); logLine(`${g.lanes.length} lanes leave ${nodeName(g.st.node)}. ${capital(gateKeys().pick)} chooses; ${gateKeys().go} sets off; ${gateKeys().off} lets go.`, "highway"); }
+    if (k >= 1) { g.phase = "choose"; g.t0 = simT; sound.whoosh(); logLine(`${g.lanes.length} lanes leave here. ${capital(gateKeys().pick)} chooses; ${gateKeys().go} sets off; ${gateKeys().off} lets go.`, "highway"); }
     return;
   }
   if (g.phase === "choose") {
@@ -1265,10 +1266,10 @@ function shortNode(n) {
 function gateLines() {
   const g = state.gate, l = g.lanes[g.pick], to = l.far, i = to ? network().nodes.indexOf(to) : -1;
   const dir = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(l.bearing / 45) % 8];
-  if (g.phase === "rise") return [`THE STONES OF ${nodeName(g.st.node).toUpperCase()} · RISING`, `${gateKeys().off.toUpperCase()}: LET GO`];
-  if (g.phase === "sink") return [`THE STONES OF ${nodeName(g.st.node).toUpperCase()}`, ""];
+  if (g.phase === "rise") return [`STONES · ${nodeName(g.st.node).toUpperCase()} · RISING`, `${gateKeys().off.toUpperCase()}: LET GO`];
+  if (g.phase === "sink") return [`STONES · ${nodeName(g.st.node).toUpperCase()}`, ""];
   return [`LANE ${g.pick + 1} OF ${g.lanes.length} · ${l.line.cls.name.toUpperCase()} · ${dir} ${Math.round(l.bearing) % 360}°`,
-    `${Math.round(l.km).toLocaleString("en")} KM TO ${to ? shortNode(to).toUpperCase() : "A NODE"}${i >= 0 && been.nodes[i] != null ? " (BEEN)" : ""}`,
+    `${Math.round(l.km).toLocaleString("en")} KM TO ${to ? (placeOfNode(to) ?? shortNode(to)).toUpperCase() : "A NODE"}${i >= 0 && been.nodes[i] != null ? " (BEEN)" : ""}`,
     `${gateKeys().pickHud}: ANOTHER LANE · ${gateKeys().go.toUpperCase()}: GO · ${gateKeys().off.toUpperCase()}: LET GO`];
 }
 
@@ -1315,12 +1316,12 @@ function leaveRide(arrived) {
     world.group.visible = true;
     rideFx.group.visible = false;
     establishing();
-    setStatus(arrived ? `you're at a node: ${nodeName(ll)}` : "");
+    setStatus(arrived ? `you're at ${nodeTitle(ll)}` : "");
     if (arrived) { const { node } = nearestNode(ll.lat, ll.lon), i = network().nodes.indexOf(node); if (i >= 0 && been.nodes[i] == null) { been.nodes[i] = Math.round(realNow()); keepAtlas(); } }
     // Arriving, you're held in the node's ring, so you can go straight on along another lane, or let go.
     const st = arrived && w.stones.near(0, 0, 600)[0];
-    if (st && holdInRing(st, (Math.atan2(tg.e, tg.n) * 180) / Math.PI)) { logLine(`You arrive at a node: ${nodeName(ll)}. The light holds you in its ring: choose a lane on (${gateKeys().pick}, then ${gateKeys().go}), or let go (${gateKeys().off}).`, "highway"); setTimeout(() => setStatus(""), 4000); return; }
-    logLine(arrived ? `You arrive at a node: ${nodeName(ll)}.` : "You step off the highway.", "highway");
+    if (st && holdInRing(st, (Math.atan2(tg.e, tg.n) * 180) / Math.PI)) { logLine(`You arrive at ${nodeTitle(ll)}. The light holds you in its ring: choose a lane on (${gateKeys().pick}, then ${gateKeys().go}), or let go (${gateKeys().off}).`, "highway"); setTimeout(() => setStatus(""), 4000); return; }
+    logLine(arrived ? `You arrive at ${nodeTitle(ll)}.` : "You step off the highway.", "highway");
     // Down over open sea with a sleeping swim and no wings: say how to get out (the line is still overhead).
     if (!arrived && w.terrain.heightAt(0, 0) < -20 && wings() === 0 && body().swim === 0) {
       logLine(`Open sea, and your swim sleeps. The highway is still overhead: touch it (${pad.using ? "X" : COARSE ? "✦" : "E"}) to ride on. Or your atlas carries you back to anywhere you've been, free.`, "highway");
@@ -1348,9 +1349,20 @@ function teleport(l) {
   });
 }
 
+/** The networks that meet at a node ("Becker-Hagens", "Gravity wells, major + Gravity wells, basic"). */
+const nodeNets = (node) => CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
+/**
+ * Where the node nearest a point is, in words (nodenames.js; Jason, 11-10: "we need to name these nodes!! I'm so lost"):
+ * "Bordeaux, France", "off Nassau, the Bahamas", "the open Pacific, 0° 112°W". Its networks if it somehow has no name.
+ */
 function nodeName(ll) {
   const { node } = nearestNode(ll.lat, ll.lon);
-  return CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
+  return placeOfNode(node) ?? nodeNets(node);
+}
+/** The same as a noun, to say "at" or "to": "Bordeaux, France", "the Gulf of Mexico", "the node off Nassau, the Bahamas". */
+function nodeTitle(ll) {
+  const n = nodeName(ll);
+  return /^(off |[NSEW]{1,3} of )/.test(n) ? `the node ${n}` : n;
 }
 
 // ---- Tap to move and to touch things: find what's under a tap, go there, and when you're
@@ -2576,9 +2588,11 @@ function updateHud() {
     lines.push(...gateLines());
   } else if (state.ride) {
     const r = state.ride, ll = rideLatLon(r), near = r.leaving ? [] : crossings(r);
+    const end = vecToLatLon(r.dir > 0 ? r.line.b : r.line.a);
     lines.push(`RIDING ${r.line.cls.name.toUpperCase()} · ${Math.round(r.speed / 1000)} KM/S${fold}`, sky,
+      `TO ${nodeName(end).toUpperCase()} · ${Math.round(remainingMeters(r) / 1000).toLocaleString("en")} KM`,
       near.length ? `CROSSING ${near[0].line.cls.name.toUpperCase()} · ${pad.using ? "STICK" : COARSE ? "DRAG ◀ ▶" : "A/D"} TO HOP` : `${pad.using ? "B" : COARSE ? "▼" : "SHIFT OR S"}: STEP OFF`);
-    if (hudMore) lines.push(`${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)} · NEXT NODE ${Math.round(remainingMeters(r) / 1000).toLocaleString("en")} KM`, statsLines());
+    if (hudMore) lines.push(`${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)}`, statsLines());
   } else {
     const ll = world.frame.toLatLon(state.pos.x, state.pos.z), ground = world.terrain.heightAt(state.pos.x, state.pos.z);
     const k = koppenAt(ll.lat, ll.lon), biome = biomeFor(k, world.terrain.reliefAt(state.pos.x, state.pos.z), ll.lat, ground);
@@ -2589,7 +2603,7 @@ function updateHud() {
     if (hudMore) {
       const { node, meters } = nearestNode(ll.lat, ll.lon), cls = CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
       lines.push(`${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)} · ${Math.round(state.pos.y)} M · ${k ? koppenCode(k) : "—"}`,
-        `${detail.fps} FPS${detail.scale < DETAIL_MAX ? ` · FORESTS ${Math.round(detail.scale * 100)}%` : ""} · LEY NODE ${(meters / 1000).toFixed(1)} KM (${cls})`, statsLines());
+        `${detail.fps} FPS${detail.scale < DETAIL_MAX ? ` · FORESTS ${Math.round(detail.scale * 100)}%` : ""} · LEY NODE ${(meters / 1000).toFixed(1)} KM: ${(placeOfNode(node) ?? cls).toUpperCase()}`, statsLines());
     }
   }
   const text = lines.filter(Boolean).join("\n");

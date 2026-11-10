@@ -673,6 +673,29 @@ Jason: "Then let's build in gamepad support." (`gamepad.js`, `pollPad` in `main.
 - Checked headless with a simulated pad (`navigator.getGamepads` replaced), not on a physical pad **(unverified on
   real hardware)**.
 
+### Names for the ley nodes (built 11-10)
+Jason: "Also we need to name these nodes!! I'm so lost 🤣" (`nodenames.js`)
+- **Each of the 128 nodes is named for where it really is:**
+  - on land, the nearest town within 70 km ("Bordeaux, France", "Quito, Ecuador"), or else a named desert, basin,
+    plateau, range or peninsula ("the Plateau of Tibet, China", "the Sahara, NE of Chegga");
+  - at sea, the sea or gulf it lies in ("the Gulf of Mexico", "the North Sea"), or "off" a town within 250 km
+    ("off Nassau, the Bahamas"), or a direction from one within 800 km ("the Pacific, W of the Galápagos");
+  - on the open ocean, plain coordinates ("the open Pacific, 0° 112°W"), since there's nothing else to steer by and
+    they're honest;
+  - Null Island is at 0° 0°, as Natural Earth has it.
+- **Worked out once, offline,** from Natural Earth (public domain; in the credits). Point-in-polygon and great-circle
+  distance were computed by a small script with no libraries, then read over by hand. Clumsy ones were reworded from what
+  the data showed (each override is listed in the session log). The nodes are fixed, so only the 128 names ship, keyed by
+  latitude and longitude. Only the pairs of nodes at the two poles share a name (they're metres apart).
+- **Two on the 180° line** fell through the sea outlines' seam. (56°N, 180°) is plainly the Bering Sea; at
+  (67.5°N, 180°) I couldn't tell land from sea, so it says only "N of Egvekinot, Russia".
+- **Where they show:**
+  - the ring's lanes ("3,527 KM TO THE SAHARA, NE OF CHEGGA", with "(BEEN)" if you have);
+  - a ride, always ("TO … · 3,521 KM");
+  - arriving ("You arrive at the Sahara, NE of Chegga");
+  - the atlas, the stones' own line, and the HUD's detail line (the nearest node and how far).
+  - The networks that meet there still show on the lane line.
+
 ### The stones at the nodes (built 11-09)
 Jason: "We should rework the portal UX as well - it doesn't work very well for non-fliers! Maybe pin position and
 switch to a lane selector, space or shift to cancel; have a shrine or a circle of standing stones that you can
@@ -1368,6 +1391,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 | SoilGrids 2.0 (ISRIC) | soil | CC BY 4.0 (JRC catalogue) |
 | ETH Global Canopy Height 2020 (Lang et al. 2023) | canopy height | CC BY 4.0 (ETH record) |
 | Köppen-Geiger (Beck et al. 2023, Scientific Data 10:724), 1991–2020 at 0.1°, from figshare 10.6084/m9.figshare.21937571 | climate class (biomes) | CC0 on the figshare record (its API, checked 11-08); an earlier session's search found the maps' page saying CC BY 4.0 **(not rechecked)**, so credit them either way |
+| Natural Earth 1:10m populated places, marine areas and physical regions, and 1:50m countries (naturalearthdata.com, v5) | the ley nodes' names (`nodenames.js`), worked out once offline; no data ships | Public domain: "All versions of Natural Earth raster + vector map data found on this website are in the public domain… No permission is needed" (its Terms of Use page, read 11-10). Credited anyway: Made with Natural Earth |
 | leylines-solids (Joerg Roth) | ley geometry | Apache-2.0 (package.json) |
 | Becker & Hagens; Leland (judsyn.weebly.com); McCooey's Visual Polyhedra | grid origins | credit |
 | three.js | renderer | MIT |
