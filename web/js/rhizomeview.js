@@ -43,12 +43,15 @@ export function buildRhizomeView({ maker, button, hooks }) {
     const map = svg("svg", { viewBox: `${cx - span / 2} ${cy - span / 2} ${span} ${span}`, class: "rhizome-map", role: "img", "aria-label": "Your rhizome" });
     // Fog: the base slots you can't see yet, as faint points.
     for (const s of R.slots) if (s.sprout === -1 && !v.visible.has(s.i)) map.append(svg("circle", { cx: s.x, cy: s.y, r: 0.012, class: "fog" }));
+    // Slots and links can be reached and pressed without a pointer (11-10: Jason, "can't slot crystals in the rhizome
+    // with a controller"): each takes focus (Tab, or a controller's D-pad), and Enter or Space presses it.
+    const pressable = (key, label, fn) => ({ tabindex: "0", role: "button", "aria-label": label, "data-pad": key, onclick: fn, onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); fn(); } } });
     for (const i of v.links) {
       const l = R.links[i], A = R.slots[l.a], B = R.slots[l.b], woken = v.woken.has(i);
       const col = A.colour === B.colour ? HUE[A.colour] : "#e9e5ff";
       map.append(svg("line", { x1: A.x, y1: A.y, x2: B.x, y2: B.y, class: woken ? "link woken" : "link", style: woken ? `stroke:${col}` : null }));
       const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
-      map.append(svg("g", { class: `glyph ${woken ? "woken" : ""} ${sel?.link === i ? "sel" : ""}`, onclick: () => { sel = { link: i }; open(); } },
+      map.append(svg("g", { class: `glyph ${woken ? "woken" : ""} ${sel?.link === i ? "sel" : ""}`, ...pressable(`link-${i}`, `Link: ${effectWords(l.effect)}${woken ? " (woken)" : ""}`, () => { sel = { link: i }; open(); }) },
         svg("circle", { cx: mx, cy: my, r: 0.045 }),
         svg("text", { x: mx, y: my + 0.022, "text-anchor": "middle" }, GLYPH[l.effect.kind])));
     }
@@ -58,12 +61,14 @@ export function buildRhizomeView({ maker, button, hooks }) {
         cx: s.x, cy: s.y, r: 0.058,
         class: `slot ${gem ? "full" : ""} ${v.fillable.has(i) ? "can" : ""} ${sel?.slot === i ? "sel" : ""} ${s.start ? "start" : ""}`,
         style: gem ? `fill:${HUE[s.colour]}` : `stroke:${HUE[s.colour]}`,
-        onclick: () => { sel = { slot: i }; open(); },
+        ...pressable(`slot-${i}`, `${s.colour} slot${gem ? `, holding a ${ITEMS[gem].name}` : v.fillable.has(i) ? ", a gem can go here" : ""}${s.start ? ", where you begin" : ""}`, () => { sel = { slot: i }; open(); }),
       }));
     }
     // What's selected, and what you can do with it.
     const info = h("div", { class: "info" });
-    const act = (label, fn, cls = "go") => h("button", { class: cls, onclick: () => { const why = fn(); if (why) msg.textContent = why; else open(); } }, label);
+    // After an action the map redraws; a controller's focus goes back to the slot or link it was about.
+    const back = sel?.slot != null ? `slot-${sel.slot}` : sel?.link != null ? `link-${sel.link}` : null;
+    const act = (label, fn, cls = "go") => h("button", { class: cls, "data-pad": back, onclick: () => { const why = fn(); if (why) msg.textContent = why; else open(); } }, label);
     const msg = h("p", { class: "msg", role: "status" });
     if (sel?.slot !== undefined && R.slots[sel.slot] && v.visible.has(sel.slot)) {
       const s = R.slots[sel.slot], gem = GEM_OF[s.colour], have = gems[gem] ?? 0;

@@ -16,7 +16,8 @@ import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount, linesNear, lanesAt, laneFacing } from "./ride.js";
 import { buildStones, CIRCLE_R } from "./stones.js";
 import { placeOfNode } from "./nodenames.js";
-import { readPad, firstPad, stepFocus, dpadAxes, startAction } from "./gamepad.js";
+import { next as nextMode, travelOf, can as modeAllows, viewOf as cameraRegion } from "./modes.js";
+import { readPad, firstPad, stepFocusSpatial, dpadAxes, startAction } from "./gamepad.js";
 import { screenTilt, tiltSteer, shakeDetector } from "./tilt.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
@@ -591,12 +592,13 @@ function swapWorld(next, place) {
   scene.add(world.group);
   skyPass.setWorld(world.terrain); // the land the clouds ride over
 }
-function regrow(lat, lon, onReady) {
+/** A new world round (lat, lon); onReady(world) when it's built, onFail() if it can't be (only for the newest regrow). */
+function regrow(lat, lon, onReady, onFail = null) {
   const token = ++worldToken;
   rebuilding = true;
   return buildWorld(lat, lon)
     .then((w) => { if (token === worldToken) onReady(w); })
-    .catch((e) => { setStatus(`the dream couldn't regrow here: ${e.message}`); console.error(e); })
+    .catch((e) => { setStatus(`the dream couldn't regrow here: ${e.message}`); console.error(e); if (token === worldToken) onFail?.(); })
     .finally(() => { if (token === worldToken) rebuilding = false; });
 }
 
@@ -681,7 +683,7 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyP" && !e.repeat) takePicture();
   if (e.code === "KeyI" && !e.repeat) toggleHud();
   if ((e.key === "?" || e.code === "KeyH") && !e.repeat) openHelp();
-  if ((e.code === "Enter" || e.code === "NumpadEnter") && !e.repeat && document.activeElement?.tagName !== "BUTTON" && document.activeElement?.tagName !== "SELECT") { e.preventDefault(); openSay(); }
+  if ((e.code === "Enter" || e.code === "NumpadEnter") && !e.repeat && document.activeElement?.tagName !== "BUTTON" && document.activeElement?.tagName !== "SELECT" && !document.activeElement?.closest?.("#sheet, [role=button]")) { e.preventDefault(); openSay(); }
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
 const touch = { turn: 0, thrust: 0, up: 0, latch: 0, id: null, x: 0, y: 0 };
@@ -689,10 +691,10 @@ const touch = { turn: 0, thrust: 0, up: 0, latch: 0, id: null, x: 0, y: 0 };
 // ---- Gamepads (gamepad.js; Jason, 11-09: "Then let's build in gamepad support.") ----
 // Polled each frame. The sticks and A/B merge into input() like the keys and the touch stick; X, Y, Start and Back act
 // on the frame they're pressed. The D-pad walks the menus along the bottom and whatever a menu holds: A presses, B closes.
-const pad = { turn: 0, thrust: 0, up: 0, held: new Set(), using: false, said: false };
+const pad = { turn: 0, thrust: 0, up: 0, held: new Set(), using: false, said: false, refocus: null };
 const sheetEl = document.getElementById("sheet"), cornerEl = document.getElementById("corner");
 const sheetOpen = () => !sheetEl.hidden;
-const PAD_FOCUSABLE = "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), summary, textarea";
+const PAD_FOCUSABLE = "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), summary, textarea, [tabindex]:not([tabindex='-1'])";
 /** What the D-pad can reach: in an open menu, what it holds; otherwise the menus along the bottom. */
 function padTargets() {
   const open = sheetOpen(), root = open ? sheetEl : cornerEl;
@@ -701,12 +703,29 @@ function padTargets() {
 const padFocused = () => { const a = document.activeElement; return a && a !== document.body && (sheetEl.contains(a) || cornerEl.contains(a)) ? a : null; };
 const clearPadFocus = () => document.querySelectorAll(".padfocus").forEach((e) => e.classList.remove("padfocus"));
 function padFocus(dir) {
-  const list = padTargets(), el = list[stepFocus(list.indexOf(document.activeElement), list.length, dir)];
+  // By where things are on screen, not their order in the page: a menu's rows, the bar, the rhizome's map.
+  const list = padTargets(), rects = list.map((e) => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+  const el = list[stepFocusSpatial(rects, list.indexOf(document.activeElement), dir)];
   if (!el) return;
   clearPadFocus();
   el.classList.add("padfocus");
   el.focus();
   el.scrollIntoView?.({ block: "nearest" });
+}
+/** Press a thing, button or not: SVG (the rhizome's slots) has no click(), so send it one. */
+function press(el) {
+  if (typeof el.click === "function") el.click();
+  else el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+}
+/** After a press redraws a menu (the rhizome does, on every choice), put the focus back on what was pressed. */
+function padRefocus() {
+  const key = pad.refocus;
+  pad.refocus = null;
+  if (!key || !sheetOpen()) return;
+  const a = document.activeElement;
+  if (a && a !== document.body && sheetEl.contains(a)) return; // the menu chose a focus itself (its main button)
+  const el = sheetEl.querySelector(`[data-pad="${CSS.escape(key)}"]`);
+  if (el) { clearPadFocus(); el.classList.add("padfocus"); el.focus(); }
 }
 /** Escape, as if from the keyboard: closes a menu, shakes off spells, wakes you from a dream. */
 function padEscape() {
@@ -723,6 +742,7 @@ function pollPad(dt) {
   if (!gp) { if (pad.held.size || pad.turn || pad.thrust || pad.up) Object.assign(pad, { turn: 0, thrust: 0, up: 0, held: new Set() }); return; }
   const r = readPad(gp, pad.held);
   pad.held = r.held;
+  if (pad.refocus) padRefocus();
   if (r.active && !pad.using) { pad.using = true; setActGlyph(); }
   if (r.active && !pad.said) { pad.said = true; logLine("A controller: the left stick (or the D-pad) moves, A jumps, X touches what glints, Y takes a picture. Start for the menus.", "note"); }
   // In a menu the D-pad walks it; in the world it moves like the left stick (so in a ley node's ring it picks the lane).
@@ -740,7 +760,7 @@ function pollPad(dt) {
   if (menu && !sheetOpen() && (r.turn || r.thrust || r.look)) { document.activeElement?.blur(); clearPadFocus(); menu = false; }
   if (menu) {
     pad.turn = pad.thrust = pad.up = 0;
-    if (r.down.has("a")) padFocused()?.click();
+    if (r.down.has("a")) { const el = padFocused(); if (el) { pad.refocus = el.getAttribute("data-pad") || null; press(el); } }
     if (r.down.has("b")) { if (sheetOpen()) padEscape(); else { document.activeElement?.blur(); clearPadFocus(); } }
   } else {
     const d = dpadAxes(r.held);
@@ -838,9 +858,10 @@ const ctxBtn = { up: { el: document.getElementById("up"), v: 1, word: null, unti
 function contextButtons() {
   if (!COARSE) return;
   let up = null, down = null;
-  if (!world || rebuilding || editing) { /* nothing to do */ }
-  else if (state.gate) down = state.gate.phase === "sink" ? null : "LET GO";
-  else if (state.ride) down = state.ride.leaving ? null : "STEP OFF";
+  const m = modeSnap();
+  if (!m.ready || m.overlay === "editor" || m.travel === "travelling") { /* nothing to do */ }
+  else if (m.travel === "ring") down = state.gate.phase === "sink" ? null : "LET GO";
+  else if (m.travel === "ride") down = "STEP OFF";
   else if (state.mode === "ground") {
     up = wings() > 0 ? "FLY" : "JUMP";
     if (!state.realm && world.critters.near(state.pos.x, state.pos.z, 45).length) down = "CROUCH";
@@ -913,6 +934,34 @@ function input() {
   };
 }
 
+// ---- Modes (modes.js): what the creature is doing, made explicit (11-10) ----
+// Each state keeps its own data here (state.ride, state.gate, state.realm, state.target, state.travelling); modes.js holds
+// the one table of states, the events between them, and what each allows. Every change of state asks first (go), and
+// every "may I?" asks the table (allows) instead of checking its own handful of flags.
+const modes = { refused: [], conflicts: 0, warned: false };
+const travelNow = () => travelOf(state).state;
+/** Whether an event may happen now; a refused one is noted (and changes nothing). */
+function go(event) {
+  const from = travelNow();
+  if (nextMode(from, event)) return true;
+  modes.refused.push(`${event} in ${from}`);
+  if (modes.refused.length > 20) modes.refused.shift();
+  console.warn(`dream: ${event} isn't allowed while ${from}`);
+  return false;
+}
+/** Everything the table needs to answer: the travel state, what's over the world, how far the camera is, the world's readiness. */
+function modeSnap() {
+  return { travel: travelNow(), overlay: editing ? "editor" : sheetEl.hidden ? "none" : "sheet", view: cameraRegion(zoom, REACH_ZOOM, GLOBE_AT), ready: !!world && !rebuilding };
+}
+const allows = (what) => modeAllows(modeSnap(), what);
+/** Once a frame: the data should describe exactly one state. A clash is counted (and said once), never silently kept. */
+function modeCheck() {
+  const t = travelOf(state);
+  if (!t.conflict) return;
+  modes.conflicts++;
+  if (!modes.warned) { modes.warned = true; console.error(`dream: in two states at once: ${t.conflict.join(" + ")}`); }
+}
+
 // ---- Dreams (realm.js): behind an awake shrine, while its spell holds; gather three lights for a gem ----
 /** The floor under (x, z): the land, or in a dream its islands and bridges (no higher than a small step over y). */
 function floorUnder(x, z, y = Infinity) {
@@ -946,6 +995,7 @@ function canDream(home) {
 let realmFx = null;
 const COLOUR_OF_KIND = { shape: "rose", camera: "cyan", world: "gold" };
 function enterDream(sh) {
+  if (!go("dream")) return;
   const kind = SPELLS[sh.spell].kind, deep = rhiz().fx.deeper.has(COLOUR_OF_KIND[kind]);
   const L = realmLayout(sh.key, kind, realNow(), deep ? 2 : 1); // the rhizome's deeper dreams: bigger, more lights, two gems
   endSpells(); // the spell becomes the dream
@@ -964,7 +1014,7 @@ function enterDream(sh) {
 /** Out of the dream, back at the shrine (with the gem, or without: Escape wakes you). */
 function exitDream() {
   const r = state.realm;
-  if (!r) return;
+  if (!r || !go("wake")) return;
   state.realm = null;
   scene.remove(realmFx.group);
   realmFx.dispose();
@@ -1115,14 +1165,14 @@ function step(dt) {
 
   // Fly along a highway, inside its ribbon, and it takes you.
   state.captureCooldown -= dt;
-  if (state.captureCooldown <= 0 && state.speed > 5 && !state.target && seesLey() && !state.realm) { // not on a trip you tapped for: a highway you cross shouldn't take you
+  if (state.captureCooldown <= 0 && state.speed > 5 && seesLey() && allows("capture")) { // walking the world: not on a trip you tapped for (a highway you cross shouldn't take you), nor in a dream
     const ll = world.frame.toLatLon(p.x, p.z);
     const c = chooseCapture(ll.lat, ll.lon, { e: fx, n: -fz });
     if (c && Math.abs(p.y - highwayAltitude(world.terrain.heightAt(p.x, p.z))) < captureRadius(c.line.cls.rank)) boardRide(c);
   }
 
   // Travel far enough and the world is regrown around us.
-  if (!rebuilding && !state.ride && !state.realm && Math.hypot(p.x, p.z) > 15000) {
+  if (Math.hypot(p.x, p.z) > 15000 && allows("regrowFar")) {
     const ll = world.frame.toLatLon(p.x, p.z);
     setStatus("the dream shifts…");
     regrow(ll.lat, ll.lon, (w) => { swapWorld(w); setStatus(""); });
@@ -1155,7 +1205,7 @@ const bearingOfHeading = (h) => ((((-h * 180) / Math.PI) % 360) + 360) % 360;
 function enterStones(st) {
   if (!seesLey()) { logLine("The stones hum, but you can't see what they hum to. (Something worn that splits the light would show you.)", "highway"); return; }
   const lanes = lanesAt(st.node);
-  if (!lanes.length) return;
+  if (!lanes.length || !go("enterStones")) return;
   clearTarget();
   state.gate = { st, lanes, pick: laneFacing(lanes, bearingOfHeading(state.heading)), phase: "rise", t0: simT, from: state.pos.clone(), held: { turn: 0, go: true, up: true }, turnAt: 0 };
   state.speed = 0; state.vy = 0; state.mode = "air";
@@ -1165,7 +1215,8 @@ function enterStones(st) {
 /** Held in the ring at the top, choosing (straight off a highway, too). arrivedAlong: the bearing you came in on. */
 function holdInRing(st, arrivedAlong) {
   const lanes = lanesAt(st.node);
-  if (!lanes.length) return false;
+  if (!lanes.length || !go("holdInRing")) return false;
+  state.travelling = null; // the regrow ends here, in the ring
   state.gate = { st, lanes, pick: laneFacing(lanes, arrivedAlong), phase: "choose", t0: simT, from: state.pos.clone(), held: { turn: 0, go: true, up: true }, turnAt: 0 };
   state.pos.set(st.x, st.top, st.z);
   state.speed = 0; state.vy = 0; state.mode = "air";
@@ -1175,7 +1226,7 @@ function holdInRing(st, arrivedAlong) {
 function leaveGate(words = "You step back out of the light.") {
   const g = state.gate;
   laneMarks.visible = false;
-  if (wings() > 0) { state.gate = null; state.mode = "air"; state.captureCooldown = 3; logLine("You let go of the light and fly.", "highway"); return; }
+  if (wings() > 0) { if (go("letGo")) { state.gate = null; state.mode = "air"; state.captureCooldown = 3; logLine("You let go of the light and fly.", "highway"); } return; }
   // Over open sea with a sleeping swim, letting go would strand you: say so once, and let a second press mean it.
   if (g.st.sea && body().swim === 0 && simT - (g.warnedAt ?? -Infinity) > 5) {
     g.warnedAt = simT;
@@ -1204,9 +1255,10 @@ function gateKey(code) {
 /** Off along the chosen lane. */
 function takeLane() {
   const g = state.gate, l = g.lanes[g.pick];
+  if (!go("takeLane")) return;
   state.gate = null;
   laneMarks.visible = false;
-  boardRide({ line: l.line, t: l.t, dir: l.dir });
+  boardRide({ line: l.line, t: l.t, dir: l.dir }, true);
 }
 function gateStep(dt) {
   const g = state.gate, p = state.pos, { turn, thrust, up } = input(), age = simT - g.t0;
@@ -1242,7 +1294,7 @@ function gateStep(dt) {
   // Sinking back down to the stones.
   const k = Math.min(1, age / SINK_S), e = k * k * (3 - 2 * k), ground = Math.max(world.terrain.heightAt(g.st.x, g.st.z), g.st.sea ? -1.5 : -Infinity);
   p.set(g.st.x, g.from.y + (ground - g.from.y) * e, g.st.z);
-  if (k >= 1) { state.gate = null; state.mode = g.st.sea ? "water" : "ground"; state.captureCooldown = 3; state.upWas = true; } // a Space still held doesn't jump
+  if (k >= 1 && go("letGo")) { state.gate = null; state.mode = g.st.sea ? "water" : "ground"; state.captureCooldown = 3; state.upWas = true; } // a Space still held doesn't jump
 }
 /** The chosen lane, shown: diamonds of light running out along it from you. */
 function laneMarksTick(t) {
@@ -1274,7 +1326,9 @@ function gateLines() {
 }
 
 // ---- Riding the highways (ley-space) ----
-function boardRide(c) {
+/** Onto a highway: by flying along it or tapping it ("board"), or from a ring's lane (checked: already allowed). */
+function boardRide(c, checked = false) {
+  if (!checked && !go("board")) return;
   clearTarget();
   state.ride = startRide(c);
   director.play("board", simT, boardShot(), { dur: 1.2, blendIn: 0.15, blendOut: 0.9 });
@@ -1300,7 +1354,9 @@ function rideStep(dt) {
 }
 function leaveRide(arrived) {
   const r = state.ride;
+  if (!go("leave")) return;
   r.leaving = true;
+  state.travelling = { to: arrived ? "a node" : "where you stepped off" };
   r.speed = 0;
   const ll = rideLatLon(r);
   const tg = tangentEN(r.line, r.t, r.dir);
@@ -1308,7 +1364,7 @@ function leaveRide(arrived) {
   regrow(ll.lat, ll.lon, (w) => {
     // Off the highway: a flyer at its height; anything without wings set down near the ground, not left to glide a minute.
     swapWorld(w, { lat: ll.lat, lon: ll.lon, y: wings() > 0 ? highwayAltitude(w.terrain.heightAt(0, 0)) : Math.max(0, w.terrain.heightAt(0, 0)) + 20 });
-    state.ride = null;
+    state.ride = null; // still travelling until it lands: on the ground, or held in the node's ring
     state.heading = Math.atan2(-tg.e, tg.n);
     state.speed = 0;
     state.vy = 0;
@@ -1321,20 +1377,33 @@ function leaveRide(arrived) {
     // Arriving, you're held in the node's ring, so you can go straight on along another lane, or let go.
     const st = arrived && w.stones.near(0, 0, 600)[0];
     if (st && holdInRing(st, (Math.atan2(tg.e, tg.n) * 180) / Math.PI)) { logLine(`You arrive at ${nodeTitle(ll)}. The light holds you in its ring: choose a lane on (${gateKeys().pick}, then ${gateKeys().go}), or let go (${gateKeys().off}).`, "highway"); setTimeout(() => setStatus(""), 4000); return; }
+    if (go("land")) state.travelling = null;
     logLine(arrived ? `You arrive at ${nodeTitle(ll)}.` : "You step off the highway.", "highway");
     // Down over open sea with a sleeping swim and no wings: say how to get out (the line is still overhead).
     if (!arrived && w.terrain.heightAt(0, 0) < -20 && wings() === 0 && body().swim === 0) {
       logLine(`Open sea, and your swim sleeps. The highway is still overhead: touch it (${pad.using ? "X" : COARSE ? "✦" : "E"}) to ride on. Or your atlas carries you back to anywhere you've been, free.`, "highway");
     }
     if (arrived) setTimeout(() => setStatus(""), 4000);
-  });
+  }, () => landBack("the highway"));
+}
+/** A regrow that failed: back in the world you left, where you were, rather than stuck between. */
+function landBack(from) {
+  state.ride = null; state.travelling = null;
+  rideFx.group.visible = false;
+  if (world) world.group.visible = true;
+  state.speed = 0; state.vy = 0; state.captureCooldown = 3;
+  logLine(`The way ahead wouldn't open, so ${from} sets you back where you were.`, "note");
 }
 // ---- Landmarks: the HUD's menu carries you anywhere in the list ----
 // The landmarks are in the atlas now (11-09), to travel back to once you've been (the menu that went anywhere is gone).
 function teleport(l) {
+  if (!go("travel")) return;
+  if (state.realm) { exitDream(); logLine("You wake from the dream to travel.", "shrine"); } // the dream ends when you go
   clearTarget();
   state.gate = null; // out of any ring of light
+  laneMarks.visible = false;
   if (state.ride) { state.ride = null; rideFx.group.visible = false; if (world) world.group.visible = true; }
+  state.travelling = { to: l.name };
   zoom = Math.min(zoomMax(), l.zoom ?? ZOOM_HOME);
   if (l.heading !== undefined) state.heading = (-l.heading * Math.PI) / 180;
   state.speed = 0; state.vy = 0; state.captureCooldown = 3;
@@ -1346,7 +1415,8 @@ function teleport(l) {
     establishing();
     history.replaceState(null, "", `?${landmarkQuery(l, location.search)}`);
     setStatus("");
-  });
+    if (go("land")) state.travelling = null;
+  }, () => landBack("the dream"));
 }
 
 /** The networks that meet at a node ("Becker-Hagens", "Gravity wells, major + Gravity wells, basic"). */
@@ -1458,7 +1528,7 @@ function pick(clientX, clientY) {
 }
 function onTap(clientX, clientY) {
   if (state.realm) { logLine("In a dream there's no going by taps: walk (W A S D, or drag) to the lights.", "note"); return; }
-  if (zoom > GLOBE_AT && !state.ride && !rebuilding) {
+  if (allows("globeTap")) {
     // The globe is a map: tap a cairn's dot to go there.
     const r = canvas.getBoundingClientRect(), hit = globe.pick(clientX - r.left, clientY - r.top, r.width, r.height);
     if (hit?.cairn) travelTo(hit.cairn);
@@ -1466,7 +1536,7 @@ function onTap(clientX, clientY) {
     else if (hit?.shrine) travelToShrine(hit.shrine.key);
     return;
   }
-  if (!world || state.ride || zoom > GLOBE_AT || rebuilding) return;
+  if (!allows("tap")) return; // not held in a ring (its lanes are chosen, not tapped), riding, travelling, or at the globe
   director.input(simT);
   const hit = pick(clientX, clientY);
   if (!hit) return;
@@ -1527,13 +1597,14 @@ function beingObj(seed) {
  * walkers who arrive and find it gone set off again.
  */
 function moveTo(hit, { range, act, alt, follow, critter = null } = {}) {
+  if (!go("trip")) return;
   const p = state.pos, fly = wings() > 0;
   const pts = fly ? [{ x: hit.x, z: hit.z }] : planPath({ x: p.x, z: p.z }, hit, world.terrain.heightAt, sp);
   if (!pts) { logLine("There's no way there on foot.", "note"); return; }
   state.target = { fly, ground: Math.max(0, hit.h ?? 0), range, act, alt, follow, critter, pts: pts.map((q) => world.frame.toLatLon(q.x, q.z)), idx: 0 };
   routeDots.visible = true;
 }
-function clearTarget() { if (state.target) state.target = null; routeDots.visible = false; }
+function clearTarget() { if (state.target) state.target = null; routeDots.visible = false; } // arrive, or cancel: always allowed
 /** Steering toward the next waypoint, as if from the controls: { turn, thrust, up } or null. */
 function autopilot() {
   const tg = state.target;
@@ -1751,7 +1822,7 @@ function glintSpot(c, v, bs) {
   return v.set(c.x, c.alt, c.z);
 }
 function updateReach(t, dt) {
-  const on = !!world && !rebuilding && !state.ride && !state.gate && !state.realm && zoom < REACH_ZOOM && !editing; // in the editor, nothing else asks for you
+  const on = allows("reach"); // walking the world, close enough, and not in the editor (where nothing else asks for you)
   if (!on) { reach = lit = []; focus = null; }
   else if (t >= scanAt) {
     scanAt = t + 0.15;
@@ -1782,7 +1853,8 @@ function interact() {
   const r = state.ride;
   if (r) { if (!r.leaving && r.age > 0.6) leaveRide(false); return; }
   if (state.gate) { if (state.gate.phase === "choose") takeLane(); return; }
-  if (!world || rebuilding || zoom > GLOBE_AT) return;
+  const m = modeSnap();
+  if (!m.ready || m.view === "globe" || m.travel === "travelling") return;
   director.input(simT);
   clearTarget();
   actBtn.classList.remove("hit");
@@ -2271,7 +2343,7 @@ async function sendPigeon(kind, handle, note) {
 }
 /** Once a second: a pigeon whose flight is done comes down to you with its gift (one at a time). */
 function pigeonTick() {
-  if (!world || state.ride || state.realm || flying.landing || !account.did || people.viewer !== account.did) return;
+  if (!allows("pigeon") || flying.landing || !account.did || people.viewer !== account.did) return;
   if (realNow() - flying.polledAt > 180) pollPigeons();
   const ll = world.frame.toLatLon(state.pos.x, state.pos.z), now = realNow();
   const p = flying.list.find((q) => !hadPigeon(inv, q.uri) && !(q.waitUntil > now) && arrivalOf(q, ll.lat, ll.lon) <= now);
@@ -2786,6 +2858,7 @@ function frame() {
   zoomTick(dt);
   const view = state.ride ? rideView(dt, t) : worldView(dt, t);
   touch.latch = 0; // a tapped ▲▼ has had its frame
+  modeCheck();
 
   // The real sun for this place and moment (refreshed every 10 s).
   const days = spells.world?.id === "days" ? spellNow("world") : null;
@@ -2977,7 +3050,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, pad: () => ({ turn: pad.turn, thrust: pad.thrust, up: pad.up, held: [...pad.held], using: pad.using }), input: () => input(), inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.turn, thrust: pad.thrust, up: pad.up, held: [...pad.held], using: pad.using }), input: () => input(), inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

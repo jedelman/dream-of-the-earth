@@ -61,3 +61,24 @@ test("outside the menus the D-pad is a stick; Start enters the menus, leaves the
   assert.equal(startAction({ sheet: false, onBar: true }), "leave");
   assert.equal(startAction({ sheet: true, onBar: true }), "close");
 });
+
+test("the D-pad moves by where things are on screen: a list, a row, a map", async () => {
+  const { stepFocusSpatial } = await import("../web/js/gamepad.js");
+  const box = (x, y, w = 20, h = 20) => ({ x, y, w, h });
+  // A list (a menu's rows): down goes to the next row, up back; nothing past the ends.
+  const list = [box(0, 0), box(0, 40), box(0, 80)];
+  assert.equal(stepFocusSpatial(list, 0, "down"), 1);
+  assert.equal(stepFocusSpatial(list, 1, "down"), 2);
+  assert.equal(stepFocusSpatial(list, 2, "down"), 2, "the bottom stays put");
+  assert.equal(stepFocusSpatial(list, 2, "up"), 1);
+  assert.equal(stepFocusSpatial(list, 1, "left"), 1, "nothing to the left");
+  // A map (the rhizome): right prefers what's straight ahead over what's nearer but off to the side.
+  const map = [box(100, 100), box(160, 104), box(130, 40), box(100, 160)];
+  assert.equal(stepFocusSpatial(map, 0, "right"), 1);
+  assert.equal(stepFocusSpatial(map, 0, "up"), 2);
+  assert.equal(stepFocusSpatial(map, 0, "down"), 3);
+  assert.equal(stepFocusSpatial(map, 1, "left"), 0);
+  // Nothing focused yet: the first in reading order (top, then left).
+  assert.equal(stepFocusSpatial([box(50, 10), box(10, 12), box(0, 90)], -1, "down"), 1);
+  assert.equal(stepFocusSpatial([], -1, "down"), -1);
+});
