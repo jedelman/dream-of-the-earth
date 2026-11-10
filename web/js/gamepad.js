@@ -56,6 +56,32 @@ export function firstPad(pads) {
 }
 
 /**
+ * Which way the D-pad moves focus by where things are on screen (a menu's list, the rhizome's map): from item i, the
+ * nearest one in the direction pressed, preferring those straight ahead; i itself if there's none that way. With nothing
+ * focused yet (i < 0), the first in reading order. rects: [{ x, y, w, h }].
+ */
+export function stepFocusSpatial(rects, i, dir) {
+  if (!rects.length) return -1;
+  const mid = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+  if (i < 0 || i >= rects.length) {
+    let best = 0;
+    rects.forEach((r, k) => { const a = mid(rects[best]), b = mid(r); if (b.y < a.y - 4 || (Math.abs(b.y - a.y) <= 4 && b.x < a.x)) best = k; });
+    return best;
+  }
+  const [ux, uy] = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[dir] ?? [0, 0];
+  const c = mid(rects[i]);
+  let best = i, bestS = Infinity;
+  rects.forEach((r, k) => {
+    if (k === i) return;
+    const p = mid(r), dx = p.x - c.x, dy = p.y - c.y, along = dx * ux + dy * uy, across = Math.abs(dx * uy - dy * ux);
+    if (along <= 2) return; // not that way
+    const score = along + 2 * across;
+    if (score < bestS) { bestS = score; best = k; }
+  });
+  return best;
+}
+
+/**
  * Which way the D-pad moves focus through a list of n things from index i (−1: nothing focused yet): left/up go back,
  * right/down forward, wrapping round.
  */

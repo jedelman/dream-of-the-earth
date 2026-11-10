@@ -674,10 +674,54 @@ Jason: "Then let's build in gamepad support." (`gamepad.js`, `pollPad` in `main.
 - **Menus:** Start goes into them; the D-pad walks the bar along the bottom and, in an open menu, whatever it holds. The focus shows as a
   gold outline; A presses, B closes, and left or right on a slider moves it. On the bar with no menu open, moving a
   stick steps you back into the world.
+- **The rhizome with a controller (fixed 11-10).** Jason: "can't slot crystals in the rhizome with a controller".
+  - **Cause:** the map's slots and links are SVG shapes, which the D-pad couldn't reach (it stepped only through
+    buttons and inputs), and A pressed by calling `.click()`, which SVG doesn't have.
+  - **Slots and links** now take focus (Tab or the D-pad; Enter or Space presses them, and Enter no longer opens the say
+    box from a menu). A sends a click to anything.
+  - **In a menu, the D-pad moves by where things are on screen:** the nearest thing in the direction pressed, straight
+    ahead first. So it crosses the map like a map, and goes down a list like a list.
+  - **After a choice redraws the map,** focus goes to its main button ("Set a rose gem here"), and after that, back to
+    the slot.
+  - Checked with a simulated pad: Start, RHIZOME, D-pad onto a slot, A, A: the gem is set.
 - **Words follow the hands:** once the pad is used, the touch prompt's glyph is X and the ring's HUD says A and B;
   a key or a touch switches them back. The help sheet has a controller group.
 - Checked headless with a simulated pad (`navigator.getGamepads` replaced), not on a physical pad **(unverified on
   real hardware)**.
+
+### Modes, made explicit (built 11-10)
+Jason, after asking where the code hides implicit state machines: "Let's do it!" (`modes.js`)
+- **Before:** what the creature was doing lived in separate fields (`state.ride`, `state.gate`, `state.realm`,
+  `state.target`, `rebuilding`, `editing`, the zoom). Ten guards each checked their own subset of them. Two transitions
+  nobody designed got through:
+  - travelling by atlas or portal while dreaming kept the dream (confirmed in Chromium);
+  - a ride boarded from a ring "arrived" at once (fixed in #54).
+
+  A third came up while reading: a failed regrow never called back, so a ride stayed stuck "leaving" in ley-space, and a
+  jump would have stayed "travelling".
+- **Now, one table** (a statechart):
+  - **Travel states:** world, trip (tapped for), ring, ride, dream, travelling (the world regrowing after a ride or a
+    jump).
+  - **Events between them:** trip, arrive or cancel, enterStones, takeLane, letGo, board, hop, leave, land, holdInRing,
+    dream, wake, travel. An event a state doesn't list is refused and changes nothing; each refusal is noted.
+  - **Two regions alongside, independent:** what's over the world (nothing, a menu, the editor) and the camera (near,
+    far, the globe).
+  - **What each state allows:** reach, tap, globeTap, capture, regrowFar, pigeon, travel. The ten guards ask the table
+    now.
+- **main.js keeps each state's data** (the ride, the ring, the dream) and asks `go(event)` before changing state. Once a
+  frame it checks the data describes exactly one state; a clash is counted and said once.
+- **The fixes that fall out:**
+  - travelling from a dream wakes you first ("You wake from the dream to travel");
+  - no tapping a highway from inside a ring (a ring is left by a lane, letting go, or a jump);
+  - no pigeon landing while you're in a ring, riding or travelling;
+  - a failed regrow sets you back where you were ("The way ahead wouldn't open…") instead of stranding you.
+- **Tests:** properties over random event sequences (one known state always; a refused event changes nothing; every
+  state has a way back to the world), the transitions that bit us, the data-to-state reading, and what each state allows.
+- **Still implicit,** filed for the overnight builds:
+  - ground, air and water, and the input edges (four press-detectors);
+  - the four records' save-to-repo logic;
+  - six "once per moon" latches;
+  - spells ending when they're read.
 
 ### Names for the ley nodes (built 11-10)
 Jason: "Also we need to name these nodes!! I'm so lost 🤣" (`nodenames.js`)
