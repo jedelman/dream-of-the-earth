@@ -28,7 +28,7 @@ test("devices merge: a place found on any is found, at its first finding", () =>
   const m = mergeAtlas(found, other);
   assert.deepEqual(Object.keys(m).sort(), ["shrine123", "shrine5", "shrine77"]);
   assert.equal(m.shrine123.at, 1790000000);
-  assert.equal(atlasKey(m), "shrine123,shrine5,shrine77||");
+  assert.equal(atlasKey(m), "shrine123,shrine5,shrine77|||"); // shrines | nodes | landmarks | basins
   assert.notEqual(atlasKey(found), atlasKey(m));
 });
 

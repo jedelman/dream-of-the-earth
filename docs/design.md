@@ -852,13 +852,44 @@ from his first list, "portal items (everyone starts with one) to travel to frien
   version 2), one opens for you at each full moon (a day either side; once a moon, like the moonseed at the new moon),
   five fit, and they can be sent by pigeon. Your own cairns, and everything in your atlas, stay free. With none: "You
   have no portal. One opens for you at each full moon (the next in 14 days), and a friend can send you one by pigeon."
-- **Still to come:** watersheds as regions, with compasses and goal sequences. **Not HydroBASINS:** read on 11-09 in
+- **Watersheds** came next: see "Watersheds" below. **Not HydroBASINS:** read on 11-09 in
   the HydroSHEDS Technical Documentation v1.4 (April 2022), Appendix A, which HydroBASINS shares, its licence is WWF's
   own: distribution only inside a derivative work "to End Users, subject to the terms and conditions of an end user
   license agreement with terms that are at least as protective" (2.1.2), and records of "the identity and address of
   each End User" (10.7). A free web game with anonymous players can't keep either. So the basins will be worked out
   from the elevation tiles the game already uses (flow directions on a coarse global grid, offline, shipped as small
   tiles like the Köppen map).
+
+### Watersheds, the first stage: knowing (built 11-10)
+Jason, asked how the regions should work: unlocked "All 3, in stages" (know, see, enter); the goals, "Rivers way, but in
+reverse; you get the quest when you reach the basin, then clues point you to the headwaters. The headwaters have a
+special shrine and unique unlock"; the compasses, "You choose! Different compasses for different things."
+(`scripts/basins/`, `basins.js`, the atlas and HUD hooks in `main.js`.)
+- **The basins are computed**, once, offline, from the Terrain Tiles the game already draws and Natural Earth's rivers
+  and lakes: a priority flood on a 0.1° grid from the sea and the lakes with no outlet, the rivers cut into the terrain
+  so water follows them. 321 basins of 50,000 km² or more, each with a name, an area, a mouth and a source (the top of
+  its main stem). `scripts/basins/README.md` has the steps, every rule and the misrouting it fixed, and what it still
+  gets wrong. Measured: the Amazon 5.9 million km², the Congo 3.8, the Nile 3.2, the Mississippi 3.2, the Volga 1.34, the
+  Neva 0.29, close to the published figures; the Mississippi's stem ends at Lake Itasca, the Amazon's by Nevado Mismi,
+  the Volga's at Volgoverkhovye, the Lena's by Lake Baikal.
+- **Names:** the river the main stem follows from the mouth ("Amazon River basin"; two rivers sharing a mouth are named
+  together, "Ganges–Brahmaputra basin"), or the lake it ends in ("Lake Chad basin"), or, with neither, the Natural Earth
+  region it lies in and the town by its lowest point ("Sahara hollow by Reggane", "basin by Nouakchott"). 194 are named
+  for rivers, 23 for lakes; 71 are desert hollows, 33 dry coasts. Two rivers of one name get their country or province.
+- **What ships:** `web/data/basins/`: 72 tiles of 30° at 0.1° (each pixel's basin id in red and green), 100 KB, and
+  `basins.json`, 52 KB. Both are fetched only when needed, like the Köppen tiles.
+- **Knowing:** the first time you're in a basin (checked every 3 s, not in a dream), a chime and a line: "You're in the
+  Amazon River basin now (5.9 million km²): every drop of rain here runs to the Amazon River, and on to the sea.
+  Somewhere upstream, it begins. It's in your atlas." A lake's says the rain never reaches the sea; a hollow's that it
+  runs to the lowest place and stays. The atlas lists the basins you know, with their size and where their water goes;
+  the fuller HUD (I) names the basin you're in.
+- **Your atlas record** gains `basins` (`{ key, at }`, the key the basin's name: `amazon-river`), a change to the
+  `org.jason-edelman.dream.atlas` lexicon. Keys are names, not ids, because ids follow size and would shift if the basins
+  were worked out again.
+- **Credits** are in the game now (? HELP, Credits), with the terrain's required attribution block.
+- **Next:** clues along each main stem from the mouth to the source, a river compass to wear, and at the headwaters a
+  shrine, veiled until you've found the clues, whose unlock is that river's own; then seeing basins (their edges, the
+  water's way) and entering them (riding a river), and the other compasses.
 
 ### A door to the Shinjuku Megadungeon (built 11-10)
 Jason, on his other game (Shinjuku Station as a PS1-style dungeon, played as a 30 cm kitten): "a shrine in Dream can
@@ -1457,11 +1488,12 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 ## Data and code credits (to confirm before shipping)
 | Source | Use | License |
 |---|---|---|
-| Mapzen terrarium tiles (AWS Open Data) | elevation, bathymetry | per the AWS Open Data listing **(check)** |
+| Terrain Tiles (Mapzen, a Linux Foundation project; AWS Open Data), terrarium encoding | elevation, bathymetry; the river basins are worked out from them (`scripts/basins`) | The AWS Open Data listing (open-data-registry `datasets/terrain-tiles.yaml`) gives its licence as tilezen/joerd `docs/attribution.md`, which sets a required attribution block (ArcticDEM, Geoscience Australia, Austria's DGM, Open Government Licence – Canada, Copernicus EU-DEM, NOAA ETOPO1, INEGI, LINZ, Kartverket, the UK Environment Agency, USGS 3DEP/GMTED2010/SRTM); read 11-10. The block is in the game (? HELP, Credits) |
 | CHELSA | temperature, precipitation | CC BY 4.0 (catalogue pages) |
 | SoilGrids 2.0 (ISRIC) | soil | CC BY 4.0 (JRC catalogue) |
 | ETH Global Canopy Height 2020 (Lang et al. 2023) | canopy height | CC BY 4.0 (ETH record) |
 | Köppen-Geiger (Beck et al. 2023, Scientific Data 10:724), 1991–2020 at 0.1°, from figshare 10.6084/m9.figshare.21937571 | climate class (biomes) | CC0 on the figshare record (its API, checked 11-08); an earlier session's search found the maps' page saying CC BY 4.0 **(not rechecked)**, so credit them either way |
+| Natural Earth 1:10m rivers and lake centerlines, lakes, physical regions and populated places (5.0.0, per each download's VERSION.txt) | the river basins: the rivers cut into the terrain, the lakes with no outlet, the names (`scripts/basins`); the basin tiles and names ship | Public domain (as below) |
 | Natural Earth 1:10m populated places, marine areas and physical regions, and 1:50m countries (naturalearthdata.com, v5) | the ley nodes' names (`nodenames.js`), worked out once offline; no data ships | Public domain: "All versions of Natural Earth raster + vector map data found on this website are in the public domain… No permission is needed" (its Terms of Use page, read 11-10). Credited anyway: Made with Natural Earth |
 | leylines-solids (Joerg Roth) | ley geometry | Apache-2.0 (package.json) |
 | Becker & Hagens; Leland (judsyn.weebly.com); McCooey's Visual Polyhedra | grid origins | credit |

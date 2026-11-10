@@ -8,11 +8,13 @@ import { distanceText } from "./artifacts.js";
 
 /**
  * hooks: { shrines() -> [{ key, name, colour (css), state words, metres }] nearest first, nodes() -> [{ key, name, metres }],
- * landmarks() -> [{ key, name, been, metres }], travel(key), globe() }.
+ * landmarks() -> [{ key, name, been, metres }], basins() -> [{ key, name, where, here }] in the order you came to know
+ * them, travel(key), globe() }.
  */
 export function buildAtlas({ maker, button, hooks }) {
   function open() {
     const shrines = hooks.shrines(), nodes = hooks.nodes(), marks = hooks.landmarks(), seen = marks.filter((m) => m.been), unseen = marks.filter((m) => !m.been);
+    const basins = hooks.basins();
     const go = (key, name) => h("button", { class: "go", "aria-label": `Travel to ${name}`, onclick: () => { maker.close(); hooks.travel(key); } }, "Go");
     const list = (rows) => h("ul", { class: "cairns" }, rows);
     const total = shrines.length + nodes.length + seen.length;
@@ -27,6 +29,9 @@ export function buildAtlas({ maker, button, hooks }) {
       h("h3", {}, `Landmarks (${seen.length} of ${marks.length})`),
       seen.length ? list(seen.map((m) => h("li", {}, h("span", { class: "swatch mark" }), h("span", { class: "who" }, m.name), h("span", { class: "where" }, distanceText(m.metres)), go(m.key, m.name)))) : null,
       unseen.length ? h("details", {}, h("summary", {}, `Still to find (${unseen.length})`), list(unseen.sort((a, b) => a.metres - b.metres).map((m) => h("li", { class: "unseen" }, h("span", { class: "swatch mark" }), h("span", { class: "who" }, m.name), h("span", { class: "where" }, distanceText(m.metres)))))) : null,
+      h("h3", {}, `River basins (${basins.length})`),
+      basins.length ? list(basins.map((b) => h("li", {}, h("span", { class: "swatch basin" }), h("span", { class: "who" }, `${b.name[0].toUpperCase()}${b.name.slice(1)}${b.here ? " (here)" : ""}`), h("span", { class: "where" }, b.where))))
+        : h("p", { class: "small" }, "None yet. Wherever you walk, the rain runs somewhere: the first time you're in a river's basin, you know it."),
       total ? h("div", { class: "row" }, h("button", { onclick: () => { maker.close(); hooks.globe(); } }, "Show on the globe")) : null,
       h("p", { class: "small" }, "Places you've been, to travel back to. To a mutual, or a cairn one left, takes a portal (BAG ▾). Your atlas is kept on this device and, signed in, in your Bluesky repo, so it follows you."),
     ], { trigger: button, classes: ["atlas"] });
