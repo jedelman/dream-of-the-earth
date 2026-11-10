@@ -658,10 +658,14 @@ Jason: "Then let's build in gamepad support." (`gamepad.js`, `pollPad` in `main.
 - **Moving:** the left stick moves and turns. The right stick turns too, and up or down brings the camera nearer
   or farther (as do LB and RB). A is Space (jump; with Wings, take off and climb), B is Shift (crouch; flying, go
   down; on a highway, step off). They merge into the same input as the keys and the touch stick.
-- **Touching:** X touches what glints (E), Y takes a picture (P), Start opens help, Back is Escape.
+- **Touching:** X touches what glints (E), Y takes a picture (P), Back is Escape. Start opens the menus (again to
+  leave them); help is one of them. (Until 11-10 the D-pad walked the menus even in the world: see "The stones at the
+  nodes".)
 - **Held in a ley node's ring,** A sets off and B lets go (the conventional confirm and cancel, rather than A as
   Space letting go).
-- **Menus:** the D-pad walks the bar along the bottom and, in an open menu, whatever it holds. The focus shows as a
+- **The D-pad** moves like the left stick outside the menus (so in a ley node's ring, left and right choose and up
+  sets off).
+- **Menus:** Start goes into them; the D-pad walks the bar along the bottom and, in an open menu, whatever it holds. The focus shows as a
   gold outline; A presses, B closes, and left or right on a slider moves it. On the bar with no menu open, moving a
   stick steps you back into the world.
 - **Words follow the hands:** once the pad is used, the touch prompt's glyph is X and the ring's HUD says A and B;
@@ -691,6 +695,21 @@ interact with before the pillar of light pulls you up" (`stones.js`, `lanesAt` i
 - **Arriving at a node off a highway, you're held in its ring the same way,** facing the lane that goes straight
   on, so a long journey is a chain of choices; let go to step down.
 - **Travel to a node from the atlas** puts you just before its stones, facing them.
+- **Fixed 11-10.** Jason, with a controller: "when I try to turn left at a ley node it either sends me to another one or
+  reloads the current one… spent a lot of time on this run lost at sea." Three causes:
+  - **Instant arrival.** A ride out of a ring starts exactly at its own end of the line (t 0 or 1), and `advance`
+    counted reaching *either* end as arriving. The frame you board in also runs a zero-length ride step
+    (`rideView(0)`). So a lane taken from inside the frame (W, the stick, D-pad up) "arrived" at once, and the node you
+    were at reloaded. Now a ride arrives only at its far end, and a step that takes no time does nothing (tested).
+  - **A diagonal stick.** A stick pushed left drifts a little forward, and forward meant set off: away along the lane
+    you hadn't chosen. In the ring, a stick now sets off only when it's clearly forward (over 0.6, and 1.5× its
+    sideways), and chooses only when it's clearly sideways.
+  - **The D-pad walked the menus even in the world.** Left in the ring wandered onto the bar, and the next A pressed a
+    menu button (ATLAS, then its first Go: travel). Now, outside the menus, the D-pad moves like the stick (left and
+    right choose, up sets off), and Start opens the menus.
+- **Not stranded at sea (11-10).** Letting go of a ring over open sea, with a sleeping swim and no wings, now warns
+  first ("you'd be adrift"); a second press drops anyway. Stepping off a highway over open sea says how to get out:
+  the highway is still overhead to touch, and the atlas travels free to anywhere you've been.
 - Boarding by flying along a highway, or by tapping one, works as before.
 
 ### How far you see (built 11-09)

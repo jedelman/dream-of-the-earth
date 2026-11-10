@@ -104,7 +104,7 @@ export function promptFor(c) {
 
 // Small things close at hand come before big things far off: under a highway,
 // beside a tree, with a sky being on the horizon, the tree is what you meant.
-const BIAS = { find: -0.12, stones: -0.1, shrine: -0.08, artifact: -0.05, critter: -0.02, butterfly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
+const BIAS = { find: -0.12, stones: -0.2, shrine: -0.08, artifact: -0.05, critter: -0.02, butterfly: 0, tree: 0.05, highway: 0.3, being: 0.4 };
 
 /**
  * How much a thing in reach wants the prompt (lower wins). c: { kind, d, range, facing, species? },

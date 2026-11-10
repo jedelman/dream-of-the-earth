@@ -50,7 +50,8 @@ choose a lane (A/D, then E or W; Space or Shift lets go).
 while you move. Tilt to steer is in ☰: tip the phone to turn, away to go; a shake squeaks.
 
 **A controller** works too (any pad in the browser's standard mapping): the left stick moves, A jumps, B crouches,
-X touches what glints, Y takes a picture, and the D-pad walks the menus (A presses, B closes).
+X touches what glints, Y takes a picture, the D-pad moves like the stick, and Start opens the menus (the D-pad walks
+them, A presses, B closes).
 
 URL parameters make any spawn reproducible: `?seed=42` (creature, stats and spawn), `&stats=6,2,2,2`
 (climb, swim, run, gleam, perception; 12 points, 0–6 each; the old four still read), `&lat=…&lon=…` (spawn somewhere specific), `&heading=` (degrees from north), `&alt=` (metres up), `&zoom=` (camera distance in

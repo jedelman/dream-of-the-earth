@@ -50,3 +50,14 @@ test("the D-pad steps through a menu, wrapping round", () => {
   assert.equal(stepFocus(0, 5, "up"), 4);
   assert.equal(stepFocus(2, 0, "right"), -1);
 });
+
+test("outside the menus the D-pad is a stick; Start enters the menus, leaves them, or closes one", async () => {
+  const { dpadAxes, startAction } = await import("../web/js/gamepad.js");
+  assert.deepEqual(dpadAxes(new Set(["left"])), { turn: -1, thrust: 0 });
+  assert.deepEqual(dpadAxes(new Set(["right", "up"])), { turn: 1, thrust: 1 });
+  assert.deepEqual(dpadAxes(new Set(["down"])), { turn: 0, thrust: -1 });
+  assert.deepEqual(dpadAxes(new Set(["left", "right"])), { turn: 0, thrust: 0 });
+  assert.equal(startAction({ sheet: false, onBar: false }), "enter");
+  assert.equal(startAction({ sheet: false, onBar: true }), "leave");
+  assert.equal(startAction({ sheet: true, onBar: true }), "close");
+});

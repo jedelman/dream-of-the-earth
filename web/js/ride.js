@@ -87,6 +87,7 @@ export function startRide(c) {
 
 /** Advance a ride by dt seconds. Eases in over ~2 s and out over the last stretch. */
 export function advance(ride, dt) {
+  if (!(dt > 0)) return ride; // a step that takes no time goes nowhere (and arrives nowhere)
   const vmax = rideSpeed(ride.line.cls.rank);
   const lengthM = ride.line.arc * R_EARTH;
   const remainingM = (ride.dir > 0 ? 1 - ride.t : ride.t) * lengthM;
@@ -95,7 +96,10 @@ export function advance(ride, dt) {
   const easeOut = Math.min(1, remainingM / (vmax * 1.2) + 0.02);
   ride.speed = vmax * easeIn * easeIn * Math.min(1, easeOut);
   ride.t += (ride.dir * ride.speed * dt) / lengthM;
-  if (ride.t >= 1 || ride.t <= 0) { ride.t = Math.min(1, Math.max(0, ride.t)); ride.done = true; }
+  // Arrived only at the far end. A ride out of a node starts exactly at its own end (t 0 or 1), and that's no arrival
+  // (11-10: a zero-length step on the frame you boarded used to count as one, and the node you'd left reloaded).
+  if ((ride.dir > 0 && ride.t >= 1) || (ride.dir < 0 && ride.t <= 0)) ride.done = true;
+  ride.t = Math.min(1, Math.max(0, ride.t));
   return ride;
 }
 

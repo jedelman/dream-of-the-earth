@@ -87,3 +87,22 @@ test("the lane you're facing is the one picked first", () => {
   for (const [i, l] of lanes.entries()) assert.equal(laneFacing(lanes, l.bearing + 3), i);
   assert.equal(laneFacing(lanes, lanes[0].bearing - 2 + 360), 0, "bearings wrap");
 });
+
+test("a ride out of a node doesn't arrive where it starts, even on a step that takes no time", () => {
+  for (const node of network().nodes.slice(0, 12)) {
+    for (const l of lanesAt(node)) {
+      const r = startRide(l);
+      advance(r, 0);
+      assert.equal(r.done, false, "no time, no arrival");
+      assert.equal(r.t, l.t, "and nowhere");
+      advance(r, 0.05);
+      assert.equal(r.done, false, "moving off along the lane");
+      assert.ok(l.dir > 0 ? r.t > 0 : r.t < 1);
+    }
+  }
+  // It still arrives at the far end.
+  const l = lanesAt(network().nodes[0])[0], r = startRide(l);
+  for (let k = 0; k < 4000 && !r.done; k++) advance(r, 0.05);
+  assert.equal(r.done, true);
+  assert.equal(r.t, l.dir > 0 ? 1 : 0);
+});
