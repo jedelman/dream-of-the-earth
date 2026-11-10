@@ -21,7 +21,7 @@ import { screenTilt, tiltSteer, shakeDetector } from "./tilt.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
-import { RANGE, critterLine, fledLine, treeLine, butterflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
+import { RANGE, critterLine, fledLine, treeLine, butterflyLine, fireflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
 import { buildGlints } from "./glints.js";
 import { buildCairns } from "./cairns.js";
 import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted, isBot, pigeonsFor } from "./atproto.js";
@@ -1425,6 +1425,13 @@ function pick(clientX, clientY) {
     if (v.z > 1) continue;
     if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 24) found.push({ kind: "butterfly", d, b });
   }
+  for (const f of world.insects.fireflies(state.pos.x, state.pos.z, RANGE.firefly * 2.5)) {
+    v.set(f.x, f.y, f.z);
+    const d = v.distanceTo(camera.position);
+    v.project(camera);
+    if (v.z > 1) continue;
+    if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 20) found.push({ kind: "firefly", d, f });
+  }
   for (const c of world.critters.all()) {
     v.set(c.x, c.y + 0.4 * c.size, c.z);
     const d = v.distanceTo(camera.position);
@@ -1472,6 +1479,10 @@ function onTap(clientX, clientY) {
   if (hit.kind === "butterfly") {
     const b = hit.b, act = () => chirp(hit.b.k);
     return Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z) < RANGE.butterfly ? act() : moveTo({ x: b.x, z: b.z, h: b.y }, { range: RANGE.butterfly * 0.6, act });
+  }
+  if (hit.kind === "firefly") {
+    const f = hit.f, act = () => touchFirefly(f.x, f.y, f.z, f.seed);
+    return Math.hypot(f.x - p.x, f.y - p.y, f.z - p.z) < RANGE.firefly ? act() : moveTo({ x: f.x, z: f.z, h: f.y }, { range: RANGE.firefly * 0.6, act });
   }
   if (hit.kind === "find") {
     const f = hit.f, act = () => pickUp(f);
@@ -1597,6 +1608,17 @@ function chirp(k) {
   bursts.emit({ at: new THREE.Vector3(b.x, b.y, b.z), colors: [new THREE.Color().setHSL(b.hue, 0.95, 0.65), new THREE.Color(0xffffff)], n: 12, spread: 1.5, up: 2, fall: 0.8, life: 1.6 });
   logLine(butterflyLine(b.hue, Math.round(b.seed * 1e6), squeaks++), "creature");
 }
+/** Cup a firefly: the ones nearby flare together, in light the colour of their blink. */
+let fireflyTouches = 0;
+function touchFirefly(x, y, z, seed) {
+  sound.glow();
+  const at = new THREE.Vector3(x, y, z);
+  director.play("butterfly", simT, butterflyShot(state.pos.clone(), at), { dur: 2.6, blendIn: 0.5, blendOut: 0.9 });
+  bursts.emit({ at, colors: [new THREE.Color(0xd9ff66), new THREE.Color(0xffffff)], n: 16, spread: 2.5, up: 1.2, fall: 0.15, life: 2.2 });
+  for (const f of world.insects.fireflies(x, z, 18).slice(0, 4))
+    bursts.emit({ at: new THREE.Vector3(f.x, f.y, f.z), colors: [new THREE.Color(0xd9ff66)], n: 5, spread: 0.6, up: 0.4, fall: 0.1, life: 1.6 });
+  logLine(fireflyLine(Math.round(seed * 1e6), fireflyTouches++), "creature");
+}
 /** What the small creatures did this frame (ran from you), and now and then a croak or a song from nearby. */
 let fledAt = -10, fledEver = false, chorusAt = 0;
 function critterNews(events, t, sunAltitude) {
@@ -1669,6 +1691,10 @@ function inReach() {
     const d = Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z);
     if (d < RANGE.butterfly) add({ kind: "butterfly", key: `b${b.seed}`, seed: b.seed, k: b.k, hue: b.hue, d, range: RANGE.butterfly }, b.x, b.z);
   }
+  for (const f of world.insects.fireflies(p.x, p.z, RANGE.firefly)) {
+    const d = Math.hypot(f.x - p.x, f.y - p.y, f.z - p.z);
+    if (d < RANGE.firefly) add({ kind: "firefly", key: `f${Math.round(f.seed * 1e6)}`, seed: f.seed, x: f.x, y: f.y, z: f.z, d, range: RANGE.firefly }, f.x, f.z);
+  }
   for (const f of world.finds.near(p.x, p.z, RANGE.find)) {
     const d = Math.hypot(f.x - p.x, f.y - p.y, f.z - p.z); // in three dimensions: one on the seabed is down there
     if (d < RANGE.find) add({ kind: "find", key: f.key, name: ITEMS[f.holds].name, d, range: RANGE.find, f }, f.x, f.z);
@@ -1714,6 +1740,7 @@ function glintSpot(c, v, bs) {
     return v.set(r.x + (cx / L) * off, r.y + Math.min(r.height * 0.55, 6 + r.height * 0.15), r.z + (cz / L) * off);
   }
   if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
+  if (c.kind === "firefly") return v.set(c.x, c.y, c.z);
   if (c.kind === "find") return v.set(c.f.x, c.f.y + 0.7, c.f.z);
   if (c.kind === "shrine") return v.set(c.s.x, c.s.y + 2.4, c.s.z);
   if (c.kind === "stones") return v.set(c.c.x, c.c.y + 3.5, c.c.z);
@@ -1766,6 +1793,7 @@ function interact() {
   scanAt = 0; // look again next frame: a highway takes you away, a butterfly moves on
   if (c.kind === "tree") return shakeTree(c.rec);
   if (c.kind === "butterfly") { const b = world.insects.butterflies().find((q) => q.seed === c.seed); return b ? chirp(b.k) : squeak(); }
+  if (c.kind === "firefly") return touchFirefly(c.x, c.y, c.z, c.seed);
   if (c.kind === "find") return pickUp(c.f);
   if (c.kind === "shrine") return canDream(c.s) ? enterDream(c.s) : castSpell(c.s);
   if (c.kind === "critter") return touchCritter(c.key);

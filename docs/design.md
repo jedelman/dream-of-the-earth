@@ -262,6 +262,12 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
     prompt sits above ▲▼, under the right thumb. It stays bottom right on a computer too: centred, it covered
     the creature and collided with the log. Highway glints sit 30 m along each line the way you face, so at a
     node they fan out along the roads instead of stacking on the node.
+  - **Fireflies answer too (built 11-10, from the "more things to touch" list: fireflies, the sea, ley pillars):**
+    at night, in the biomes that have them, a firefly within 14 m glints and gets the prompt "(E) Cup the firefly";
+    tapping one (a 20 px target) walks you up first, like a butterfly. The nearest few flare together in
+    yellow-green sparks, a soft rising bell plays (WebAudio), and the log says something that varies by hash. The
+    drift the vertex shader flies is mirrored on the CPU (`fireflyAt`, tested), so a touch finds the firefly where
+    you see it. No new data, nothing stored. Still on the list: the sea, ley pillars.
 
 ## The camera: a director (built 11-08, Jason: "let's make the camera a little more semantic and cinematic")
 `web/js/director.js`, with the maths in `web/js/camerawork.js` (tested).

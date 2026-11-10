@@ -2,7 +2,7 @@
 // around a home on the global cell grid and flies a loop keyed to the shared
 // clock, so everyone sees the same butterfly in the same place.
 import * as THREE from "three";
-import { BUTTERFLY, FIREFLY, butterflyHomes, fireflyHomes } from "./insecthomes.js";
+import { BUTTERFLY, FIREFLY, butterflyHomes, fireflyHomes, fireflyAt } from "./insecthomes.js";
 import { biomeFor, BIOMES } from "./biome.js";
 import { koppenAt } from "./koppen.js";
 import { curved, CURVE_GLSL } from "./curvature.js";
@@ -106,7 +106,7 @@ export function buildInsects(frame, terrain) {
     return { p: { x: p.x, z: p.z }, h, biome: BIOMES[biomeFor(koppenAt(c.lat, c.lon), terrain.reliefAt(p.x, p.z), c.lat, h)] };
   };
   const m4 = new THREE.Matrix4(), col = new THREE.Color();
-  let centre = null, homes = [];
+  let centre = null, homes = [], fhomes = [];
   function settle(x, z) {
     const ll = frame.toLatLon(x, z);
     const bs = butterflyHomes(ll.lat, ll.lon, at);
@@ -121,6 +121,7 @@ export function buildInsects(frame, terrain) {
     butterflies.instanceColor.needsUpdate = true;
     seeds.needsUpdate = true;
     const fs = fireflyHomes(ll.lat, ll.lon, at);
+    fhomes = fs;
     fs.forEach((f, k) => { fpos.set([f.x, f.y, f.z], k * 3); fseed[k] = f.seed; });
     fgeo.setDrawRange(0, fs.length);
     fgeo.attributes.position.needsUpdate = true;
@@ -142,6 +143,17 @@ export function buildInsects(frame, terrain) {
         const ph = b.seed * 6.2831, tt = t * (0.25 + 0.15 * b.seed) + ph;
         return { x: b.x + Math.sin(tt) * 9 * b.size, y: b.y + 1.4 * Math.sin(tt * 2.3 + ph) * b.size, z: b.z + Math.sin(tt * 2 + ph * 0.7) * 5 * b.size, hue: b.hue, seed: b.seed, k };
       });
+    },
+    /** Fireflies within `r` metres (flat) of a point, where they are right now; none by day. [{ x, y, z, seed }] */
+    fireflies(px, pz, r = 40) {
+      if (!fireflies.visible || night.value < 0.4) return [];
+      const t = time.value, out = [];
+      for (const f of fhomes) {
+        if (Math.abs(f.x - px) > r + 4 || Math.abs(f.z - pz) > r + 4) continue;
+        const q = fireflyAt(f, t);
+        if (Math.hypot(q.x - px, q.z - pz) < r) out.push({ ...q, seed: f.seed });
+      }
+      return out;
     },
     update(x, z, clock, sunAltitude) {
       if (!centre || Math.hypot(x - centre.x, z - centre.z) > REGROW_M) settle(x, z);
