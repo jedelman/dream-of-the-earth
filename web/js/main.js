@@ -46,7 +46,7 @@ import { buildBag } from "./bag.js";
 import { makeAtlasRecord, parseAtlasRecord, mergeAtlas, mergeBeen, atlasKey } from "./atlas-record.js";
 import { BORN, ASLEEP, WAKER, bornOf, asleep, effective, bornStats, maxDepth, spawnAround } from "./birth.js";
 import { buildFinds, FIND_COLOUR } from "./finds.js";
-import { ensureKoppen, koppenAt } from "./koppen.js";
+import { ensureKoppen, koppenAt, koppenLoaded } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
 import { ensureBasins, basinAt, basinByKey, knowLine, areaText, endsText } from "./basins.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem, portalFor, nextPortalAt } from "./inventory.js";
@@ -1345,7 +1345,8 @@ function gateLines() {
 }
 
 // ---- Riding the highways (ley-space) ----
-/** Onto a highway: by flying along it or tapping it ("board"), or from a ring's lane (checked: already allowed). */
+/** Onto a highway: by flying along it with wings ("board"), or from a ring's lane (checked: already allowed). Never from the
+ *  ground: the stones at its node are the way on (Jason, 11-10). */
 function boardRide(c, checked = false) {
   if (!checked && !go("board")) return;
   clearTarget();
@@ -1363,7 +1364,20 @@ function rideStep(dt) {
   if (r.leaving) return;
   const { turn, thrust, up } = input();
   state.hopCooldown -= dt;
-  if ((up < 0 || thrust < 0) && r.age > 0.6) return leaveRide(false);
+  const off = (up < 0 || thrust < 0) && r.age > 0.6, pressed = off && !r.offWas;
+  r.offWas = off;
+  if (pressed) {
+    // Over open sea, with no swim and no wings, stepping off strands you (there's no getting back on from below): say so
+    // once, and let a second press mean it.
+    const ll = rideLatLon(r);
+    ensureKoppen(ll.lat, ll.lon, 1);
+    if (!r.warned && wings() === 0 && body().swim === 0 && koppenLoaded(ll.lat, ll.lon) && koppenAt(ll.lat, ll.lon) === 0) {
+      r.warned = true;
+      logLine(`Below is open sea, and your swim sleeps: you'd be adrift, and a highway takes you only from a ley node. Ride on to the node, or step off again (${pad.using ? "B" : COARSE ? "▼" : "Shift"}) to drop anyway.`, "highway");
+      return;
+    }
+    return leaveRide(false);
+  }
   if (turn !== 0 && state.hopCooldown <= 0) {
     const h = hop(r, turn);
     if (h) { state.ride = h; state.hopCooldown = 1.2; return; }
@@ -1400,7 +1414,7 @@ function leaveRide(arrived) {
     logLine(arrived ? `You arrive at ${nodeTitle(ll)}.` : "You step off the highway.", "highway");
     // Down over open sea with a sleeping swim and no wings: say how to get out (the line is still overhead).
     if (!arrived && w.terrain.heightAt(0, 0) < -20 && wings() === 0 && body().swim === 0) {
-      logLine(`Open sea, and your swim sleeps. The highway is still overhead: touch it (${pad.using ? "X" : COARSE ? "✦" : "E"}) to ride on. Or your atlas carries you back to anywhere you've been, free.`, "highway");
+      logLine("Open sea, and your swim sleeps. Your atlas carries you back to anywhere you've been, free.", "highway");
     }
     if (arrived) setTimeout(() => setStatus(""), 4000);
   }, () => landBack("the highway"));
@@ -1606,9 +1620,9 @@ function onTap(clientX, clientY) {
     const e = hit.entry, act = () => touchCairn(e);
     return flat(e.x, e.z) < RANGE.artifact ? act() : moveTo({ x: e.x, z: e.z, h: e.y }, { range: RANGE.artifact * 0.6, act });
   }
-  if (hit.kind === "highway") {
-    const act = () => boardTapped(hit.line);
-    return flat(hit.x, hit.z) < RANGE.highway ? act() : moveTo({ x: hit.x, z: hit.z, h: hit.alt }, { range: RANGE.highway * 0.7, act, alt: hit.alt });
+  if (hit.kind === "highway") { // seen, but not boarded from here (Jason, 11-10: "only from the ley node")
+    logLine(wings() > 0 ? "A highway takes you from a ley node's stones, where it starts, or if you fly along it inside its glow." : "A highway takes you only from a ley node's stones, where it starts: follow it to its node.", "highway");
+    return;
   }
   moveTo(hit);
 }
@@ -1754,13 +1768,6 @@ function humWith(being) {
   bursts.emit({ at, colors: [new THREE.Color(0xc9b6ff), new THREE.Color(0x9ef0ff)], n: 18, spread: 6, up: 1, fall: 0.4, life: 3 });
   logLine(beingLine(being.seed, hums++), "sky");
 }
-function boardTapped(line) {
-  const ll = world.frame.toLatLon(state.pos.x, state.pos.z);
-  const c = linesNear(ll.lat, ll.lon, 3000).find((q) => q.line.i === line.i);
-  if (!c) { logLine("The highway is out of reach.", "note"); return; }
-  const tg = tangentEN(line, c.t, 1), fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-  boardRide({ line, t: c.t, dir: tg.e * fx - tg.n * fz >= 0 ? 1 : -1 });
-}
 // ---- Doors to other games (doorways.js, doors.js; Jason, 11-10: "a shrine in Dream can link to the page") ----
 /**
  * Through a door: its game opens in a new tab. A browser opens a tab only from a key, click or tap just pressed, so this
@@ -1839,13 +1846,6 @@ function inReach() {
   for (const e of cairns.near(p.x, p.z, RANGE.artifact)) {
     add({ kind: "artifact", key: `a${e.a.uri}`, d: Math.hypot(e.x - p.x, e.z - p.z), range: RANGE.artifact, entry: e, handle: e.a.handle, own: e.a.own }, e.x, e.z);
   }
-  const ll = world.frame.toLatLon(p.x, p.z);
-  for (const c of seesLey() ? linesNear(ll.lat, ll.lon, RANGE.highway) : []) {
-    const q = vecToLatLon(c.at), l = world.frame.toLocal(q.lat, q.lon);
-    // The glint sits a little way along the line, the way you're facing, so at a node they fan out along the roads.
-    const tg = tangentEN(c.line, c.t, 1), dir = tg.e * fx - tg.n * fz >= 0 ? 30 : -30, gx = l.x + tg.e * dir, gz = l.z - tg.n * dir;
-    add({ kind: "highway", key: `h${c.line.i}`, d: c.meters, range: captureRadius(c.line.cls.rank) + RANGE.highway, line: c.line, x: gx, z: gz, alt: highwayAltitude(world.terrain.heightAt(gx, gz)) }, l.x, l.z);
-  }
   return out;
 }
 /** Where a thing's glint sits: on the near side of a crown, on a butterfly, a sky being, the line overhead. */
@@ -1916,7 +1916,6 @@ function interact() {
   if (c.kind === "shrine") return canDream(c.s) ? enterDream(c.s) : castSpell(c.s);
   if (c.kind === "critter") return touchCritter(c.key);
   if (c.kind === "being") return hum(c.being, c.obj);
-  if (c.kind === "highway") return boardTapped(c.line);
   if (c.kind === "stones") return enterStones(c.c);
   if (c.kind === "door") return openDoor(c.door);
   if (c.kind === "artifact") return touchCairn(c.entry);

@@ -14,7 +14,7 @@ elevation data and run out to the real, curved horizon, under that place's real 
 in the sky. Fly, run and swim with WASD/arrows, Space (up) and Shift (down); on touch, drag and use the ▲▼
 buttons. Tap or click anything to go to it: flyers fly straight over, walkers find a way round lakes and
 cliffs. When you get there it answers: trees shake and drop things, your creature squeaks, butterflies chirp,
-sky beings hum, and highways take you aboard, all told in a little log. M mutes the sounds. The camera
+and sky beings hum, all told in a little log. M mutes the sounds. The camera
 frames what you're doing: low on the ground, banking in the air, a crane down when you arrive somewhere, a low
 angle on a tree you shook, and a slow orbit when you sit still. The design is in
 [`docs/design.md`](docs/design.md).
@@ -44,7 +44,7 @@ your atlas. Clues upstream to each river's source are next.
 **Sky beings:** sparkling eldritch things grown from L-systems drift slowly along every ley line, and everyone
 sees the same one in the same place at the same moment.
 
-**Ley highways:** fly along a gold highway (inside its glow, heading roughly the same way) and it carries you
+**Ley highways:** step into the standing stones at a node (or, with Wings, fly along a highway inside its glow) and it carries you
 into ley-space at absurd speed, 200 km/s on the commonest lines up to 1,600 km/s on the rarest, to the node at
 its end. Shift or S steps off anywhere. Where two highways cross, A/D hops onto the other one. Every node has a
 ring of standing stones under its pillar of light: step in and press E, and the light lifts you, wings or not, to
