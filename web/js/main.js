@@ -48,6 +48,7 @@ import { BORN, ASLEEP, WAKER, bornOf, asleep, effective, bornStats, maxDepth, sp
 import { buildFinds, FIND_COLOUR } from "./finds.js";
 import { ensureKoppen, koppenAt } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
+import { ensureBasins, basinAt, basinByKey, knowLine, areaText, endsText } from "./basins.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem, portalFor, nextPortalAt } from "./inventory.js";
 import { whenText, lunationOf } from "./moon.js";
 import { buildShrines } from "./shrines.js";
@@ -381,13 +382,14 @@ const capital = (s) => s[0].toUpperCase() + s.slice(1);
 // ---- Your atlas: shrines you've found, to travel back to (11-09). Kept on the device and, signed in, in your repo
 // (Jason: "I'm okay with publishing the atlas to the repo!"), so it follows you. ----
 const ATLAS_KEY = "dream.atlas";
-const atlasStored = (() => { try { const v = JSON.parse(localStorage.getItem(ATLAS_KEY) || "{}") || {}; return parseAtlasRecord(makeAtlasRecord(v.shrines || {}, 0, { nodes: v.nodes || {}, marks: v.marks || {} })); } catch { return { shrines: {}, nodes: {}, marks: {} }; } })();
+const atlasStored = (() => { try { const v = JSON.parse(localStorage.getItem(ATLAS_KEY) || "{}") || {}; return parseAtlasRecord(makeAtlasRecord(v.shrines || {}, 0, { nodes: v.nodes || {}, marks: v.marks || {}, basins: v.basins || {} })); } catch { return { shrines: {}, nodes: {}, marks: {}, basins: {} }; } })();
 const found = atlasStored.shrines;
-/** The ley nodes (by index) and landmarks (by name) you've been to, with when you first were (s). */
-const been = { nodes: atlasStored.nodes, marks: atlasStored.marks };
+/** The ley nodes (by index) and landmarks (by name) you've been to, and the basins you know (by key), with when you first
+ *  were (s). */
+const been = { nodes: atlasStored.nodes, marks: atlasStored.marks, basins: atlasStored.basins };
 const placesFound = () => Object.keys(found).length + Object.keys(been.nodes).length + Object.keys(been.marks).length;
 function keepAtlas() {
-  try { localStorage.setItem(ATLAS_KEY, JSON.stringify({ shrines: found, nodes: been.nodes, marks: been.marks })); } catch { /* private mode */ }
+  try { localStorage.setItem(ATLAS_KEY, JSON.stringify({ shrines: found, nodes: been.nodes, marks: been.marks, basins: been.basins })); } catch { /* private mode */ }
   atlasView?.refresh(placesFound());
   globe.setShrines(foundList());
 }
@@ -408,6 +410,21 @@ function discoverPlaces() {
     logLine(`You've been to ${l.name}. It's in your atlas.`, "note");
   }
   if (added) keepAtlas();
+  knowBasin(ll);
+}
+// Watersheds, the first stage (Jason, 11-10: "All 3, in stages"; know, see, enter): the first time you're in a basin you
+// know it. Its name, where its rain goes, and that it begins somewhere upstream (the clues come later); into your atlas.
+const basinHere = { b: null };
+function knowBasin(ll) {
+  ensureBasins(ll.lat, ll.lon).then(() => {
+    const b = basinAt(ll.lat, ll.lon);
+    basinHere.b = b;
+    if (!b || been.basins[b.key] != null) return;
+    been.basins[b.key] = Math.round(realNow());
+    keepAtlas();
+    sound.chime();
+    logLine(knowLine(b), "note");
+  });
 }
 /** Walking up to a shrine puts it in your atlas. */
 function discoverShrines() {
@@ -2250,6 +2267,8 @@ atlasView = buildAtlas({
       const ll = world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn;
       return LANDMARKS.map((l) => ({ key: `mark:${l.name}`, name: l.name, been: been.marks[l.name] != null, metres: metresBetween(ll.lat, ll.lon, l.lat, l.lon) }));
     },
+    basins: () => Object.entries(been.basins).sort((a, b) => a[1] - b[1]).map(([key]) => basinByKey(key)).filter(Boolean)
+      .map((b) => ({ key: b.key, name: b.label, where: `${areaText(b.area)} · ${endsText(b)}`, here: basinHere.b?.key === b.key })),
     travel: travelToShrine,
     globe: () => toGlobe("The whole Earth. Tap a dot to go there."),
   },
@@ -2314,8 +2333,8 @@ async function syncAtlas() {
   mapping.busy = true;
   try {
     const remote = parseAtlasRecord(await account.getAtlas());
-    const merged = mergeAtlas(found, remote?.shrines), mergedBeen = { nodes: mergeBeen(been.nodes, remote?.nodes), marks: mergeBeen(been.marks, remote?.marks) };
-    if (atlasKey(merged, mergedBeen) !== atlasKey(found, been)) { Object.assign(found, merged); Object.assign(been.nodes, mergedBeen.nodes); Object.assign(been.marks, mergedBeen.marks); keepAtlas(); }
+    const merged = mergeAtlas(found, remote?.shrines), mergedBeen = { nodes: mergeBeen(been.nodes, remote?.nodes), marks: mergeBeen(been.marks, remote?.marks), basins: mergeBeen(been.basins, remote?.basins) };
+    if (atlasKey(merged, mergedBeen) !== atlasKey(found, been)) { Object.assign(found, merged); for (const k of ["nodes", "marks", "basins"]) Object.assign(been[k], mergedBeen[k]); keepAtlas(); }
     if (!remote || atlasKey(found, been) !== atlasKey(remote.shrines, remote)) await account.putAtlas(makeAtlasRecord(found, Date.now(), been));
     mapping.synced = atlasKey(found, been);
   } catch (e) { console.warn("atlas:", e.message); }
@@ -2732,7 +2751,7 @@ function updateHud() {
     lines.push(quiet ? "" : `${where} · ${height}${fold}`, sky, targetLine(), spellsLine(), COARSE ? zoomNote() : zoomLine());
     if (hudMore) {
       const { node, meters } = nearestNode(ll.lat, ll.lon), cls = CLASSES.filter((c) => node.classes.has(c.id)).map((c) => c.name).join(" + ");
-      lines.push(`${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)} · ${Math.round(state.pos.y)} M · ${k ? koppenCode(k) : "—"}`,
+      lines.push(`${ll.lat.toFixed(3)}, ${ll.lon.toFixed(3)} · ${Math.round(state.pos.y)} M · ${k ? koppenCode(k) : "—"}${basinHere.b && ground >= 0 ? ` · ${basinHere.b.label.toUpperCase()}` : ""}`,
         `${detail.fps} FPS${detail.scale < DETAIL_MAX ? ` · FORESTS ${Math.round(detail.scale * 100)}%` : ""} · LEY NODE ${(meters / 1000).toFixed(1)} KM: ${(placeOfNode(node) ?? cls).toUpperCase()}`, statsLines());
     }
   }
@@ -2853,9 +2872,29 @@ function openHelp() {
     ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
     ...group("On a phone", [["Drag", "move and turn"], ["Tap", "go there; close enough, it answers"], ["Pinch", "the camera nearer or farther"], ["✦", "touch what glints"], ["▲ ▼", "show when they do something, and say what (jump, fly, climb; crouch, dive, step off, let go)"], ["☰", "the menus; a dot means something new came"], ["Tilt to steer (in ☰)", "tip the phone to turn, away to go, toward you to slow; a shake squeaks"]]),
     ...group("A controller", [["Left stick", "move and turn"], ["Right stick", "turn; up or down, the camera nearer or farther (or LB · RB)"], ["A", "jump; with Wings, take off and climb; in a ley node's ring, set off"], ["B", "crouch; flying, go down; on a highway, step off; in a ring, let go"], ["X · Y", "touch what glints · take a picture"], ["D-pad", "moves like the left stick (in a ley node's ring: left and right choose, up sets off)"], ["Start", "into the menus (again to leave): the D-pad walks them, A presses, B closes"], ["Back", "Esc"]]),
-    ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: fly along one to ride it)"], ["ATLAS ▾", "places you've found, to travel back to"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
+    ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: fly along one to ride it)"], ["ATLAS ▾", "places you've found, to travel back to, and the river basins you know"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
+    h("details", { class: "credits" }, h("summary", {}, "Credits"), ...credits()),
   ], { trigger: helpBtn, classes: ["help"] });
 }
+// The data the world is made of, and whose it is (docs/design.md has the licences). The terrain's block is the one its
+// makers require (tilezen/joerd, docs/attribution.md, which the AWS Open Data listing gives as the licence).
+const credits = () => [
+  h("p", {}, "Terrain: Terrain Tiles (Mapzen, a Linux Foundation project), on AWS Open Data. River basins are worked out from them and from Natural Earth's rivers (scripts/basins)."),
+  h("pre", {}, `* ArcticDEM terrain data DEM(s) were created from DigitalGlobe, Inc., imagery and funded under National Science Foundation awards 1043681, 1559691, and 1542736;
+* Australia terrain data © Commonwealth of Australia (Geoscience Australia) 2017;
+* Austria terrain data © offene Daten Österreichs – Digitales Geländemodell (DGM) Österreich;
+* Canada terrain data contains information licensed under the Open Government Licence – Canada;
+* Europe terrain data produced using Copernicus data and information funded by the European Union - EU-DEM layers;
+* Global ETOPO1 terrain data U.S. National Oceanic and Atmospheric Administration
+* Mexico terrain data source: INEGI, Continental relief, 2016;
+* New Zealand terrain data Copyright 2011 Crown copyright (c) Land Information New Zealand and the New Zealand Government (All rights reserved);
+* Norway terrain data © Kartverket;
+* United Kingdom terrain data © Environment Agency copyright and/or database right 2015. All rights reserved;
+* United States 3DEP (formerly NED) and global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey.`),
+  h("p", {}, "Climate: Köppen-Geiger classification, 1991–2020 (Beck et al. 2023, Scientific Data 10:724)."),
+  h("p", {}, "Made with Natural Earth: rivers, lakes, places and regions (the ley nodes' and the basins' names)."),
+  h("p", {}, "Ley lines: leylines-solids (Joerg Roth, Apache-2.0), after Becker & Hagens and Leland. Rendering: three.js (MIT). Sign-in: @atproto/oauth-client-browser (MIT). Artifacts are found through Constellation (microcosm); mutuals through Bluesky's public AppView."),
+];
 helpBtn.addEventListener("click", openHelp);
 // The hint at the bottom fades once you've moved or after half a minute; ? HELP keeps the rest.
 // On a touch screen the hint is the log's first line, fading with the rest (so the two never overlap).

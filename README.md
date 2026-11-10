@@ -37,6 +37,10 @@ where they belong, the same on every phone: kapok and banyan over the rainforest
 the savanna, saguaro in the desert, spreading oaks, cypress flames, giant sequoias and spruce spires. Butterflies of four triangles fly by day, and
 fireflies blink at night.
 
+**Watersheds:** every bit of land drains somewhere. The first time you're in one of 321 river basins (worked out from
+the terrain and Natural Earth's rivers, `scripts/basins`), you know it: its name, its size, where its rain goes. It goes in
+your atlas. Clues upstream to each river's source are next.
+
 **Sky beings:** sparkling eldritch things grown from L-systems drift slowly along every ley line, and everyone
 sees the same one in the same place at the same moment.
 
