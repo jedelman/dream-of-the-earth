@@ -22,7 +22,11 @@ Needs Python 3 with numpy and Pillow, and Node. Each step prints a line to check
 6. `python3 -I scripts/basins/names.py out ne web/data/basins` names them and writes the tiles and `basins.json`.
    Prints `321 basins: 194 rivers, 23 lakes, 71 hollows, 33 coasts`.
 
-`npm test` (`test/basins.test.js`) checks the result: the tiles and the list agree, fifteen places whose river everyone
+7. `python3 -I scripts/basins/quests.py out ne web/data/basins` sets the river quests' waymarks up each river's main stem
+   (on Natural Earth's line of the river), with the river's local name and the nearest town at each, the source, the
+   stem simplified, and the river's song. Prints `217 quests, 917 waymarks, 6358 stem points; 223 KB`.
+
+`npm test` (`test/basins.test.js`, `test/quests.test.js`) checks the result: the tiles and the list agree, fifteen places whose river everyone
 knows are in its basin, and four main stems end where those rivers are said to begin.
 
 ## Why the flood is shaped the way it is

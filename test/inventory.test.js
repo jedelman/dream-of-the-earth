@@ -62,7 +62,7 @@ test("when the next moonseed falls: now if one is due, else the next window that
 test("a new creature starts wearing a prism; a pouch from before is given one", () => {
   const a = firstInventory(fullMoon);
   assert.equal(countOf(a, "prism"), 1);
-  assert.deepEqual(wornOf(a), ["prism"]);
+  assert.deepEqual(wornOf(a), ["prism", "rivercompass"]);
   assert.equal(a.kit, KIT);
   assert.equal(kitUp(a), a, "nothing to add");
   const old = kitUp({ items: { moonseed: 4 }, lunation: 333 });
@@ -98,6 +98,8 @@ test("portals: everyone starts with one (older pouches are given one, once); one
   const old = kitUp({ items: { moonseed: 1, prism: 1 }, worn: ["prism"], kit: 1, lunation: 333 });
   assert.equal(countOf(old, "portal"), 1);
   assert.equal(countOf(kitUp(old), "portal"), 1, "only once");
+  assert.equal(countOf(old, "rivercompass"), 1, "and a river compass (kit 3), worn beside the prism");
+  assert.deepEqual(wornOf(old), ["prism", "rivercompass"]);
   const full = nearestFullMoon(newMoon + SYNODIC_S / 2);
   assert.ok(portalFalls(full) && !portalFalls(newMoon));
   let inv = { items: {}, lunation: -1, portalMoon: -1 };

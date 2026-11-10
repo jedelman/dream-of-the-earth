@@ -75,6 +75,20 @@ const BUILD = {
     }
     return (t) => flowers.forEach((f, i) => { f.rotation.y = t * 1.2 + i; });
   },
+  /** The river compass: a bronze disc hung at your front, its blue needle swimming. */
+  rivercompass(parts, pivots, box, H) {
+    const body = pivots[0], r = Math.max(0.16, 0.12 * H);
+    const front = box.min.z * 0.92, y = box.max.y * 0.25;
+    const disc = new THREE.Mesh(solid(new THREE.CylinderGeometry(1, 1, 0.3, 8)), mat(0xc08a3e, 0.35, { shininess: 80 }));
+    disc.scale.setScalar(r);
+    disc.rotation.x = Math.PI / 2;
+    disc.position.set(0, y, front);
+    const needle = new THREE.Mesh(solid(new THREE.OctahedronGeometry(1, 0)), mat(0x6fd8ff, 0.8, { shininess: 120 }));
+    needle.scale.set(r * 0.18, r * 0.8, r * 0.1);
+    needle.position.set(0, y, front - r * 0.2);
+    body.add(disc, needle);
+    return (t) => { needle.rotation.z = Math.sin(t * 1.3) * 0.5 + Math.sin(t * 3.1) * 0.12; };
+  },
   /** The owl's eye: a great amber eye on your brow, and two feather tufts over it. */
   owleye(parts, pivots, box, H) {
     const head = parts.findIndex((p) => p.kind === "head");
