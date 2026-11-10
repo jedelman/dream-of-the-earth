@@ -41,6 +41,18 @@ export async function ensureKoppen(lat, lon, radiusDeg = 6) {
   }));
 }
 
+/** Make sure every tile is loaded: the whole Earth, for the atlas's map (72 tiles, about 390 KB, fetched once). */
+export async function ensureKoppenAll() {
+  const all = [];
+  for (let col = 0; col < 12; col++) for (let row = 0; row < 6; row++) {
+    const key = `${col}-${row}`;
+    if (tiles.has(key)) continue;
+    if (!pending.has(key)) pending.set(key, loadTile(col, row).then((t) => tiles.set(key, t)).catch(() => tiles.set(key, null)).finally(() => pending.delete(key)));
+    all.push(pending.get(key));
+  }
+  await Promise.all(all);
+}
+
 /** Whether the tile under a point is loaded (so a 0 from koppenAt means sea or no data, not "not yet"). */
 export const koppenLoaded = (lat, lon) => !!tiles.get(tileKey(lat, lon).key);
 

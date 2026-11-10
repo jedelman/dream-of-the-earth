@@ -891,6 +891,30 @@ special shrine and unique unlock"; the compasses, "You choose! Different compass
   shrine, veiled until you've found the clues, whose unlock is that river's own; then seeing basins (their edges, the
   water's way) and entering them (riding a river), and the other compasses.
 
+### The atlas as a map, clouded where you haven't been (built 11-10)
+Jason: "For the atlas, let's offer it as a map only - but anything not visited is fogged/clouded over." (`fog.js`,
+`atlas.js`, the hooks in `main.js`.)
+- **Where you've been:** the Earth in cells of a quarter degree (about 28 km; 1,440 × 720). Every 3 s the cell you're
+  standing in is seen (not on a highway: ley-space shows nothing of the ground). Seen cells go in your atlas record as
+  `seen`, cell numbers, earliest first, at most 10,000 (some 7.8 million km² walked); a change to the
+  `org.jason-edelman.dream.atlas` lexicon. Devices merge them. The record is written at most every 30 s now, since a
+  flier crosses cells often.
+- **The map:** the Earth coloured as its land is (each cell's Köppen class through `biomeFor`, so the map's colours are
+  the world's), under lumpy lavender-white cloud. Within 1.6 cells (about 45 km) of a seen cell, and of every place in
+  your atlas and where you stand, the cloud is cut away, with a thin rim of mist. Far out, where a clear patch is
+  smaller than a pixel, each seen cell is drawn as a speck of its land, so the whole Earth shows where you've been. The
+  Köppen tiles for the whole Earth (72, about 390 KB) load the first time it opens; the cloud and land are drawn a cell
+  to a pixel and scaled up unsmoothed, pixel art like the rest.
+- **Using it:** it opens on you, about 10° across. Drag (or a stick) moves it; the wheel, a pinch, + and −, or LB · RB
+  zoom, from the whole Earth to a cell 16 px across; ◎ comes back to you. The places you can travel back to (shrines
+  found, ley nodes and landmarks you've been to) are marks: tap one, or reach it with the D-pad and press A, and Go
+  appears with its name and distance (and takes the focus, so A again goes). Tap anywhere clear for what's there: "The
+  Amazon River basin: 5.9 million km²; its rain reaches the sea at the mouth of the Amazon River" if you know that
+  basin, else the sea, or a basin you haven't come to know. Tap the cloud: "Cloud. You haven't been here yet."
+- **What went:** the lists. The landmarks you hadn't been to were listed as "Still to find"; now they're under cloud
+  with everything else. A line under the map keeps the tally (shrines, ley nodes, landmarks of 22, river basins of 321).
+  "Show on the globe" stays.
+
 ### Highways from the stones only (fixed 11-10)
 Jason: "we shouldn't be able to board a highway from the ground, only from the ley node." Touching a highway (its glint,
 E / ✦ / X) and tapping it used to board it from anywhere underneath. Both are gone: a ley node's stones are the way on.

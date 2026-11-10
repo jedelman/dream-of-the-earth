@@ -41,6 +41,9 @@ fireflies blink at night.
 the terrain and Natural Earth's rivers, `scripts/basins`), you know it: its name, its size, where its rain goes. It goes in
 your atlas. Clues upstream to each river's source are next.
 
+**Your atlas** is a map of where you've been: the Earth in its climate's colours, under cloud everywhere else. The
+shrines, ley nodes and landmarks you've found are marked on it, to tap and travel back to.
+
 **Sky beings:** sparkling eldritch things grown from L-systems drift slowly along every ley line, and everyone
 sees the same one in the same place at the same moment.
 

@@ -58,6 +58,9 @@ export function basinAt(lat, lon) {
   return t ? byId.get(t[y * 300 + x]) ?? null : null;
 }
 
+/** How many basins are named (0 until the list is loaded). */
+export const basinTotal = () => list?.basins.length ?? 0;
+
 /** A basin by its key (as your atlas keeps it), or null. */
 export const basinByKey = (key) => list?.basins.find((b) => b.key === key) ?? null;
 
