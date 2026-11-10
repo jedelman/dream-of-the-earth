@@ -227,7 +227,7 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
   unexpectedly"):** sky beings drift along their lines at 25 m/s, so a 25 km trip used to arrive where the being
   had been ~10 km earlier, hum at nothing, and stop. A trip to a sky being now steers for where it is (through
   world regrows too); a walker who arrives and finds it gone sets off again. Highways don't snatch you while
-  you're on a tap-to-move trip (tapping a highway still boards it): chasing a being along its line put you above
+  you're on a tap-to-move trip (tapping a highway boarded it then; since 11-10 nothing boards from the ground): chasing a being along its line put you above
   that line, in line with it and sometimes within capture height.
 - **Touching things (built 11-08, Jason: "Tap to move, but also when within range, maybe trees shake, creatures
   squeak, and you get on the highway? Maybe also a little text to describe the results - a light on screen log a
@@ -242,8 +242,8 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
   - **Your creature** squeaks (higher for smaller creatures), hops, and sparkles; it has a name now, grown from
     its seed like everything else (seed 7 is Nyo).
   - **Butterflies** chirp and sparkle in their own colour. **Sky beings** (within 3 km) hum back, two low voices
-    slightly apart. **Highways** (within 170 m) take you aboard, any creature, wings or not, in the direction
-    closest to your heading.
+    slightly apart. **Highways** took you aboard when touched (within 170 m), any creature, wings or not; since 11-10
+    they don't (see "Highways from the stones only" below).
   - **Sounds** are synthesized with WebAudio (no files), start on the first tap or key, and M mutes (remembered).
   - **The log:** a few lines bottom-left that fade after 7 s, coloured by kind (trees green, creatures pink,
     highways gold, sky lavender). It also tells you about boarding and leaving highways, arriving at nodes,
@@ -526,8 +526,8 @@ point of cheating at a cozy exploration game?"
   mutual's come over the wire as words in their intent (`creature.worn`, at most two known names), never geometry:
   nothing untrusted to cap. They're small (the prism is 8 triangles) and outside the 256-triangle body cap.
 - **The prism,** the first thing to wear: it hangs over your head, turning, cycling through the colours. While you
-  wear it the ley lines exist for you: the highways and their pillars of light, their glints, boarding them by tap, E
-  or flying into one, and the gold grid on the globe. Take it off and they're gone, as if they'd never been (a mutual
+  wear it the ley lines exist for you: the highways and their pillars of light, boarding them (from a node's stones, or
+  flying into one with Wings), and the gold grid on the globe. Take it off and they're gone, as if they'd never been (a mutual
   riding one is seen flying along nothing). Every creature starts with one, worn; a pouch from before is given one
   once (`kit`, the starting kit's version).
 - **Your atlas in your repo** (`atlas-record.js`): one record, `org.jason-edelman.dream.atlas/self`, the shrines you've
@@ -890,6 +890,14 @@ special shrine and unique unlock"; the compasses, "You choose! Different compass
 - **Next:** clues along each main stem from the mouth to the source, a river compass to wear, and at the headwaters a
   shrine, veiled until you've found the clues, whose unlock is that river's own; then seeing basins (their edges, the
   water's way) and entering them (riding a river), and the other compasses.
+
+### Highways from the stones only (fixed 11-10)
+Jason: "we shouldn't be able to board a highway from the ground, only from the ley node." Touching a highway (its glint,
+E / ✦ / X) and tapping it used to board it from anywhere underneath. Both are gone: a ley node's stones are the way on.
+Tapping a highway now says so ("A highway takes you only from a ley node's stones, where it starts: follow it to its
+node"). Flying along one inside its glow still takes you, which needs Wings and the highway's height (900 m up at the
+least), so never from the ground. Stepping off a ride over open sea, with no swim and no wings, now asks twice (there's
+no getting back on from below), as letting go of a ring over the sea already did; the atlas is the way home from there.
 
 ### A door to the Shinjuku Megadungeon (built 11-10)
 Jason, on his other game (Shinjuku Station as a PS1-style dungeon, played as a 30 cm kitten): "a shrine in Dream can

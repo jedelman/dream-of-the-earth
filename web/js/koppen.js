@@ -41,6 +41,9 @@ export async function ensureKoppen(lat, lon, radiusDeg = 6) {
   }));
 }
 
+/** Whether the tile under a point is loaded (so a 0 from koppenAt means sea or no data, not "not yet"). */
+export const koppenLoaded = (lat, lon) => !!tiles.get(tileKey(lat, lon).key);
+
 /** The Köppen class at a point (0 if sea, no data, or its tile isn't loaded). */
 export function koppenAt(lat, lon) {
   const { col, row, key } = tileKey(lat, lon);

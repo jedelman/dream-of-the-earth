@@ -30,7 +30,8 @@ test("creatures have names; everything else has a line", () => {
   assert.match(butterflyLine(0.9, 3), /pink butterfly/);
   assert.ok(beingLine(5).length > 10);
   assert.equal(highwayLine("Becker-Hagens", 1234.4), "You step onto the Becker-Hagens highway. 1,234 km to the next node.");
-  assert.ok(RANGE.highway >= 150 && RANGE.tree > 10);
+  assert.ok(RANGE.tree > 10);
+  assert.equal(RANGE.highway, undefined, "highways aren't touched: a ley node's stones are the way on (11-10)");
 });
 
 test("every thing in reach has words for the prompt", () => {
@@ -42,7 +43,6 @@ test("every thing in reach has words for the prompt", () => {
   assert.equal(promptFor({ kind: "tree", species: "carnegiea" }), "Hug the saguaro");
   assert.equal(promptFor({ kind: "butterfly", hue: 0.9 }), "Greet the pink butterfly");
   assert.equal(promptFor({ kind: "being" }), "Hum to the sky being");
-  assert.equal(promptFor({ kind: "highway" }), "Board the highway");
   assert.equal(promptFor({ kind: "ride" }), "Step off");
 });
 
@@ -51,9 +51,9 @@ test("the prompt goes to what's close and in front, and small things beat big on
   const behind = { key: "b", kind: "tree", species: "quercus", d: 8, range: 28, facing: -1 };
   assert.equal(chooseFocus([behind, ahead]), ahead, "facing counts for more than a few metres");
   const being = { key: "s", kind: "being", d: 400, range: 3000, facing: 1 };
-  const highway = { key: "h", kind: "highway", d: 60, range: 320, facing: 1 };
-  assert.equal(chooseFocus([being, highway, ahead]), ahead, "the tree beside you, not the highway overhead");
-  assert.equal(chooseFocus([being, highway]), highway);
+  const stones = { key: "h", kind: "stones", d: 8, range: 24, facing: 1 };
+  assert.equal(chooseFocus([being, ahead]), ahead, "the tree beside you, not the sky being on the horizon");
+  assert.equal(chooseFocus([being, stones]), stones);
   assert.equal(chooseFocus([]), null);
   const shrub = { key: "r", kind: "tree", species: "shrub", d: 10, range: 21, facing: 1 };
   assert.ok(focusScore(shrub) > focusScore({ ...shrub, species: "picea" }), "a shrub gives way to a tree");
