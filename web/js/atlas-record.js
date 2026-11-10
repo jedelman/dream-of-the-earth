@@ -1,11 +1,12 @@
 // Your atlas in your repo (Jason, 11-09: "I'm okay with publishing the atlas to the repo! I guess it means bots can
 // wall hack but what's the point of cheating at a cozy exploration game?"). One record,
 // org.jason-edelman.dream.atlas/self, overwritten: the shrines, ley nodes and landmarks you've been to, and the river
-// basins you know (11-10), so your atlas
+// basins you know (11-10), and the cells of the Earth you've stood in, that the map clears of cloud (11-10), so your atlas
 // follows you to any device. Read only from your own repo; never indexed or shown to anyone else by the game (a repo is
 // public, so anyone who looks can see it). Devices merge: a place found on any of them is found. Pure, so Node can test it.
 import { SPELLS } from "./shrinelore.js";
 import { LANDMARKS } from "./landmarks.js";
+import { isCell, SEEN_MAX } from "./fog.js";
 
 /** Landmarks you can have been to, by name. */
 const LANDMARK_NAMES = new Set(LANDMARKS.map((l) => l.name));
@@ -23,10 +24,10 @@ const BASIN_KEY = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /**
  * found: { [key]: { lat, lon, spell, at (s) } }, the shrines; been: { nodes: { [index]: at }, marks: { [name]: at },
- * basins: { [key]: at } }, the ley nodes and landmarks you've been to and the basins you know -> a record (the earliest
- * first, up to ATLAS_MAX of each).
+ * basins: { [key]: at }, seen: Set (or array) of cells }, the ley nodes and landmarks you've been to, the basins you
+ * know and where you've stood -> a record (the earliest first, up to ATLAS_MAX of each, SEEN_MAX cells).
  */
-export function makeAtlasRecord(found, at = Date.now(), been = { nodes: {}, marks: {}, basins: {} }) {
+export function makeAtlasRecord(found, at = Date.now(), been = { nodes: {}, marks: {}, basins: {}, seen: new Set() }) {
   const shrines = Object.entries(found)
     .filter(([key, f]) => KEY.test(key) && SPELLS[f.spell])
     .sort((a, b) => (a[1].at ?? 0) - (b[1].at ?? 0))
@@ -35,12 +36,13 @@ export function makeAtlasRecord(found, at = Date.now(), been = { nodes: {}, mark
   const nodes = Object.entries(been.nodes ?? {}).filter(([i]) => /^\d{1,4}$/.test(i)).sort((a, b) => a[1] - b[1]).slice(0, ATLAS_MAX).map(([i, t]) => ({ i: Number(i), at: Math.round(t) }));
   const landmarks = Object.entries(been.marks ?? {}).filter(([n]) => LANDMARK_NAMES.has(n)).sort((a, b) => a[1] - b[1]).slice(0, ATLAS_MAX).map(([name, t]) => ({ name, at: Math.round(t) }));
   const basins = Object.entries(been.basins ?? {}).filter(([k]) => BASIN_KEY.test(k)).sort((a, b) => a[1] - b[1]).slice(0, ATLAS_MAX).map(([key, t]) => ({ key, at: Math.round(t) }));
-  return { $type: ATLAS_NSID, shrines, nodes, landmarks, basins, updatedAt: new Date(at).toISOString() };
+  const seen = [...(been.seen ?? [])].filter(isCell).slice(0, SEEN_MAX);
+  return { $type: ATLAS_NSID, shrines, nodes, landmarks, basins, seen, updatedAt: new Date(at).toISOString() };
 }
 
 /**
  * An atlas record, checked: { shrines: { [key]: { lat, lon, spell, at } }, nodes: { [index]: at }, marks: { [name]: at },
- * basins: { [key]: at } } or null. Bad entries are dropped (landmarks only by names the game knows).
+ * basins: { [key]: at }, seen: Set of cells } or null. Bad entries are dropped (landmarks only by names the game knows).
  */
 export function parseAtlasRecord(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
@@ -58,8 +60,12 @@ export function parseAtlasRecord(v) {
   if (Array.isArray(v.nodes)) for (const n of v.nodes.slice(0, ATLAS_MAX)) if (n && int(n.i, 0, 9999) && int(n.at, 0, 1e11)) nodes[n.i] = n.at;
   if (Array.isArray(v.landmarks)) for (const m of v.landmarks.slice(0, ATLAS_MAX)) if (m && typeof m.name === "string" && LANDMARK_NAMES.has(m.name) && int(m.at, 0, 1e11)) marks[m.name] = m.at;
   if (Array.isArray(v.basins)) for (const b of v.basins.slice(0, ATLAS_MAX)) if (b && typeof b.key === "string" && BASIN_KEY.test(b.key) && int(b.at, 0, 1e11)) basins[b.key] = b.at;
-  return { shrines, nodes, marks, basins };
+  const seen = new Set(Array.isArray(v.seen) ? v.seen.slice(0, SEEN_MAX).filter(isCell) : []);
+  return { shrines, nodes, marks, basins, seen };
 }
+
+/** Two sets of seen cells as one. */
+export const mergeSeen = (a = new Set(), b = new Set()) => new Set([...a, ...b]);
 
 /** Two atlases as one: every place in either, each found when it was first found. */
 export function mergeAtlas(a, b) {
@@ -76,4 +82,5 @@ export function mergeBeen(a = {}, b = {}) {
 }
 
 /** What identifies an atlas's contents (its places), to tell whether it needs writing. */
-export const atlasKey = (shrines, been = { nodes: {}, marks: {}, basins: {} }) => [Object.keys(shrines).sort().join(","), ...["nodes", "marks", "basins"].map((k) => Object.keys(been[k] ?? {}).sort().join(","))].join("|");
+export const atlasKey = (shrines, been = { nodes: {}, marks: {}, basins: {} }) => [Object.keys(shrines).sort().join(","), ...["nodes", "marks", "basins"].map((k) => Object.keys(been[k] ?? {}).sort().join(",")), `${been.seen?.size ?? 0} seen`].join("|");
+// (Seen cells only ever grow, and a merge holds both sides, so their count tells whether they changed.)

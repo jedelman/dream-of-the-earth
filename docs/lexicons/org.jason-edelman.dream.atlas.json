@@ -68,6 +68,7 @@
           },
           "nodes": { "type": "array", "maxLength": 2000, "description": "Ley nodes you've been to (within 2 km, or arrived at on a highway), by their index in the network, earliest first.", "items": { "type": "object", "required": ["i", "at"], "properties": { "i": { "type": "integer", "minimum": 0 }, "at": { "type": "integer", "minimum": 0 } } } },
           "landmarks": { "type": "array", "maxLength": 2000, "description": "Landmarks you've been to (within 3 km), by name, earliest first.", "items": { "type": "object", "required": ["name", "at"], "properties": { "name": { "type": "string", "maxLength": 120 }, "at": { "type": "integer", "minimum": 0 } } } },
+          "seen": { "type": "array", "maxLength": 10000, "description": "Where you've stood: cells of a quarter degree (row from the north times 1440, plus column from 180° W; 0 to 1036799), earliest first. The atlas's map clears its clouds round them.", "items": { "type": "integer", "minimum": 0, "maximum": 1036799 } },
           "basins": { "type": "array", "maxLength": 2000, "description": "River basins you know (you've been in), by key (the basin's name, lower case and hyphenated: 'amazon-river', 'lake-chad'), earliest first.", "items": { "type": "object", "required": ["key", "at"], "properties": { "key": { "type": "string", "maxLength": 64 }, "at": { "type": "integer", "minimum": 0 } } } },
           "updatedAt": {
             "type": "string",

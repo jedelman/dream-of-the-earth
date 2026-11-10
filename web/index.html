@@ -96,6 +96,22 @@
   .item-portal { border-radius: 50%; border: 3px solid #b38bff; box-shadow: 0 0 6px #b38bff, inset 0 0 4px #fff; box-sizing: border-box; }
   .sheet.atlas h3 { font-size: 12px; margin: 10px 0 2px; color: #fff1c4; letter-spacing: .04em; }
   .sheet.atlas .swatch.node { background: #ffe9a8; transform: rotate(45deg) scale(.8); } .sheet.atlas .swatch.mark { background: #b9f0ff; border-radius: 50%; }
+  /* The atlas as a map: the climate's colours under cloud, the places you've found as marks to tap */
+  .sheet.atlas { width: min(calc(100vw - 20px), 560px); }
+  .sheet.atlas .map { position: relative; height: min(56vh, 380px); overflow: hidden; touch-action: none; cursor: grab; border: 1px solid rgba(255, 233, 168, .45); background: #1a2350; outline: none; }
+  .sheet.atlas .map:focus-visible { border-color: var(--gold); }
+  .sheet.atlas .map canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+  .sheet.atlas .map .mark { position: absolute; width: 12px; height: 12px; min-height: 0; margin: -6px 0 0 -6px; padding: 0; border: 1px solid rgba(0, 0, 0, .7); box-shadow: 0 0 0 1px rgba(255, 255, 255, .55); cursor: pointer; min-width: 0; }
+  .sheet.atlas .map .mark.node { background: #ffe9a8; transform: rotate(45deg); }
+  .sheet.atlas .map .mark.mark { background: #b9f0ff; border-radius: 50%; }
+  .sheet.atlas .map .mark.on, .sheet.atlas .map .mark.padfocus, .sheet.atlas .map .mark:focus-visible { box-shadow: 0 0 0 2px var(--gold), 0 0 8px var(--gold); }
+  .sheet.atlas .map .you { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #ff8fd0; box-shadow: 0 0 0 2px #fff, 0 0 10px #ff8fd0; pointer-events: none; animation: atlas-you 1.6s ease-in-out infinite; }
+  @keyframes atlas-you { 50% { box-shadow: 0 0 0 2px #fff, 0 0 16px 4px #ff8fd0; } }
+  @media (prefers-reduced-motion: reduce) { .sheet.atlas .map .you { animation: none; } }
+  .sheet.atlas .map .zoom { position: absolute; right: 6px; top: 6px; display: flex; flex-direction: column; gap: 4px; }
+  .sheet.atlas .map .zoombtn { width: 28px; height: 28px; min-height: 0; padding: 0; font-size: 15px; line-height: 1; background: rgba(14, 8, 30, .85); }
+  .sheet.atlas .caption { min-height: 2.6em; margin: 6px 0 2px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .sheet.atlas .caption .who { color: #fff1c4; } .sheet.atlas .caption .go { padding: 4px 12px; min-height: 28px; }
   .sheet.atlas .swatch.basin { background: linear-gradient(#7fd3ff, #2f7fc4); border-radius: 50% 50% 50% 0; transform: rotate(-45deg) scale(.85); } /* a drop */
   .sheet.help .credits { font-size: 11px; line-height: 1.5; opacity: .9; } .sheet.help .credits pre { white-space: pre-wrap; font-size: 10px; margin: 4px 0 8px; }
   .sheet.atlas li.unseen { opacity: .55; } .sheet.atlas summary { cursor: pointer; font-size: 12px; margin-top: 6px; }
