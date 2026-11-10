@@ -15,6 +15,7 @@ import { buildHighways } from "./highways.js";
 import { buildRideFx, LEY_ALT } from "./ridefx.js";
 import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, crossings, tangentEN, highwayAltitude, captureRadius, lineAt, lineCount, linesNear, lanesAt, laneFacing } from "./ride.js";
 import { buildStones, CIRCLE_R } from "./stones.js";
+import { buildDoors } from "./doors.js";
 import { placeOfNode } from "./nodenames.js";
 import { next as nextMode, travelOf, can as modeAllows, viewOf as cameraRegion } from "./modes.js";
 import { readPad, firstPad, stepFocusSpatial, dpadAxes, startAction } from "./gamepad.js";
@@ -566,10 +567,11 @@ async function buildWorld(lat, lon) {
   const shrines = buildShrines(frame, terrain);
   const finds = buildFinds(frame, terrain);
   finds.setTaken((f) => tookHere(inv, f.key, realNow())); // one you've had this moon isn't there for you
+  const doors = buildDoors(frame, terrain);
   const group = new THREE.Group();
-  group.add(terrain.mesh, highways.group, stones.group, beings.group, plants.group, insects.group, critters.group, shrines.group, finds.group);
+  group.add(terrain.mesh, highways.group, stones.group, beings.group, plants.group, insects.group, critters.group, shrines.group, finds.group, doors.group);
   layerTransparent(group); // glows, sparkles and fireflies draw after the sky
-  return { frame, terrain, highways, stones, beings, plants, insects, critters, shrines, finds, group };
+  return { frame, terrain, highways, stones, beings, plants, insects, critters, shrines, finds, doors, group };
 }
 function swapWorld(next, place) {
   if (place) {
@@ -1483,7 +1485,7 @@ function highwayAt() {
   }
   return null;
 }
-/** What a tap touched, nearest first: your creature, a butterfly, a sky being, a tree, a highway, or the ground. */
+/** What a tap touched, nearest first: your creature, a butterfly, a sky being, a tree, a door, a highway, or the ground. */
 function pick(clientX, clientY) {
   const r = aimTap(clientX, clientY), found = [], v = new THREE.Vector3();
   const me = tapRay.intersectObject(creature.group, true)[0];
@@ -1515,6 +1517,8 @@ function pick(clientX, clientY) {
   if (fe) found.push({ kind: "find", d: fh.distance, f: fe });
   const sh = tapRay.intersectObjects(world.shrines.pickables(), true)[0], se = sh && world.shrines.entryOf(sh.object);
   if (se) found.push({ kind: "shrine", d: sh.distance, s: se });
+  const dh = tapRay.intersectObjects(world.doors.pickables(), true)[0], de = dh && world.doors.entryOf(dh.object);
+  if (de) found.push({ kind: "door", d: dh.distance, door: de });
   const ch = tapRay.intersectObject(cairns.group, true)[0], ce = ch && cairns.entryOf(ch.object);
   if (ce) found.push({ kind: "artifact", d: ch.distance, entry: ce });
   const tree = world.plants.pick(tapRay);
@@ -1561,6 +1565,11 @@ function onTap(clientX, clientY) {
   if (hit.kind === "shrine") {
     const s = hit.s, act = () => (canDream(s) ? enterDream(s) : castSpell(s));
     return flat(s.x, s.z) < RANGE.shrine ? act() : moveTo({ x: s.x, z: s.z, h: world.terrain.heightAt(s.x, s.z) }, { range: RANGE.shrine * 0.6, act });
+  }
+  if (hit.kind === "door") {
+    // In reach, this tap opens it; from farther, you walk up, and there the prompt does (a tab opens only from a tap or key).
+    const dr = hit.door, act = () => openDoor(dr);
+    return flat(dr.x, dr.z) < RANGE.door ? act() : moveTo({ x: dr.x, z: dr.z, h: world.terrain.heightAt(dr.x, dr.z) }, { range: RANGE.door * 0.6, act });
   }
   if (hit.kind === "critter") {
     // Walking up to it, it doesn't run (others on the way might).
@@ -1735,6 +1744,22 @@ function boardTapped(line) {
   const tg = tangentEN(line, c.t, 1), fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
   boardRide({ line, t: c.t, dir: tg.e * fx - tg.n * fz >= 0 ? 1 : -1 });
 }
+// ---- Doors to other games (doorways.js, doors.js; Jason, 11-10: "a shrine in Dream can link to the page") ----
+/**
+ * Through a door: its game opens in a new tab. A browser opens a tab only from a key, click or tap just pressed, so this
+ * runs inside that input's handler. From anywhere else (the end of a walk you tapped for, a controller's button), it
+ * says how instead of being blocked.
+ */
+function openDoor(dr) {
+  if (navigator.userActivation && !navigator.userActivation.isActive) {
+    logLine(pad.using ? `A controller can't open a new tab: press E, or click or tap the prompt, to enter ${dr.name}.` : `${COARSE ? "Tap the prompt" : "Press E"} to enter ${dr.name} (it opens in a new tab).`, "note");
+    return;
+  }
+  window.open(dr.url, "_blank", "noopener");
+  sound.chime();
+  bursts.emit({ at: new THREE.Vector3(dr.x, dr.y + 4, dr.z), colors: [new THREE.Color(0x5dffa0), new THREE.Color(0xffffff)], n: 20, spread: 2, up: 2.5, fall: 0.5, life: 1.8 });
+  logLine(`${capital(dr.name)} opens in a new tab.`, "note");
+}
 // ---- What's in reach: a glint on each, and a prompt for the likeliest, "(E) Shake the baobab" ----
 const glints = buildGlints(scene);
 const actBtn = document.getElementById("act"), actWhat = actBtn.querySelector(".what");
@@ -1774,6 +1799,9 @@ function inReach() {
     const d = Math.hypot(c.x - p.x, c.z - p.z);
     add({ kind: "stones", key: `n${c.i}`, d, range: RANGE.stones, c }, c.x, c.z);
     if (d < CIRCLE_R) out[out.length - 1].facing = 1; // inside the ring, the ring is all round you
+  }
+  for (const dr of world.doors.near(p.x, p.z, RANGE.door)) {
+    add({ kind: "door", key: `door:${dr.key}`, name: dr.name, d: Math.hypot(dr.x - p.x, dr.z - p.z), range: RANGE.door, door: dr }, dr.x, dr.z);
   }
   for (const s of world.shrines.near(p.x, p.z, RANGE.shrine)) {
     add({ kind: "shrine", key: s.key, name: SPELLS[s.spell].name, state: s.state, dream: canDream(s), wake: s.state === "asleep" && canWake(s), d: Math.hypot(s.x - p.x, s.z - p.z), range: RANGE.shrine, s }, s.x, s.z);
@@ -1815,6 +1843,7 @@ function glintSpot(c, v, bs) {
   if (c.kind === "find") return v.set(c.f.x, c.f.y + 0.7, c.f.z);
   if (c.kind === "shrine") return v.set(c.s.x, c.s.y + 2.4, c.s.z);
   if (c.kind === "stones") return v.set(c.c.x, c.c.y + 3.5, c.c.z);
+  if (c.kind === "door") return v.set(c.door.x, c.door.y + 6, c.door.z);
   if (c.kind === "critter") { const q = world.critters.near(c.c.x, c.c.z, 40).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 1.3, q.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
   if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
@@ -1872,6 +1901,7 @@ function interact() {
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "highway") return boardTapped(c.line);
   if (c.kind === "stones") return enterStones(c.c);
+  if (c.kind === "door") return openDoor(c.door);
   if (c.kind === "artifact") return touchCairn(c.entry);
   if (c.kind === "mutual") return squeakAt(c.m);
 }
@@ -2917,6 +2947,8 @@ function frame() {
     world.finds.group.visible = zoom < 6000;
     if (t - shrineTickAt > 5) { shrineTickAt = t; shrineTick(); }
     world.shrines.group.visible = zoom < 120000; // seen from as high as a far feather lifts you
+    world.doors.update(state.pos.x, state.pos.z, t);
+    world.doors.group.visible = zoom < 120000;
     const life = zoom < 6000;
     world.plants.group.visible = world.insects.group.visible = world.critters.group.visible = life;
     if (life) {
@@ -3050,7 +3082,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.turn, thrust: pad.thrust, up: pad.up, held: [...pad.held], using: pad.using }), input: () => input(), inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.turn, thrust: pad.thrust, up: pad.up, held: [...pad.held], using: pad.using }), input: () => input(), inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };
