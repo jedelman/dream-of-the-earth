@@ -20,7 +20,8 @@ import { buildWaymarks } from "./waymarks.js";
 import { ensureQuests, questOf, allQuests, wayKey, springAwake, target as questTarget, clueLine, landing, stretch, densify, songOf, stoneOf, metres as questMetres, bearing as questBearing, compassWords, arrow, kmText } from "./quests.js";
 import { placeOfNode } from "./nodenames.js";
 import { next as nextMode, travelOf, can as modeAllows, viewOf as cameraRegion } from "./modes.js";
-import { readPad, firstPad, stepFocusSpatial, dpadAxes, startAction } from "./gamepad.js";
+import { readPad, firstPad, stepFocusSpatial, startAction } from "./gamepad.js";
+import { createInput, KEYS, routeOf } from "./actions.js";
 import { screenTilt, tiltSteer, shakeDetector } from "./tilt.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
@@ -792,29 +793,30 @@ function zoomTick(dt) {
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0018)); }, { passive: false });
 const globe = buildGlobe();
 
-// ---- Input: keyboard, plus a touch stick and up/down buttons ----
-const keys = new Set();
+// ---- Input: keyboard, plus a touch stick and up/down buttons, tilt and a gamepad, all through actions.js ----
+// Events press and release controls; once a frame, frame() turns them (and the sticks) into routed actions, latched so a
+// tap shorter than a frame still counts (issue #58). `acts` is this frame's.
+const inputs = createInput();
+let acts = inputs.frame();
 const typing = (e) => e.target instanceof Element && e.target.closest("input, textarea");
 addEventListener("keydown", (e) => {
   if (typing(e)) return; // writing a note, not flying
-  keys.add(e.code);
+  inputs.press(KEYS[e.code], e.code);
   sound.unlock();
   if (["Space", "ArrowUp", "ArrowDown"].includes(e.code)) e.preventDefault();
   if (e.code === "KeyM" && !e.repeat) logLine(sound.toggle() ? "Sound off." : "Sound on.", "note");
-  if (e.code === "KeyE" && !e.repeat) interact();
-  if (state.gate && !e.repeat) gateKey(e.code); // a tap counts even if it's over before the next frame looks
-  if (e.code === "KeyP" && !e.repeat) takePicture();
   if (e.code === "KeyI" && !e.repeat) toggleHud();
   if ((e.key === "?" || e.code === "KeyH") && !e.repeat) openHelp();
   if ((e.code === "Enter" || e.code === "NumpadEnter") && !e.repeat && document.activeElement?.tagName !== "BUTTON" && document.activeElement?.tagName !== "SELECT" && !document.activeElement?.closest?.("#sheet, [role=button]")) { e.preventDefault(); openSay(); }
 });
-addEventListener("keyup", (e) => keys.delete(e.code));
-const touch = { turn: 0, thrust: 0, up: 0, latch: 0, id: null, x: 0, y: 0 };
+addEventListener("keyup", (e) => inputs.release(KEYS[e.code], e.code));
+addEventListener("blur", () => inputs.releaseAll()); // its keyups will never come
+const touch = { turn: 0, thrust: 0, id: null, x: 0, y: 0 };
 
 // ---- Gamepads (gamepad.js; Jason, 11-09: "Then let's build in gamepad support.") ----
-// Polled each frame. The sticks and A/B merge into input() like the keys and the touch stick; X, Y, Start and Back act
-// on the frame they're pressed. The D-pad walks the menus along the bottom and whatever a menu holds: A presses, B closes.
-const pad = { turn: 0, thrust: 0, up: 0, held: new Set(), using: false, said: false, refocus: null };
+// Polled each frame and handed to actions.js with the keys and the touch stick. While a menu has the pad's focus, the
+// D-pad walks the menus along the bottom and whatever a menu holds: A presses, B closes. Elsewhere it moves.
+const pad = { last: null, held: new Set(), using: false, said: false, refocus: null };
 const sheetEl = document.getElementById("sheet"), cornerEl = document.getElementById("corner");
 const sheetOpen = () => !sheetEl.hidden;
 const PAD_FOCUSABLE = "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), summary, textarea, [tabindex]:not([tabindex='-1'])";
@@ -860,53 +862,46 @@ function padEscape() {
 function setActGlyph() { actBtn.querySelector(".key").textContent = pad.using ? "X" : matchMedia("(hover: hover) and (pointer: fine)").matches ? "E" : "✦"; }
 // A key or a touch takes over from the pad (and its words) until the pad is used again.
 for (const ev of ["keydown", "pointerdown"]) addEventListener(ev, (e) => { if (e.isTrusted && pad.using) { pad.using = false; clearPadFocus(); setActGlyph(); } }, { capture: true });
-function pollPad(dt) {
+/** Read the pad (null if there's none); its buttons and sticks become actions in frame(). */
+function pollPad() {
   const gp = navigator.getGamepads ? firstPad(navigator.getGamepads()) : null;
-  if (!gp) { if (pad.held.size || pad.turn || pad.thrust || pad.up) Object.assign(pad, { turn: 0, thrust: 0, up: 0, held: new Set() }); return; }
+  if (!gp) { pad.last = null; pad.held = new Set(); return null; }
   const r = readPad(gp, pad.held);
-  pad.held = r.held;
+  pad.held = r.held; pad.last = r;
   if (pad.refocus) padRefocus();
   if (r.active && !pad.using) { pad.using = true; setActGlyph(); }
   if (r.active && !pad.said) { pad.said = true; logLine("A controller: the left stick (or the D-pad) moves, A jumps, X touches what glints, Y takes a picture. Start for the menus.", "note"); }
-  // In a menu the D-pad walks it; in the world it moves like the left stick (so in a ley node's ring it picks the lane).
-  const inMenu = sheetOpen() || !!padFocused();
-  for (const dir of inMenu ? ["up", "down", "left", "right"] : []) {
-    if (!r.down.has(dir)) continue;
-    const a = document.activeElement;
-    if (a?.matches?.("input[type=range]") && (dir === "left" || dir === "right")) {
-      if (dir === "left") a.stepDown(); else a.stepUp();
-      a.dispatchEvent(new Event("input", { bubbles: true })); a.dispatchEvent(new Event("change", { bubbles: true }));
-    } else padFocus(dir);
-  }
   // On the bar with no menu open, a stick steps you back into the world.
-  let menu = sheetOpen() || !!padFocused();
-  if (menu && !sheetOpen() && (r.turn || r.thrust || r.look)) { document.activeElement?.blur(); clearPadFocus(); menu = false; }
-  if (menu) {
-    pad.turn = pad.thrust = pad.up = 0;
-    if (maker.open === "atlas") atlasView.pad(r.turn || r.look, r.thrust, r.zoom, dt);
-    if (r.down.has("a")) { const el = padFocused(); if (el) { pad.refocus = el.getAttribute("data-pad") || null; press(el); } }
-    if (r.down.has("b")) { if (sheetOpen()) padEscape(); else { document.activeElement?.blur(); clearPadFocus(); } }
-  } else {
-    const d = dpadAxes(r.held);
-    pad.turn = r.turn || r.look || d.turn;
-    pad.thrust = r.thrust || d.thrust;
-    if (state.gate) {
-      // Held in a ley node's ring: A sets off, B lets go.
-      pad.up = 0;
-      if (r.down.has("a") && state.gate.phase === "choose") takeLane();
-      else if (r.down.has("b") && state.gate.phase !== "sink") { state.gate.held.up = true; leaveGate(); }
-    } else pad.up = (r.held.has("a") ? 1 : 0) - (r.held.has("b") ? 1 : 0);
-    if (r.down.has("x")) interact();
-    if (r.down.has("y")) takePicture();
+  if (!sheetOpen() && padFocused() && (r.turn || r.thrust || r.look)) { document.activeElement?.blur(); clearPadFocus(); }
+  return r;
+}
+/** Whether a menu has the pad's focus (only while the pad is what's in use: a clicked button keeps the keyboard's). */
+const padInMenu = () => pad.using && (sheetOpen() || !!padFocused());
+/** The actions that aren't movement: touch, picture, zoom, and the pad's menus. */
+function actTick(a, r, dt) {
+  if (a.route === "menu") {
+    for (const [n, dir] of [["navUp", "up"], ["navDown", "down"], ["navLeft", "left"], ["navRight", "right"]]) {
+      if (!a[n].pressed) continue;
+      const el = document.activeElement;
+      if (el?.matches?.("input[type=range]") && (dir === "left" || dir === "right")) {
+        if (dir === "left") el.stepDown(); else el.stepUp();
+        el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true }));
+      } else padFocus(dir);
+    }
+    if (r && maker.open === "atlas") atlasView.pad(r.turn || r.look, r.thrust, r.zoom, dt);
+    if (a.go.pressed) { const el = padFocused(); if (el) { pad.refocus = el.getAttribute("data-pad") || null; press(el); } }
+    if (a.letGo.pressed) { if (sheetOpen()) padEscape(); else { document.activeElement?.blur(); clearPadFocus(); } }
   }
-  if (r.zoom && !sheetOpen()) zoomBy(Math.exp(r.zoom * 2.4 * dt));
-  if (r.down.has("start")) {
+  if (a.touch.pressed) interact();
+  if (a.picture.pressed) takePicture();
+  if (a.zoom.value) zoomBy(Math.exp(a.zoom.value * 2.4 * dt));
+  if (a.menus.pressed) {
     const act = startAction({ sheet: sheetOpen(), onBar: !!padFocused() });
     if (act === "close") padEscape();
     else if (act === "leave") { document.activeElement?.blur(); clearPadFocus(); }
     else padFocus("right"); // onto the first menu
   }
-  if (r.down.has("back")) padEscape();
+  if (a.escape.pressed) padEscape();
 }
 // Two fingers pinch to zoom; one finger steers.
 const pointers = new Map();
@@ -950,8 +945,8 @@ canvas.addEventListener("pointerup", (e) => {
 canvas.addEventListener("pointercancel", endTouch);
 for (const [id, v] of [["up", 1], ["down", -1]]) {
   const b = document.getElementById(id);
-  b.addEventListener("pointerdown", (e) => { e.preventDefault(); touch.up = v; touch.latch = v; }); // latched: a tap shorter than a frame still counts
-  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => { if (touch.up === v) touch.up = 0; });
+  b.addEventListener("pointerdown", (e) => { e.preventDefault(); inputs.press(id, "touch"); }); // a tap shorter than a frame still counts
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => inputs.release(id, "touch"));
 }
 
 // ---- Touch screens: a minimal HUD that follows what you're doing (Jason, 11-09: "Let's give the mobile HUD a makeover
@@ -998,7 +993,7 @@ function contextButtons() {
     c.el.classList.toggle("off", !on);
     c.el.querySelector(".w").textContent = c.word ?? "";
     c.el.setAttribute("aria-label", on && c.word ? c.word.toLowerCase() : key);
-    if (!on && touch.up === c.v) touch.up = 0; // a button that's gone can't be held
+    if (!on) inputs.release(key, "touch"); // a button that's gone can't be held
   }
 }
 
@@ -1049,13 +1044,9 @@ if (COARSE && typeof DeviceOrientationEvent !== "undefined") {
     else setTilt(true, true);
   }
 }
+/** This frame's movement, from the actions: turn and thrust (−1 to 1), up 1 (Space, ▲, A) or −1 (Shift, ▼, B). */
 function input() {
-  const k = (...c) => c.some((x) => keys.has(x));
-  return {
-    turn: (k("KeyD", "ArrowRight") ? 1 : 0) - (k("KeyA", "ArrowLeft") ? 1 : 0) || touch.turn || pad.turn || tiltNow("turn"),
-    thrust: (k("KeyW", "ArrowUp") ? 1 : 0) - (k("KeyS", "ArrowDown") ? 1 : 0) || touch.thrust || pad.thrust || tiltNow("thrust"),
-    up: (k("Space") ? 1 : 0) - (k("ShiftLeft", "ShiftRight") ? 1 : 0) || touch.up || touch.latch || pad.up,
-  };
+  return { turn: acts.turn.value, thrust: acts.thrust.value, up: acts.up.value - acts.down.value };
 }
 
 // ---- Modes (modes.js): what the creature is doing, made explicit (11-10) ----
@@ -1205,8 +1196,7 @@ function step(dt) {
 
   // Pinned to the ground (Jason, 11-09: "pin state to running unless they explicitly take off"): once on the ground you
   // stay on it, following it over bumps and down slopes, until you jump or take off (Space) or walk off a real drop.
-  const pressed = up > 0 && !state.upWas;
-  state.upWas = up > 0;
+  const pressed = acts.up.pressed;
   const wasGround = state.mode === "ground";
   if (p.y <= 0 && ground < 0) state.mode = "water";
   else if (ground >= 0 && state.vy <= 0 && (p.y <= ground + 0.3 || (wasGround && p.y - ground < groundStick()))) { state.mode = "ground"; p.y = ground; }
@@ -1331,7 +1321,7 @@ function enterStones(st) {
   const lanes = lanesAt(st.node);
   if (!lanes.length || !go("enterStones")) return;
   clearTarget();
-  state.gate = { st, lanes, pick: laneFacing(lanes, bearingOfHeading(state.heading)), phase: "rise", t0: simT, from: state.pos.clone(), held: { turn: 0, go: true, up: true }, turnAt: 0 };
+  state.gate = { st, lanes, pick: laneFacing(lanes, bearingOfHeading(state.heading)), phase: "rise", t0: simT, from: state.pos.clone(), turnAt: 0 };
   state.speed = 0; state.vy = 0; state.mode = "air";
   sound.chime();
   logLine(`You step into the stones (${nodeName(st.node)}). The light takes hold of you and lifts.`, "highway");
@@ -1341,7 +1331,7 @@ function holdInRing(st, arrivedAlong) {
   const lanes = lanesAt(st.node);
   if (!lanes.length || !go("holdInRing")) return false;
   state.travelling = null; // the regrow ends here, in the ring
-  state.gate = { st, lanes, pick: laneFacing(lanes, arrivedAlong), phase: "choose", t0: simT, from: state.pos.clone(), held: { turn: 0, go: true, up: true }, turnAt: 0 };
+  state.gate = { st, lanes, pick: laneFacing(lanes, arrivedAlong), phase: "choose", t0: simT, from: state.pos.clone(), turnAt: 0 };
   state.pos.set(st.x, st.top, st.z);
   state.speed = 0; state.vy = 0; state.mode = "air";
   return true;
@@ -1364,17 +1354,7 @@ function leaveGate(words = "You step back out of the light.") {
 function gatePick(d) {
   const g = state.gate;
   g.pick = (g.pick + d + g.lanes.length) % g.lanes.length;
-  g.turnAt = simT; g.held.turn = d;
-}
-/** A key going down while held in the light (gateStep handles keys held, the stick and the touch buttons). */
-function gateKey(code) {
-  const g = state.gate;
-  if (g.phase === "sink") return;
-  if (code === "Space" || code === "ShiftLeft" || code === "ShiftRight") { g.held.up = true; leaveGate(); return; }
-  if (g.phase !== "choose") return;
-  if (code === "KeyA" || code === "ArrowLeft") gatePick(-1);
-  else if (code === "KeyD" || code === "ArrowRight") gatePick(1);
-  else if (code === "KeyW" || code === "ArrowUp") { g.held.go = true; takeLane(); }
+  g.turnAt = simT;
 }
 /** Off along the chosen lane. */
 function takeLane() {
@@ -1385,16 +1365,12 @@ function takeLane() {
   boardRide({ line: l.line, t: l.t, dir: l.dir }, true);
 }
 function gateStep(dt) {
-  const g = state.gate, p = state.pos, { turn, thrust, up } = input(), age = simT - g.t0;
-  // Edges only: a key still held from before (W walking in, Space from a jump) does nothing until it's let go. A stick
-  // must mean it: forward clearly more than sideways to set off, sideways clearly more than forward to choose (11-10:
-  // a stick pushed left drifts a little forward, and that used to set off along the lane you were leaving).
-  const forward = thrust > 0.6 && thrust > 1.5 * Math.abs(turn);
-  const side = Math.abs(turn) > 0.5 && Math.abs(turn) >= Math.abs(thrust) ? Math.sign(turn) : 0;
-  const goNow = forward && !g.held.go, upNow = up !== 0 && !g.held.up;
-  g.held.go = forward; g.held.up = up !== 0;
+  const g = state.gate, p = state.pos, age = simT - g.t0;
+  // Edges only (actions.js): a key still held from before (W walking in, Space from a jump) does nothing until it's let
+  // go, and a tap shorter than a frame still counts. A stick must mean it (intent(): forward clearly more than sideways
+  // sets off, sideways at least as much as forward chooses).
   state.speed = 0; state.vy = 0;
-  if (g.phase !== "sink" && upNow) return leaveGate();
+  if (g.phase !== "sink" && acts.letGo.pressed) return leaveGate();
   const lane = g.lanes[g.pick], want = (-lane.bearing * Math.PI) / 180;
   const turnTo = (rate) => { const d = Math.atan2(Math.sin(want - state.heading), Math.cos(want - state.heading)); state.heading += d * Math.min(1, dt * rate); };
   if (g.phase === "rise") {
@@ -1409,16 +1385,15 @@ function gateStep(dt) {
     p.set(g.st.x, g.st.top + Math.sin(simT * 1.6) * 0.4, g.st.z);
     state.mode = "air";
     // A tap moves one lane; held, it keeps going.
-    if (side !== 0 && (g.held.turn !== side || simT - g.turnAt > 0.32)) gatePick(side);
-    g.held.turn = side;
+    if (acts.turn.pressed || (acts.turn.held && simT - g.turnAt > 0.32)) gatePick(acts.turn.value);
     turnTo(6);
-    if (goNow) takeLane();
+    if (acts.go.pressed) takeLane();
     return;
   }
   // Sinking back down to the stones.
   const k = Math.min(1, age / SINK_S), e = k * k * (3 - 2 * k), ground = Math.max(world.terrain.heightAt(g.st.x, g.st.z), g.st.sea ? -1.5 : -Infinity);
   p.set(g.st.x, g.from.y + (ground - g.from.y) * e, g.st.z);
-  if (k >= 1 && go("letGo")) { state.gate = null; state.mode = g.st.sea ? "water" : "ground"; state.captureCooldown = 3; state.upWas = true; } // a Space still held doesn't jump
+  if (k >= 1 && go("letGo")) { state.gate = null; state.mode = g.st.sea ? "water" : "ground"; state.captureCooldown = 3; } // a Space still held doesn't jump: it isn't pressed
 }
 /** The chosen lane, shown: diamonds of light running out along it from you. */
 function laneMarksTick(t) {
@@ -1467,11 +1442,9 @@ function boardRide(c, checked = false) {
 function rideStep(dt) {
   const r = state.ride;
   if (r.leaving) return;
-  const { turn, thrust, up } = input();
+  const { turn } = input();
   state.hopCooldown -= dt;
-  const off = (up < 0 || thrust < 0) && r.age > 0.6, pressed = off && !r.offWas;
-  r.offWas = off;
-  if (pressed) {
+  if (acts.letGo.pressed && r.age > 0.6) { // Shift, S, ▼, B or a stick pulled back: a tap shorter than a frame counts
     // Over open sea, with no swim and no wings, stepping off strands you (there's no getting back on from below): say so
     // once, and let a second press mean it.
     const ll = rideLatLon(r);
@@ -3048,13 +3021,12 @@ function frame() {
   // Only frames that draw forests steer the governor.
   meterFrame(nowMs - last, t, !!world && !state.ride && zoom < 6000);
   last = nowMs;
-  pollPad(dt);
-  // +/- (or PageUp/PageDown) zoom smoothly while held.
-  if (keys.has("Equal") || keys.has("NumpadAdd") || keys.has("PageUp")) zoomBy(Math.exp(-2.4 * dt));
-  if (keys.has("Minus") || keys.has("NumpadSubtract") || keys.has("PageDown")) zoomBy(Math.exp(2.4 * dt));
+  // Input, once a frame: the pad read, then everything routed into actions (actions.js); +/− and the shoulders zoom.
+  const padRead = pollPad();
+  acts = inputs.frame({ route: routeOf(modeSnap(), padInMenu()), pad: padRead, touch, tilt: { turn: tiltNow("turn"), thrust: tiltNow("thrust") } });
+  actTick(acts, padRead, dt);
   zoomTick(dt);
   const view = state.ride ? rideView(dt, t) : worldView(dt, t);
-  touch.latch = 0; // a tapped ▲▼ has had its frame
   modeCheck();
 
   // The real sun for this place and moment (refreshed every 10 s).
@@ -3251,7 +3223,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.turn, thrust: pad.thrust, up: pad.up, held: [...pad.held], using: pad.using }), input: () => input(), inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };
