@@ -718,10 +718,38 @@ Jason, after asking where the code hides implicit state machines: "Let's do it!"
 - **Tests:** properties over random event sequences (one known state always; a refused event changes nothing; every
   state has a way back to the world), the transitions that bit us, the data-to-state reading, and what each state allows.
 - **Still implicit,** filed for the overnight builds:
-  - ground, air and water, and the input edges (four press-detectors);
+  - ground, air and water, and the input edges (four press-detectors; the edges done 11-11, below);
   - the four records' save-to-repo logic;
   - six "once per moon" latches;
   - spells ending when they're read.
+
+### One input layer (built 11-11, overnight, issue #58)
+Filed from the implicit-state-machine review: "Three bugs this week came from this." (`actions.js`)
+- **Before:** input edges were found in four places (`state.upWas` for the jump, the ring's `held` flags, the pad's
+  held set, ▲▼'s `touch.latch`) plus a `gateKey()` keydown handler beside `gateStep()`. The bugs: a key tap shorter
+  than a frame was missed in the ring; a ▲▼ tap was missed on a ride; the D-pad meant "menus" even in the world.
+- **Now:** keys, the touch stick and ▲▼, tilt and a gamepad all feed one `createInput()`. Events press and release
+  controls (by source, so letting go of ▲ doesn't let go of a held Space); once a frame `frame()` returns routed
+  actions, each `{ value, held, pressed, released }`. A press that starts and ends between two frames still shows as
+  `pressed` on the next one.
+- **Routes** (`routeOf`, from modes.js's snapshot and whether a menu has the pad's focus):
+  - **world:** WASD, the stick, the D-pad and a drag move; Space/▲/A up; Shift/▼/B down;
+  - **ring:** left/right choose a lane; forward, W, the D-pad's up or A goes; Space, Shift, ▲▼ or B lets go;
+  - **ride:** left/right hop; Shift, S, ▼, B or a stick pulled back steps off;
+  - **menu** (only while the pad is in use, so a clicked button never takes the keyboard): the D-pad walks focus, A
+    presses, B closes, nothing moves.
+  - Everywhere: E/X touch, P/Y picture, Start the menus, Back Escape, +/− and the shoulders zoom.
+- **The stick's intent** (#54) lives there too (`intent()`): forward only when clearly more than sideways, sideways
+  only when at least as much as forward, back at any amount. Its edges are tracked across routes, so a stick held
+  forward while walking into the stones doesn't set off.
+- `step`, `gateStep`, `rideStep` and the pad's menu handling read actions; `gateKey`, `upWas`, `offWas`, the ring's
+  `held` flags and `touch.latch` are gone. A window losing focus now lets go of every key (its keyups never come).
+- **One small difference:** holding Shift or ▼ from before a ride's first 0.6 s no longer steps off when that time
+  passes; a fresh press does (taps were always ignored in that window).
+- **Tests:** 14 (latching, a press and release in one frame, auto-repeat, two sources on one control, routing per mode,
+  the stick's intent, the D-pad per route, a button held across a route change). Headless: tap-jump, a lane picked by a
+  key tap and by a D-pad press, W and the pad's A setting off, Shift and ▼ stepping off, crouch, and the pad walking the
+  bar and the rhizome, on desktop and a phone viewport.
 
 ### Names for the ley nodes (built 11-10)
 Jason: "Also we need to name these nodes!! I'm so lost 🤣" (`nodenames.js`)
