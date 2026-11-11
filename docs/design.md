@@ -318,6 +318,33 @@ interactions as well (mostly just speech bubbles) and then work on avatar custom
 however slowly a headless browser renders them; one screenshot per step, then ffmpeg, gives a smooth video. Playwright's
 fake clock deadlocks its screenshots, so this lives in the game. First used for the reply to Jason's "Buckle up" thread.
 
+**The trailer (11-11, Jason: "This looks AWESOME Claude. We should do this for Dream of the Earth as well", after the
+Shinjuku Megadungeon's):** `node scripts/trailer.mjs [base] [out] [shot,shot]`, with `web/` served (e.g.
+`python3 -m http.server 8788 --directory web`) and ffmpeg.
+- **The cut.** One-second clips:
+  1. over the Grand Canyon
+  2. a run into the setting sun on a savanna
+  3. the rainforest canopy
+  4. among the trees
+  5. a squeak close-up
+  6. oak-and-spruce woods
+  7. the standing stones
+  8. the light lifting you into the ring
+  9. a ley highway
+  10. fireflies
+  11. the sunset sea
+  12. the soaring eye rising to the globe, time-lapsed
+  Then six seconds of the birth question over the globe. In the game the question shows over black, before the world
+  has grown; the trailer stands the globe behind it.
+- **The clock is the real one,** so the script picks each shot's place by where the sun is when it runs: daylight
+  biomes, night for fireflies, and whichever savanna and coast have the sun low.
+- **The globe comes from the soaring eye** (`testSpell("soaring")`), because a creature's own reach stops at about
+  500 m.
+- **Rendering is slow.** Steps only queue the drawing, and the eye rising through the sky can take a minute a frame
+  in software rendering. The script flushes as it goes and waits up to five minutes for a screenshot.
+- **Music.** Dream has no music of its own, so the trailer has a score made for it: a soft D-Lydian pad, a bell
+  arpeggio and a whoosh into the ley ride, rendered offline from a fixed seed. Name shots to retake just those.
+
 ## Your creature, customized (built 11-08)
 Jason: "Let's flesh out player interactions as well (mostly just speech bubbles) and then work on avatar
 customization." The design's editor verbs were randomize, mutate, edit; all three are in.
