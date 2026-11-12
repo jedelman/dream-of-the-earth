@@ -3,6 +3,7 @@
 // moon but have them be an item so they can be spent or saved": the moonseed, the first thing you can carry.
 // Honour system: with no server to referee, anyone could write any count into their own repo; with no scores or races,
 // that only spoils their own fun. Pure, so Node can test it.
+import { oncePer, hadIn, marksOfList } from "./once.js";
 import { lunationOf, seedFalls, nearestNewMoon, nextNewMoon, RESPEC_S, SYNODIC_S, portalFalls, fullLunationOf, nextFullMoon } from "./moon.js";
 
 export const INVENTORY_NSID = "org.jason-edelman.dream.inventory";
@@ -112,15 +113,15 @@ export function kitUp(inv) {
 /** At a full moon, a portal opens for you, once per moon (like the moonseed at the new moon). Returns { inv, fell }. */
 export function portalFor(inv, t) {
   if (!portalFalls(t)) return { inv, fell: false };
-  const L = fullLunationOf(t);
-  if ((inv.portalMoon ?? -1) >= L) return { inv, fell: false };
-  return { inv: { ...inv, items: { ...inv.items, portal: Math.min(ITEMS.portal.max, countOf(inv, "portal") + 1) }, portalMoon: L }, fell: true };
+  const once = oncePer(inv, fullLunationOf(t), "portalMoon");
+  if (!once.allowed) return { inv, fell: false };
+  return { inv: { ...once.next, items: { ...inv.items, portal: Math.min(ITEMS.portal.max, countOf(inv, "portal") + 1) } }, fell: true };
 }
 /** When your next portal opens (s): now if one is due, else the next full moon's window that hasn't given you one. */
 export function nextPortalAt(inv, t) {
-  if (portalFalls(t) && (inv.portalMoon ?? -1) < fullLunationOf(t)) return t;
+  if (portalFalls(t) && !hadIn(inv, fullLunationOf(t), "portalMoon")) return t;
   let m = nextFullMoon(t);
-  if ((inv.portalMoon ?? -1) >= fullLunationOf(m)) m += SYNODIC_S;
+  if (hadIn(inv, fullLunationOf(m), "portalMoon")) m += SYNODIC_S;
   return m - RESPEC_S;
 }
 
@@ -156,17 +157,17 @@ export const countOf = (inv, kind) => inv?.items?.[kind] ?? 0;
  */
 export function moonseedFor(inv, t) {
   if (!seedFalls(t)) return { inv, fell: false };
-  const L = lunationOf(t);
-  if (inv.lunation >= L) return { inv, fell: false };
+  const once = oncePer(inv, lunationOf(t), "lunation");
+  if (!once.allowed) return { inv, fell: false };
   const n = Math.min(ITEMS.moonseed.max, countOf(inv, "moonseed") + 1);
-  return { inv: { ...inv, items: { ...inv.items, moonseed: n }, lunation: L }, fell: true };
+  return { inv: { ...once.next, items: { ...inv.items, moonseed: n } }, fell: true };
 }
 
 /** When your next moonseed falls (s): now if one is due, else the opening of the next new moon's window that hasn't given you one. */
 export function nextSeedAt(inv, t) {
-  if (seedFalls(t) && inv.lunation < lunationOf(t)) return t;
+  if (seedFalls(t) && !hadIn(inv, lunationOf(t), "lunation")) return t;
   let m = seedFalls(t) ? nearestNewMoon(t) + SYNODIC_S : nextNewMoon(t);
-  if (inv.lunation >= lunationOf(m)) m += SYNODIC_S; // that moon's seed is already yours
+  if (hadIn(inv, lunationOf(m), "lunation")) m += SYNODIC_S; // that moon's seed is already yours
   return m - RESPEC_S;
 }
 
@@ -181,17 +182,19 @@ export function spend(inv, kind) {
 export const TOOK_MAX = 300;
 const TOOK_KEY = /^(shore|seabed|meadow|summit)\d{1,10}$/;
 /** Whether you've had this find's thing in the moon running at t. */
-export const tookHere = (inv, key, t) => inv?.took?.lunation === lunationOf(t) && inv.took.keys.includes(key);
+export const tookHere = (inv, key, t) => hadIn(tookMarks(inv, lunationOf(t)), lunationOf(t), key);
+/** The finds you've had this moon as marks (once.js); on disk they stay `took: { lunation, keys }`. */
+const tookMarks = (inv, L) => (inv?.took ? marksOfList({ period: inv.took.lunation, keys: inv.took.keys }, L) : {});
 /**
  * Pick up a find ({ key, holds }): { inv, ok, why } (why: "taken", already this moon; or "full", your pouch holds no
  * more of it).
  */
 export function take(inv, find, t) {
-  if (tookHere(inv, find.key, t)) return { inv, ok: false, why: "taken" };
+  const L = lunationOf(t), once = oncePer(tookMarks(inv, L), L, find.key);
+  if (!once.allowed) return { inv, ok: false, why: "taken" };
   const n = countOf(inv, find.holds);
   if (!ITEMS[find.holds] || n >= ITEMS[find.holds].max) return { inv, ok: false, why: "full" };
-  const L = lunationOf(t), keys = inv.took?.lunation === L ? inv.took.keys : [];
-  return { ok: true, why: null, inv: { ...inv, items: { ...inv.items, [find.holds]: n + 1 }, took: { lunation: L, keys: [...keys, find.key].slice(-TOOK_MAX) } } };
+  return { ok: true, why: null, inv: { ...inv, items: { ...inv.items, [find.holds]: n + 1 }, took: { lunation: L, keys: Object.keys(once.next).slice(-TOOK_MAX) } } };
 }
 function cleanTook(took) {
   if (!took || typeof took !== "object" || !Number.isInteger(took.lunation) || took.lunation < 0 || took.lunation > 100000 || !Array.isArray(took.keys)) return { lunation: -1, keys: [] };

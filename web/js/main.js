@@ -55,9 +55,10 @@ import { buildAtlas } from "./atlas.js";
 import { ensureBasins, basinAt, basinTotal, basinByKey, knowLine, areaText, endsText } from "./basins.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem, portalFor, nextPortalAt } from "./inventory.js";
 import { whenText, lunationOf } from "./moon.js";
+import { oncePer, hadIn } from "./once.js";
 import { buildShrines } from "./shrines.js";
 import { zoomReach, zoomStep, ZOOM_REACH, FEATHER_S, LIFT_TO } from "./zoomreach.js";
-import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf, WAKES, skyState, wokeAt } from "./shrinelore.js";
+import { SPELLS, SPELL_S, EASE_S, KIND_COLOUR, spellWeight, shapeOf, sunAhead, turnOf, WAKES, skyState, wokeAt, spellOver } from "./shrinelore.js";
 import { buildWorldview } from "./worldview.js";
 import { skyClock, horizontal, zodiac, PLANETS, GLYPH, moonEcliptic, planetEcliptic, sunLongitude } from "./astro.js";
 import { makeCreatureRecord, parseCreatureRecord, reconcile } from "./creature-record.js";
@@ -333,8 +334,12 @@ function spellNow(kind) {
   const s = spells[kind], none = { id: null, age: 0, w: 0, fade: 0 };
   if (!s) return none;
   const age = simT - s.t0, f = s.endAt === null ? 1 : Math.max(0, 1 - (simT - s.endAt) / EASE_S), fade = f * f * (3 - 2 * f);
-  if (age >= SPELL_S || f <= 0) { endSpell(kind); return none; }
+  if (spellOver(s, simT)) return none; // spellsTick ends it this frame; reading never does
   return { id: s.id, age, w: spellWeight(age) * fade, fade };
+}
+/** Once a frame, as soon as the clock moves: spells that have run their course end (and say so). */
+function spellsTick() {
+  for (const k of Object.keys(spells)) if (spells[k] && spellOver(spells[k], simT)) endSpell(k);
 }
 const LIFTED = { shape: "You're yourself again.", camera: "The view settles.", world: "The world comes back to itself." };
 function endSpell(kind, quiet = false) {
@@ -365,16 +370,19 @@ const wokeCache = {}; // spell -> { woke (s), until (s) }: when its present waki
 function shrineStateOf(home) {
   if (!shrineClock.state || home.key === "test") return "awake";
   if (!WAKES[home.spell].test(shrineClock.state)) { delete wokeCache[home.spell]; return "asleep"; }
-  const used = shrineUsed[home.key];
-  if (used == null) return "awake";
+  if (shrineUsed[home.key] == null) return "awake";
+  return hadIn(shrineUsed, wakingOf(home), home.key) ? "resting" : "awake";
+}
+/** When this shrine's present waking began (s): the period its gift and its dream are each had once in. */
+function wakingOf(home) {
   let c = wokeCache[home.spell];
   if (!c || c.until < shrineClock.t) c = wokeCache[home.spell] = { woke: wokeAt(home.spell, shrineClock.t, shrineClock.sky) ?? Infinity, until: shrineClock.t + 600 };
-  return used >= c.woke ? "resting" : "awake";
+  return c.woke;
 }
 // The rhizome's shrine waking: a sleeping shrine wakes for you when you touch it, once a moon each.
 const WOKEN_KEY = "dream.woken";
 const shrineWoken = (() => { try { return JSON.parse(localStorage.getItem(WOKEN_KEY) || "{}") || {}; } catch { return {}; } })();
-const canWake = (home) => hasPower("shrinewake") && home.key !== "test" && shrineWoken[home.key] !== lunationOf(realNow());
+const canWake = (home) => hasPower("shrinewake") && home.key !== "test" && !hadIn(shrineWoken, lunationOf(realNow()), home.key);
 /** Every few seconds: the sky where you are, and every shrine around shown asleep, awake or resting. */
 function shrineTick() {
   if (!world) return;
@@ -566,13 +574,13 @@ function castSpell(sh) {
   // Asleep, it does nothing; resting, it has given you its gift this waking.
   const st = shrineStateOf(sh);
   if (st === "asleep" && canWake(sh)) { // the rhizome's shrine waking: it wakes for you, once a moon
-    shrineWoken[sh.key] = lunationOf(realNow());
+    Object.assign(shrineWoken, oncePer(shrineWoken, lunationOf(realNow()), sh.key).next);
     try { localStorage.setItem(WOKEN_KEY, JSON.stringify(shrineWoken)); } catch { /* private mode */ }
     logLine(`${capital(def.name)} wakes for you.`, "shrine");
   } else if (st === "asleep") { logLine(`${capital(def.name)} sleeps. It wakes ${WAKES[sh.spell].when}.${hasPower("shrinewake") ? " (You've woken it once this moon.)" : ""}`, "shrine"); return; }
   if (st === "resting") { logLine(`${capital(def.name)} rests: it has given you its gift this waking. It wakes again ${WAKES[sh.spell].when}.`, "shrine"); return; }
   if (sh.key !== "test") {
-    shrineUsed[sh.key] = realNow();
+    Object.assign(shrineUsed, oncePer(shrineUsed, wakingOf(sh), sh.key, realNow()).next);
     try { localStorage.setItem(SHRINES_KEY, JSON.stringify(shrineUsed)); } catch { /* private mode */ }
     if (world) world.shrines.setStates(shrineStateOf);
   }
@@ -1096,11 +1104,8 @@ const dreamt = (() => {
 })();
 /** Whether you've had this shrine's dream in its present waking. */
 function dreamtNow(home) {
-  const done = dreamt[home.key];
-  if (done == null || !shrineClock.state) return false;
-  let c = wokeCache[home.spell];
-  if (!c || c.until < shrineClock.t) c = wokeCache[home.spell] = { woke: wokeAt(home.spell, shrineClock.t, shrineClock.sky) ?? Infinity, until: shrineClock.t + 600 };
-  return done >= c.woke;
+  if (dreamt[home.key] == null || !shrineClock.state) return false;
+  return hadIn(dreamt, wakingOf(home), home.key);
 }
 /** Its dream is open while its spell holds, once a waking. */
 function canDream(home) {
@@ -1163,7 +1168,7 @@ function realmTick() {
   if (r.gemOut && realmFx.gemAt(t).distanceTo(here) < GATHER_M) {
     const kind = REALMS[r.kind].gem, n = countOf(inv, kind), gain = r.L.tier >= 2 ? 2 : 1;
     if (n < ITEMS[kind].max) keepInventory({ ...inv, items: { ...inv.items, [kind]: Math.min(ITEMS[kind].max, n + gain) } });
-    dreamt[r.shrine.key] = realNow();
+    Object.assign(dreamt, oncePer(dreamt, wakingOf(r.shrine), r.shrine.key, realNow()).next);
     try { localStorage.setItem(DREAMS_KEY, JSON.stringify(dreamt)); } catch { /* private mode */ }
     sound.shrine(r.kind);
     bursts.emit({ at: realmFx.gemAt(t).add(r.anchor), colors: [new THREE.Color(REALM_FOG[r.kind]), new THREE.Color(0xffffff)], n: 40, spread: 3, up: 4, fall: 0.4, life: 2.2 });
@@ -3103,6 +3108,7 @@ function frame() {
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
   drawRoute(t);
   simT = t;
+  spellsTick(); // the spells' clock has moved: any that have run their course end here, not when something reads them
   bursts.update(dt);
   pigeonFx.update(dt, t);
   if (world && cairnsWorld !== world) { cairns.place(world); cairnsWorld = world; artifactsAt = -Infinity; } // regrown: re-place, then look again

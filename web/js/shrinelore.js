@@ -3,12 +3,15 @@
 // main.js casts their spells. Like everything else in the world they're computed: the same shrine in the same place on
 // every phone, holding the same spell. The spell itself is yours alone, for a minute, and changes nothing.
 import { cellsAround, unit, hash2 } from "./plantforms.js";
+import { hadIn } from "./once.js";
 
 // Fewer, and farther seen (Jason, 11-09: "we should have fewer shrines and allow fast travel to them"): one cell in
 // about three of a 2.6 km grid, so a couple within walking distance and a dozen or so within 9 km, each a column of
 // light and, far off, a star. Found ones go in your atlas, and you can travel back to them.
 export const SHRINE = { cell: 2600, radius: 9000, salt: 977, chance: 0.35, max: 16 };
 export const SPELL_S = 60, EASE_S = 2.5;
+/** Whether a spell ({ t0, endAt }) has run its course at t (s): its minute is up, or it has eased right out since you ended it. */
+export const spellOver = (s, t) => t - s.t0 >= SPELL_S || (s.endAt !== null && t - s.endAt >= EASE_S);
 /** A spell's colour, by what it changes: your shape (pink), the camera (cyan), the world (gold). */
 export const KIND_COLOUR = { shape: 0xff7ad9, camera: 0x7af0ff, world: 0xffd34d };
 
@@ -73,19 +76,26 @@ export function skyState(t, sky) {
 /** Whether a spell's shrine is awake at t. */
 export const awake = (spell, t, sky) => WAKES[spell].test(skyState(t, sky));
 /**
- * When the present waking began (s): scanning back an hour at a time, up to 45 days. A shrine you used before this
+ * When the present waking began (s): scanning back an hour at a time, up to 45 days, then to the second. A shrine you used before this
  * has rested. -Infinity if it has been awake that whole time; null if it isn't awake now.
  */
 export function wokeAt(spell, t, sky) {
   if (!awake(spell, t, sky)) return null;
-  for (let k = 1; k <= 45 * 24; k++) if (!awake(spell, t - k * 3600, sky)) return t - (k - 1) * 3600;
+  for (let k = 1; k <= 45 * 24; k++) {
+    if (awake(spell, t - k * 3600, sky)) continue;
+    // Asleep an hour further back: find the moment it woke inside that hour, to the second. (Taking the hour mark
+    // instead let a gift had in a waking's first part-hour be had again later the same waking.)
+    let lo = t - k * 3600, hi = t - (k - 1) * 3600; // asleep at lo, awake at hi
+    while (hi - lo > 1) { const mid = (lo + hi) / 2; if (awake(spell, mid, sky)) hi = mid; else lo = mid; }
+    return hi;
+  }
   return -Infinity;
 }
 /** A shrine's state for you: "asleep", "awake", or "resting" (you've had its gift this waking). */
 export function shrineState(spell, t, sky, usedAt = null) {
   const w = wokeAt(spell, t, sky);
   if (w === null) return "asleep";
-  return usedAt !== null && usedAt >= w ? "resting" : "awake";
+  return usedAt !== null && hadIn({ used: usedAt }, w, "used") ? "resting" : "awake";
 }
 
 /** Shrines near a point: [{ key, x, z, h, lat, lon, seed, spell }]. at(cell) -> { p: { x, z }, h } or null (the sea). */

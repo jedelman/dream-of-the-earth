@@ -778,6 +778,32 @@ Filed from the implicit-state-machine review: "Three bugs this week came from th
   key tap and by a D-pad press, W and the pad's A setting off, Shift and ▼ stepping off, crouch, and the pad walking the
   bar and the rhizome, on desktop and a phone viewport.
 
+### Once per moon, one rule; spells end on the clock (built 11-12, overnight, issue #59)
+Filed from the implicit-state-machine review: "Once-per-period latches, six ways." (`once.js`)
+- **Before:** six gifts each kept their own "had it this period" check, in their own shape: moonseeds
+  (`lunation >= L`), portals (`portalMoon >= L`), finds (`took.lunation === L && keys.includes(key)`), a shrine's gift
+  (`used >= woke`), its dream (`done >= woke`) and the rhizome's shrine waking (`woken !== L`).
+- **Now:** one pure helper, `oncePer(record, period, key, stamp?)` → `{ allowed, next }` (and `hadIn` to only ask). The
+  caller works the period out (a lunation or full moon from moon.js, a waking's start from shrinelore.js); a mark is
+  the period, or a moment inside it, when the gift was had. **Nothing on disk changed:** the inventory still keeps
+  `lunation`, `portalMoon` and `took: { lunation, keys }` (the finds' list is read as marks at the edge), and the
+  shrine stores keep their timestamps. Junk or missing marks count as never, as -1 always did.
+- **A bug the property tests found:** a shrine's waking was found to the hour, scanning back, so a gift had in the
+  first part-hour of a waking could be had again later the same waking. `wokeAt` now bisects that hour to the second.
+- **Spells end on the clock, not when they're read.** `spellNow()` used to end a spell from inside what reads like a
+  getter, so when "The view settles." was said depended on which code read the camera spell first (`zoomMax`, lately).
+  `spellNow()` is pure now, and `spellsTick()` ends spells once a frame, right after the clock moves (`spellOver` in
+  shrinelore.js). Same timings, same lines.
+- **One difference, at the edge:** the rhizome's waking was blocked only for this exact lunation (`!==`); a mark from a
+  *later* lunation (a device clock that had run ahead) now also blocks until that lunation comes, as the moonseed's did.
+- **Tests:** 7 new (the helper; properties over thousands of random visits: never two moonseeds in one lunation and
+  every new moon gives one, one portal per full moon, a shrine's gift once per waking and back after it sleeps and
+  wakes; finds on disk; when a spell is over). Headless, desktop and phone: three spells (giant, upturned, colours)
+  start, hold and end with "You're yourself again.", "The view settles.", "The world comes back to itself."; Escape
+  still eases one off with only "You shake off the spells."; a mossfoot picked up once, then "You've had this moon's
+  mossfoot here."; the clock moved into a full moon's window opens one portal, into a new moon's leaves one moonseed,
+  and neither repeats three hours later.
+
 ### Names for the ley nodes (built 11-10)
 Jason: "Also we need to name these nodes!! I'm so lost 🤣" (`nodenames.js`)
 - **Each of the 128 nodes is named for where it really is:**
