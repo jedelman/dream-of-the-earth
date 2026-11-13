@@ -74,6 +74,7 @@ import { buildInsects } from "./insects.js";
 import { buildCritters } from "./critters.js";
 import { LANDMARKS, landmarkQuery } from "./landmarks.js";
 import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
+import { createKept } from "./kept.js";
 
 // ---- Who and where (URL params make any spawn reproducible) ----
 const params = new URLSearchParams(location.search);
@@ -2407,52 +2408,35 @@ function seedTick() {
   sound.chime();
   logLine("The new moon leaves a moonseed for you. (BAG \u25be)", "shrine");
 }
-// Your pouch in your repo, like your creature: brought into step on sign-in and when you come back; written once things settle.
-const carry = { can: false, synced: "", busy: false };
+// Your pouch in your repo, like your creature: brought into step on sign-in and when you come back; written once things
+// settle (2 s after the last change).
 const invKey = () => JSON.stringify([inv.items, wornOf(inv), inv.kit, inv.lunation, inv.portalMoon, inv.took, inv.got, inv.rhizome]);
-async function syncInventory() {
-  if (!account.did || !carry.can || carry.busy) return;
-  carry.busy = true;
-  try {
+const carry = createKept({
+  name: "inventory", now: () => Date.now() / 1000, key: invKey, changedAt: () => invAt, settleS: 2,
+  ready: () => people.viewer === account.did,
+  say: (ev, e) => keptSaid(carry, ev, e, "your pouch"),
+  push: () => account.putInventory(makeInventoryRecord(inv, inv.at || Date.now())),
+  async pull() {
     const remote = parseInventoryRecord(await account.getInventory());
     const which = reconcileInventory(inv, remote);
     if (which === "remote") keepInventory(remote, { changed: true, at: remote.at });
     else if (which === "local") await account.putInventory(makeInventoryRecord(inv, inv.changed ? inv.at || Date.now() : Date.now()));
-    carry.synced = invKey();
-  } catch (e) { console.warn("inventory:", e.message); }
-  finally { carry.busy = false; }
-}
-function carryTick() {
-  if (!account.did || !carry.can || carry.busy || people.viewer !== account.did) return;
-  const k = invKey();
-  if (k === carry.synced || Date.now() / 1000 - invAt < 2) return;
-  carry.busy = true;
-  account.putInventory(makeInventoryRecord(inv, inv.at || Date.now())).then(() => { carry.synced = k; })
-    .catch((e) => console.warn("inventory:", e.message)).finally(() => { carry.busy = false; });
-}
+  },
+});
 // Your atlas in your repo: merged on sign-in and when you come back (a place found on any device is found), written
-// when you find somewhere new.
-const mapping = { can: false, synced: "", busy: false };
-async function syncAtlas() {
-  if (!account.did || !mapping.can || mapping.busy) return;
-  mapping.busy = true;
-  try {
+// when you find somewhere new, at most every 30 s (flying, new cells come often).
+const mapping = createKept({
+  name: "atlas", now: () => Date.now() / 1000, key: () => atlasKey(found, been), gapS: 30,
+  ready: () => people.viewer === account.did,
+  say: (ev, e) => keptSaid(mapping, ev, e, "your atlas"),
+  push: () => account.putAtlas(makeAtlasRecord(found, Date.now(), been)),
+  async pull() {
     const remote = parseAtlasRecord(await account.getAtlas());
     const merged = mergeAtlas(found, remote?.shrines), mergedBeen = { nodes: mergeBeen(been.nodes, remote?.nodes), marks: mergeBeen(been.marks, remote?.marks), basins: mergeBeen(been.basins, remote?.basins), seen: mergeSeen(been.seen, remote?.seen), ways: mergeBeen(been.ways, remote?.ways), springs: mergeBeen(been.springs, remote?.springs) };
     if (atlasKey(merged, mergedBeen) !== atlasKey(found, been)) { Object.assign(found, merged); for (const k of ["nodes", "marks", "basins", "ways", "springs"]) Object.assign(been[k], mergedBeen[k]); for (const c of mergedBeen.seen) been.seen.add(c); keepAtlas(); }
     if (!remote || atlasKey(found, been) !== atlasKey(remote.shrines, remote)) await account.putAtlas(makeAtlasRecord(found, Date.now(), been));
-    mapping.synced = atlasKey(found, been);
-  } catch (e) { console.warn("atlas:", e.message); }
-  finally { mapping.busy = false; }
-}
-function atlasTick() {
-  if (!account.did || !mapping.can || mapping.busy || people.viewer !== account.did) return;
-  const k = atlasKey(found, been);
-  if (k === mapping.synced || Date.now() - (mapping.at ?? 0) < 30000) return; // at most every 30 s: flying, new cells come often
-  mapping.busy = true; mapping.at = Date.now();
-  account.putAtlas(makeAtlasRecord(found, Date.now(), been)).then(() => { mapping.synced = k; })
-    .catch((e) => console.warn("atlas:", e.message)).finally(() => { mapping.busy = false; });
-}
+  },
+});
 // ---- Pigeons (pigeons.js): things carried between mutuals. Yours fly from your repo; theirs are found by the backlink
 // index, only from mutuals, and arrive when a pigeon flying 1,000 km/h would have got here. ----
 const flying = { can: false, list: [], polledAt: -Infinity, landing: false, busy: false };
@@ -2530,20 +2514,16 @@ account.onChange(async (did) => {
   flying.can = false;
   flying.list = [];
   share.can = false;
-  keep.can = false;
-  keep.synced = "";
-  carry.can = false;
-  carry.synced = "";
-  mapping.can = false;
-  mapping.synced = "";
+  for (const k of [keep, carry, mapping, sending]) k.reset(false); // a new generation: anything in flight lands nowhere
   if (did) {
     const name = (await handlesOf([did])).get(did) || null;
     setViewer(did, name);
-    [share.can, keep.can, carry.can, mapping.can, flying.can, posting.can] = await Promise.all([account.canShare(), account.canKeep(), account.canCarry(), account.canMap(), account.canFly(), account.canPost()]);
+    const cans = await Promise.all([account.canShare(), account.canKeep(), account.canCarry(), account.canMap(), account.canFly(), account.canPost()]);
+    if (account.did !== did) return; // signed out (or in as someone else) while asking
+    [share.can, , , , flying.can, posting.can] = cans;
+    sending.reset(share.can); keep.reset(cans[1]); carry.reset(cans[2]); mapping.reset(cans[3]);
     maker.setSharing({ on: share.on, can: share.can, keep: keep.can && carry.can && mapping.can });
-    syncCreature();
-    syncInventory();
-    syncAtlas();
+    pullAll();
     if (flying.can) clearFlownPigeons();
     flying.polledAt = -Infinity; // look for pigeons on the next tick
     account.mutes().then((m) => { setMuted(m); refreshIntents(); refreshEverywhere(); artifactsAt = -Infinity; });
@@ -2578,7 +2558,7 @@ function touchCairn(e) {
 const flock = buildFlock(scene, document.getElementById("whos"));
 const who = new Map(); // did -> { did, handle, intent }
 let intentsAt = -Infinity, hearing = null, fetchingIntents = false;
-const share = { on: (() => { try { return localStorage.getItem("dream.share") !== "off"; } catch { return true; } })(), can: false, last: null, lastKind: "", lastKey: "", lastLook: "", lastAt: -Infinity, writing: false, say: null, act: null, force: false, carried: false };
+const share = { on: (() => { try { return localStorage.getItem("dream.share") !== "off"; } catch { return true; } })(), can: false, last: null, lastKind: "", lastKey: "", lastLook: "", lastAt: -Infinity, say: null, act: null, force: false, carried: false };
 function setWho() {
   flock.set([...who.values()].map((w) => ({ ...w, bot: isBot(w.did) })));
   maker.setCount(everywhere.length, who.size);
@@ -2641,7 +2621,7 @@ function hearMutuals(on) {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { hearMutuals(false); stopSharing(); }
   else if (people.viewer) { hearMutuals(true); refreshIntents(); }
-  if (!document.hidden && realNow() - keep.checkedAt > 20) { syncCreature(); syncInventory(); syncAtlas(); } // changed on another device meanwhile?
+  if (!document.hidden && realNow() - pulledAt > 20) pullAll(); // changed on another device meanwhile?
 });
 addEventListener("pagehide", () => { stopSharing(); });
 /** Off to a mutual: arrive 40 m from where their creature is now. */
@@ -2723,38 +2703,49 @@ function myIntent() {
   if (Math.abs(state.speed) > 1.5 || Math.abs(state.vy) > 1.5) return { ...base, kind: "steer", key: "steer", steer: { heading: -state.heading, speed: state.speed, climb: state.vy } };
   return { ...base, kind: "rest", key: "rest" };
 }
-/** Once a second: write a new intent if my plan changed, I've drifted from what mutuals compute, or it's heartbeat time. */
-function shareTick() {
-  if (!share.on || !share.can || !world || rebuilding || share.writing || people.viewer !== account.did || document.hidden) return;
+/** Whether to write a new intent now, and which: when my plan changed, I've drifted from what mutuals compute, or it's
+ *  heartbeat time. null: not now. */
+function intentPlan() {
   const nowS = realNow(), want = myIntent(), since = nowS - share.lastAt;
   const ll = want.p, drift = share.last ? driftOf(share.last, nowS, ll.lat, ll.lon) : Infinity;
   const changed = want.key !== share.lastKey, look = shownKey();
   const restyled = look !== share.lastLook && nowS - lookAt > 3 && since > 3; // a new look, once you've stopped fiddling
   const moment = !!(want.say || want.act), clearMoment = share.carried && !moment; // words leave your record once they've been heard
-  if (!(share.force || clearMoment || restyled || (changed && since > 1.5) || (drift > 60 && since > 6) || since > HEARTBEAT_S)) return;
-  const record = makeIntent({ ...want, now: new Date(nowS * 1000) });
-  share.force = false;
-  share.carried = moment;
-  share.writing = true;
-  account.putIntent(record).then(() => {
-    share.last = parseIntent(record, nowS);
-    share.lastKey = want.key;
-    share.lastLook = look;
-    share.lastAt = nowS;
-  }).catch((e) => {
-    console.warn("intent:", e.message);
-    share.lastAt = nowS; // don't hammer
-    if (/scope|forbidden|403/i.test(e.message)) { share.can = false; maker.setSharing({ on: share.on, can: false, keep: keep.can && carry.can && mapping.can }); }
-  }).finally(() => { share.writing = false; });
+  if (!(share.force || clearMoment || restyled || (changed && since > 1.5) || (drift > 60 && since > 6) || since > HEARTBEAT_S)) return null;
+  return { nowS, want, look, moment, record: makeIntent({ ...want, now: new Date(nowS * 1000) }) };
 }
+let plan = null;
+// Your intent goes through the same machine as the records you keep: one write at a time, a failure retried with
+// backoff (and said once), a sign-in that doesn't cover it switched off, and deleting it waits for any write in flight.
+const sending = createKept({
+  name: "intent", now: realNow, key: () => "", pull: null,
+  ready: () => share.on && share.can && !!world && !rebuilding && people.viewer === account.did && !document.hidden,
+  due: () => !!(plan = intentPlan()),
+  say: (ev, e) => keptSaid(sending, ev, e, "where you are"),
+  async push() {
+    const p = plan, gen = sending.gen, was = { force: share.force, carried: share.carried };
+    share.force = false;
+    share.carried = p.moment;
+    try { await account.putIntent(p.record); } catch (e) { if (gen === sending.gen) Object.assign(share, was); throw e; } // tried again soon, as it was
+    if (gen !== sending.gen) return; // you left (or signed out) meanwhile
+    share.last = parseIntent(p.record, p.nowS);
+    share.lastKey = p.want.key;
+    share.lastLook = p.look;
+    share.lastAt = p.nowS;
+  },
+});
+/** Once a second (and when you say something). */
+const shareTick = () => sending.tick();
 // ---- Your creature in your repo, so it follows you (signed in, with a sign-in that covers it) ----
-const keep = { can: false, synced: "", busy: false, checkedAt: -Infinity };
-/** Bring this device and your repo into step: adopt the creature there, or put this one there. */
-async function syncCreature() {
-  if (!account.did || !keep.can || keep.busy) return;
-  keep.busy = true;
-  keep.checkedAt = realNow();
-  try {
+/** The creature you keep, as a key: the one on screen if it's yours, else the one this device holds. */
+const mineKey = () => { if (showingMine) return lookKey(); const c = keptCreature(); return c?.stats ? keyOf(c) : ""; };
+const keep = createKept({
+  name: "creature", now: realNow, key: mineKey, changedAt: () => lookAt, settleS: 3, // a burst of re-rolls is one write
+  ready: () => showingMine && people.viewer === account.did,
+  say: (ev, e) => keptSaid(keep, ev, e, "your creature"),
+  push: () => account.putCreature(makeCreatureRecord(myCreature())),
+  /** Bring this device and your repo into step: adopt the creature there, or put this one there. */
+  async pull() {
     const remote = parseCreatureRecord(await account.getCreature());
     const local = keptCreature();
     const which = reconcile(local, remote);
@@ -2767,29 +2758,28 @@ async function syncCreature() {
       } else {
         try { localStorage.setItem(CREATURE_KEY, JSON.stringify({ seed: remote.seed, genes: remote.genes, stats: STATS.map((k) => remote.stats[k]), at: remote.at, chosen: true })); } catch { /* */ }
       }
-      keep.synced = keyOf(remote);
-    } else if (which === "local") {
-      await account.putCreature(makeCreatureRecord(local, local.chosen ? local.at || Date.now() : Date.now()));
-      keep.synced = keyOf(local);
-    } else keep.synced = keyOf(remote);
-  } catch (e) { console.warn("creature:", e.message); }
-  finally { keep.busy = false; }
-}
-/** Once a second: after you've changed your creature here and settled, put it in your repo. */
-function keepTick() {
-  if (!account.did || !keep.can || keep.busy || !showingMine || people.viewer !== account.did) return;
-  const look = lookKey();
-  if (look === keep.synced || realNow() - lookAt < 3) return;
-  keep.busy = true;
-  account.putCreature(makeCreatureRecord(myCreature())).then(() => { keep.synced = look; })
-    .catch((e) => { console.warn("creature:", e.message); if (/scope|forbidden|403/i.test(e.message)) { keep.can = false; maker.setSharing({ on: share.on, can: share.can, keep: false }); } })
-    .finally(() => { keep.busy = false; });
+    } else if (which === "local") await account.putCreature(makeCreatureRecord(local, local.chosen ? local.at || Date.now() : Date.now()));
+  },
+});
+/** What the machines say: a failed write once per streak, its recovery, and a sign-in that doesn't cover the record. */
+function keptSaid(k, ev, e, what) {
+  if (e) console.warn(`${k.name}:`, e.message);
+  if (ev === "failed") logLine(k === sending ? "Mutuals can't see where you are just now; trying again." : `Your repo didn't take ${what} just now; trying again.`, "note");
+  else if (ev === "recovered") logLine(k === sending ? "Mutuals can see you again." : `${what[0].toUpperCase()}${what.slice(1)} is kept in your repo again.`, "note");
+  else if (ev === "off") {
+    k.can = false;
+    if (k === sending) share.can = false;
+    maker.setSharing({ on: share.on, can: share.can, keep: keep.can && carry.can && mapping.can });
+  }
 }
 async function stopSharing() {
-  if (!share.last && share.lastAt === -Infinity) return;
+  if (!share.last && share.lastAt === -Infinity && !sending.busy) return;
   share.last = null; share.lastKey = ""; share.lastLook = ""; share.lastAt = -Infinity;
-  await account.clearIntent();
+  await sending.clear(() => account.clearIntent()); // after a write in flight, so it can't land after the delete
 }
+/** Bring every kept record into step with your repo (on sign-in, and back to the tab after a while). */
+let pulledAt = -Infinity;
+function pullAll() { pulledAt = realNow(); for (const k of [keep, carry, mapping]) k.pullNow(); }
 
 // The way there, drawn as golden dots, and a ring where you're going.
 const ROUTE_MAX = 64;
@@ -3120,12 +3110,12 @@ function frame() {
   if (t - shareTickAt > 1) {
     shareTickAt = t;
     shareTick();
-    keepTick();
+    keep.tick();
     seedTick();
     portalTick();
     if (Math.floor(simT) % 3 === 0) discoverPlaces();
-    carryTick();
-    atlasTick();
+    carry.tick();
+    mapping.tick();
     pigeonTick();
     const nowS = realNow();
     let gone = false;
@@ -3229,7 +3219,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, kept: () => ({ keep, carry, mapping, sending }), mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

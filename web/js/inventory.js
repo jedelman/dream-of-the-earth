@@ -4,6 +4,7 @@
 // Honour system: with no server to referee, anyone could write any count into their own repo; with no scores or races,
 // that only spoils their own fun. Pure, so Node can test it.
 import { oncePer, hadIn, marksOfList } from "./once.js";
+import { newestChosen } from "./kept.js";
 import { lunationOf, seedFalls, nearestNewMoon, nextNewMoon, RESPEC_S, SYNODIC_S, portalFalls, fullLunationOf, nextFullMoon } from "./moon.js";
 
 export const INVENTORY_NSID = "org.jason-edelman.dream.inventory";
@@ -296,10 +297,4 @@ export const sameInventory = (a, b) => inventoryKey(a) === inventoryKey(b);
  * this device only started (never changed here) always yields; otherwise the one changed last wins. local: { items,
  * lunation, at, changed }.
  */
-export function reconcileInventory(local, remote) {
-  if (!remote) return local ? "local" : "same";
-  if (!local) return "remote";
-  if (sameInventory(local, remote)) return "same";
-  if (!local.changed) return "remote";
-  return remote.at >= local.at ? "remote" : "local";
-}
+export const reconcileInventory = (local, remote) => newestChosen(local, remote, sameInventory, (p) => !!p.changed);

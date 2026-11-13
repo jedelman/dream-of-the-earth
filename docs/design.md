@@ -804,6 +804,46 @@ Filed from the implicit-state-machine review: "Once-per-period latches, six ways
   mossfoot here."; the clock moved into a full moon's window opens one portal, into a new moon's leaves one moonseed,
   and neither repeats three hours later.
 
+### One save-to-repo machine (built 11-13, overnight, issue #61)
+Filed from the implicit-state-machine review: creature, inventory, atlas and intent "each carry their own copy of the same
+machine … Their failure handling is probably uneven, but that hasn't been audited." (`kept.js`)
+- **The audit (before):**
+
+  | Record | Written when | A failed write | Sign-in |
+  |---|---|---|---|
+  | creature | 3 s after the look last changed | console only; tried again every second, no backoff; a scope refusal switched it off | newest chosen wins (`reconcile`) |
+  | inventory | 2 s after the pouch last changed | console only; tried again every second for ever, scope refusals included | newest chosen wins (`reconcileInventory`) |
+  | atlas | at most every 30 s | console only; tried again 30 s later; scope refusals not caught | merged |
+  | intent | when the plan changes, on drift, every 4 min | console only; not tried again until the plan changed or the heartbeat (up to 4 min unseen) | (written only) |
+
+  None of them told the player. **Bugs found:** (1) creature, pouch and atlas: if the read on sign-in failed (offline
+  for a moment), the next tick wrote this device's copy over the repo's without ever seeing it, so a new phone could
+  overwrite your creature with one you'd only met, your pouch with a starter pouch, or your atlas with a near-empty one;
+  (2) a write still in flight when you signed out (or in as someone else) marked the new sign-in's record as saved;
+  (3) the intent's delete (tab hidden, sign-out, switched off) didn't wait for a write in flight, so that write could land
+  after it and leave your intent in your repo, and a first write in flight skipped the delete altogether.
+- **Now:** one pure machine per record, `createKept()`: off → unsynced → (pull) → clean ⇄ dirty → settling → writing
+  → saved | failed. main.js supplies the read, the write and the key to compare; the settle times are the same (3 s,
+  2 s, 30 s between writes, the intent's own rule).
+  - Nothing is written until the pull on sign-in has worked; a failed pull is tried again.
+  - A failed write (or pull) is tried again after 2 s, 5 s, 15 s, 30 s, 1 min, 2 min, then every 5 min, with whatever
+    the record holds by then. The first failure of a streak is said ("Your repo didn't take your pouch just now; trying
+    again.", or for the intent "Mutuals can't see where you are just now; trying again."), and so is the recovery.
+  - A scope refusal switches that record off until the next sign-in (the Bluesky menu offers a fresh one, as before).
+  - Signing in or out starts a new generation; anything in flight from before lands nowhere.
+  - Deleting the intent waits for a write in flight first.
+- **Reconcile:** `newestChosen(local, remote, same, chosen)`: nothing in the repo, this device's goes there; the same,
+  nothing to do; a copy this device only started (a creature you met, a starter pouch) yields; otherwise the newer wins,
+  a tie going to the repo. `reconcile` and `reconcileInventory` are now that rule. The atlas still merges.
+- **Unchanged:** every record's format, NSID and lexicon, the OAuth scopes, and localStorage (written at once, as before).
+- **Tests:** 9 (off until covered; nothing written before a pull; a failed pull retried without writing; a burst
+  settling into one write; the 30 s gap; backoff steps and its cap; said once a streak; a scope refusal; one thing in
+  flight and a sign-out mid-write; the intent's delete after a write in flight; the reconcile rules). Headless, desktop
+  and phone, signed out: a change persists to localStorage and survives a reload. With the account faked in the page
+  and the repo failing its first three writes: the pouch went at 0, ~2, ~8 and ~23 s, landed whole, and the log said
+  "Your repo didn't take your pouch just now; trying again." then "Your pouch is kept in your repo again."; the
+  creature likewise. **Left for Jason's review, not merged** (the issue: it touches saved data).
+
 ### Names for the ley nodes (built 11-10)
 Jason: "Also we need to name these nodes!! I'm so lost 🤣" (`nodenames.js`)
 - **Each of the 128 nodes is named for where it really is:**

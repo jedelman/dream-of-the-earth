@@ -4,6 +4,7 @@
 import { parseGenes } from "./creature-graph.js";
 import { STATS, statsFrom, statsList } from "./stats.js";
 import { BORN, bornOf } from "./birth.js";
+import { newestChosen } from "./kept.js";
 
 export const CREATURE_NSID = "org.jason-edelman.dream.creature";
 export const CREATURE_RKEY = "self";
@@ -35,13 +36,7 @@ export function parseCreatureRecord(v) {
  * device's creature to your repo), or "same". local: { seed, stats, genes, at, chosen } (chosen: you made or changed
  * it here; a creature you only happened to meet always yields); remote: a parsed record or null.
  */
-export function reconcile(local, remote) {
-  if (!remote) return local ? "local" : "same";
-  if (!local) return "remote";
-  if (sameCreature(local, remote)) return "same";
-  if (!local.chosen) return "remote";
-  return remote.at >= local.at ? "remote" : "local";
-}
+export const reconcile = (local, remote) => newestChosen(local, remote, sameCreature, (c) => !!c.chosen);
 
 export const sameCreature = (a, b) =>
   a.seed === b.seed && STATS.every((k) => a.stats[k] === b.stats[k]) && JSON.stringify(parseGenes(a.genes)) === JSON.stringify(parseGenes(b.genes)) &&
