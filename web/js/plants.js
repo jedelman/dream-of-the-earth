@@ -286,6 +286,7 @@ export function buildPlants(frame, terrain) {
     const p = frame.toLocal(cell.lat, cell.lon);
     const h = terrain.heightAt(p.x, p.z);
     if (h < 3) return null; // the sea, and the tideline
+    if (terrain.wet?.(p.x, p.z)) return null; // rivers and lakes (inland.js)
     const biome = biomeFor(koppenAt(cell.lat, cell.lon), terrain.reliefAt(p.x, p.z), cell.lat, h);
     const [density, table] = layer.pick(BIOMES[biome]);
     const c = choosePlant(cell.h, density, table);
