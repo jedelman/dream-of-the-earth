@@ -17,6 +17,8 @@ import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, cr
 import { buildStones, CIRCLE_R } from "./stones.js";
 import { buildDoors } from "./doors.js";
 import { buildWaymarks } from "./waymarks.js";
+import { ensureWater, buildInland, updateInland } from "./inlandwater.js";
+import { wadeLine } from "./inland.js";
 import { ensureQuests, questOf, allQuests, wayKey, springAwake, target as questTarget, clueLine, landing, stretch, densify, songOf, stoneOf, metres as questMetres, bearing as questBearing, compassWords, arrow, kmText } from "./quests.js";
 import { placeOfNode } from "./nodenames.js";
 import { next as nextMode, travelOf, can as modeAllows, viewOf as cameraRegion } from "./modes.js";
@@ -425,6 +427,20 @@ function discoverPlaces() {
   if (!state.ride) { const c = cellOf(ll.lat, ll.lon); if (!been.seen.has(c)) { been.seen.add(c); added = true; } }
   if (added) keepAtlas();
   knowBasin(ll);
+  wade();
+}
+// Inland water (11-14): rivers and lakes are water now, not land. Walking into one, you're told which (once, until you've
+// been out of it for a while), so a river has a name where you meet it.
+const wading = { key: "", since: 0 };
+function wade() {
+  if (!world || state.ride || state.realm || state.mode !== "ground") return;
+  const w = world.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y), now = realNow();
+  if (!w) { if (wading.key && now - wading.since > 60) wading.key = ""; return; }
+  const key = `${w.kind}:${w.name}`;
+  wading.since = now;
+  if (key === wading.key) return;
+  wading.key = key;
+  logLine(wadeLine(w), "note");
 }
 // Watersheds, the first stage (Jason, 11-10: "All 3, in stages"; know, see, enter): the first time you're in a basin you
 // know it. Its name, where its rain goes, and that it begins somewhere upstream (the clues come later); into your atlas.
@@ -685,7 +701,11 @@ const state = { pos: new THREE.Vector3(), heading: headingParam !== null ? (-Num
 let world = null, rebuilding = false, worldToken = 0;
 async function buildWorld(lat, lon) {
   const frame = makeFrame(lat, lon);
+  const water = ensureWater(lat, lon); // the rivers and lakes, fetched while the terrain loads
   const terrain = await buildTerrain(frame, lat, lon);
+  await water;
+  const inland = buildInland(frame, terrain);
+  terrain.wet = inland.wet; // plants, critters and insects keep out of the water
   const highways = buildHighways(frame, terrain.heightAt);
   const stones = buildStones(highways.pillars, terrain.heightAt);
   const beings = buildSkyBeings(frame, terrain.heightAt);
@@ -699,9 +719,9 @@ async function buildWorld(lat, lon) {
   const waymarks = buildWaymarks(frame, terrain);
   waymarks.set(waymarkItems());
   const group = new THREE.Group();
-  group.add(terrain.mesh, highways.group, stones.group, beings.group, plants.group, insects.group, critters.group, shrines.group, finds.group, doors.group, waymarks.group);
+  group.add(terrain.mesh, inland.group, highways.group, stones.group, beings.group, plants.group, insects.group, critters.group, shrines.group, finds.group, doors.group, waymarks.group);
   layerTransparent(group); // glows, sparkles and fireflies draw after the sky
-  return { frame, terrain, highways, stones, beings, plants, insects, critters, shrines, finds, doors, waymarks, group };
+  return { frame, terrain, inland, highways, stones, beings, plants, insects, critters, shrines, finds, doors, waymarks, group };
 }
 function swapWorld(next, place) {
   if (place) {
@@ -2978,7 +2998,7 @@ function openHelp() {
     ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
     ...group("On a phone", [["Drag", "move and turn"], ["Tap", "go there; close enough, it answers"], ["Pinch", "the camera nearer or farther"], ["✦", "touch what glints"], ["▲ ▼", "show when they do something, and say what (jump, fly, climb; crouch, dive, step off, let go)"], ["☰", "the menus; a dot means something new came"], ["Tilt to steer (in ☰)", "tip the phone to turn, away to go, toward you to slow; a shake squeaks"]]),
     ...group("A controller", [["Left stick", "move and turn"], ["Right stick", "turn; up or down, the camera nearer or farther (or LB · RB)"], ["A", "jump; with Wings, take off and climb; in a ley node's ring, set off"], ["B", "crouch; flying, go down; on a highway, step off; in a ring, let go"], ["X · Y", "touch what glints · take a picture"], ["D-pad", "moves like the left stick (in a ley node's ring: left and right choose, up sets off)"], ["Start", "into the menus (again to leave): the D-pad walks them, A presses, B closes"], ["Back", "Esc"]]),
-    ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: ride one from a ley node's stones)"], ["ATLAS ▾", "a map of where you've been (the rest is cloud): tap a place you found to go back"], ["Waymarks", "river stones with a blue light, up each river from near the sea: read one for the way to the next, touch it again and the water carries you; the last wakes the spring at the source (its stone is the river's own)"], ["River compass", "worn, the HUD's arrow points up the river you're in, to its next waymark"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
+    ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: ride one from a ley node's stones)"], ["ATLAS ▾", "a map of where you've been (the rest is cloud): tap a place you found to go back"], ["Waymarks", "river stones with a blue light, up each river from near the sea: read one for the way to the next, touch it again and the water carries you; the last wakes the spring at the source (its stone is the river's own)"], ["River compass", "worn, the HUD's arrow points up the river you're in, to its next waymark"], ["Rivers and lakes", "real ones (Natural Earth's), drawn as water; wade into one and you're told its name"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
     h("details", { class: "credits" }, h("summary", {}, "Credits"), ...credits()),
   ], { trigger: helpBtn, classes: ["help"] });
 }
@@ -2998,7 +3018,7 @@ const credits = () => [
 * United Kingdom terrain data © Environment Agency copyright and/or database right 2015. All rights reserved;
 * United States 3DEP (formerly NED) and global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey.`),
   h("p", {}, "Climate: Köppen-Geiger classification, 1991–2020 (Beck et al. 2023, Scientific Data 10:724)."),
-  h("p", {}, "Made with Natural Earth: rivers, lakes, places and regions (the ley nodes' and the basins' names)."),
+  h("p", {}, "Made with Natural Earth: rivers, lakes, places and regions (the rivers and lakes you see, and the ley nodes' and the basins' names)."),
   h("p", {}, "Ley lines: leylines-solids (Joerg Roth, Apache-2.0), after Becker & Hagens and Leland. Rendering: three.js (MIT). Sign-in: @atproto/oauth-client-browser (MIT). Artifacts are found through Constellation (microcosm); mutuals through Bluesky's public AppView."),
 ];
 helpBtn.addEventListener("click", openHelp);
@@ -3077,6 +3097,7 @@ function frame() {
   sea.mesh.visible = !state.realm; // a dream hangs over no sea
   sea.mesh.position.set(camera.position.x, 0, camera.position.z); // its waves are keyed to world position
   sea.update(t, dir, day, horizon);
+  updateInland(t, dir, day, horizon);
   // The shared clock: the real one, or ?t= when it's fixed. Sky beings and
   // clouds follow it, so every player sees the same sky.
   const unix = unixAt(t);
@@ -3229,7 +3250,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), inland: () => world && { ...world.inland.stats, here: world.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y) }, compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

@@ -1031,6 +1031,35 @@ Jason: "For the atlas, let's offer it as a map only - but anything not visited i
   with everything else. A line under the map keeps the tally (shrines, ley nodes, landmarks of 22, river basins of 321).
   "Show on the globe" stays.
 
+### Rivers and lakes, drawn as water (built 11-14, overnight)
+Inland water was on the list since the first night ("inland water (rivers and lakes are drawn as land today, sand where
+under 12 m)"), and the river quests made it stranger: a quest up the Amazon, past waymarks on a river you couldn't see.
+(`scripts/water/`, `inland.js`, `inlandwater.js`, the hooks in `main.js`, `plants.js` and `critters.js`.)
+- **The data:** Natural Earth's 1:10m rivers and lakes (public domain, the same downloads as the basins), simplified to
+  about 200 m (Douglas-Peucker) and cut into 10° tiles: `web/data/water/`, 226 tiles and an index, 2.6 MB in all, the
+  largest 64 KB. A world fetches the few under it while its terrain loads. The lines Natural Earth runs through lakes and
+  its two canals are left out; Natural Earth's "Sane" is put right as the Saône. Lake rings under about 2 km² are dropped.
+- **Rivers** are ribbons laid on the land, as wide as their rank says (the Amazon, the Nile and the Yangtze about a
+  kilometre, the Danube 600 m, the Rhine 240 m, the Loire 150 m, the Thames 90 m, the least 30 m: dream widths, not
+  measured ones); every river within 32 km of a world's middle, and the great ones (rank 4 or lower) out to 120 km. Where
+  the ground reaches the sea the ribbon stops.
+- **Lakes** are flat water at their shore's height: the land under the outline is sampled every 400 m round the shore
+  and the level is the 15th percentile (low, but not a gully). Lakes at the sea's height are left to the sea (the Caspian,
+  the Dead Sea). Big ones are split into triangles no wider than 6 km so the Earth's curve stays true across them, and
+  only the part within 120 km is built. Islands stay dry.
+- **One shader** for both: the sea's palette in hard bands, two small ripple trains, a glint, a pale band of shallows
+  along a river's banks, the sky at grazing angles (less than the sea's, or a thin river all sky reads as a road). The
+  water is lifted 1.2 m off the land plus 0.4 m per kilometre away, so the facets don't show through.
+- **Nothing grows in the water:** trees, grass and the small creatures keep out of rivers and lakes (a quick test,
+  rivers bucketed by kilometre square). Shrines, finds, doors and waymarks are left where they were: they're the same for
+  everyone and keyed in atlases, so moving them would move what people have found.
+- **Wading:** walk into one and you're told which, once (until you've been out of it a minute): "You wade into the Loire.
+  It tugs at your feet on its way downhill." / "You wade into Lago Titicaca. Its water is still, and cold round your
+  feet." Lakes go by Natural Earth's own name for them; rivers by their English name.
+- **Not yet (questions for Jason):** swimming in lakes (the lake beds in the terrain are flat at the surface, so there's
+  no depth to dive; a lake could be "water" mode at a fixed depth, or stay wading); frogs and ducks by the water; rivers
+  that flow (Natural Earth's lines aren't reliably drawn downstream, but the basins' flow directions could orient them).
+
 ### Highways from the stones only (fixed 11-10)
 Jason: "we shouldn't be able to board a highway from the ground, only from the ley node." Touching a highway (its glint,
 E / ✦ / X) and tapping it used to board it from anywhere underneath. Both are gone: a ley node's stones are the way on.
@@ -1622,8 +1651,8 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
      particular effects (volumetric clouds, sky-being glow, light under water) on top of the raster scene
      could fit later.
    - **Later:** CHELSA for continuous temperature and precipitation, SoilGrids, canopy height; braided
-     interchange rings where networks cross; inland water (rivers and lakes are drawn as land today, sand
-     where under 12 m).
+     interchange rings where networks cross. Inland water: rivers and lakes drawn as water (11-14, "Rivers and
+     lakes, drawn as water").
 3. **Avatars:** the editor (randomize, mutate, edit) and stats are in (11-08, "Your creature, customized"); Operator Field voices next.
 
 **Multiplayer:**
@@ -1641,7 +1670,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 | SoilGrids 2.0 (ISRIC) | soil | CC BY 4.0 (JRC catalogue) |
 | ETH Global Canopy Height 2020 (Lang et al. 2023) | canopy height | CC BY 4.0 (ETH record) |
 | Köppen-Geiger (Beck et al. 2023, Scientific Data 10:724), 1991–2020 at 0.1°, from figshare 10.6084/m9.figshare.21937571 | climate class (biomes) | CC0 on the figshare record (its API, checked 11-08); an earlier session's search found the maps' page saying CC BY 4.0 **(not rechecked)**, so credit them either way |
-| Natural Earth 1:10m rivers and lake centerlines, lakes, physical regions and populated places (5.0.0, per each download's VERSION.txt) | the river basins: the rivers cut into the terrain, the lakes with no outlet, the names (`scripts/basins`); the basin tiles and names ship, and the river quests' waymarks (set on its river lines) with its rivers' and towns' names (`quests.json`) | Public domain (as below) |
+| Natural Earth 1:10m rivers and lake centerlines, lakes, physical regions and populated places (5.0.0, per each download's VERSION.txt) | the rivers and lakes drawn in the world (`scripts/water`, simplified tiles in `web/data/water/` ship); the river basins: the rivers cut into the terrain, the lakes with no outlet, the names (`scripts/basins`); the basin tiles and names ship, and the river quests' waymarks (set on its river lines) with its rivers' and towns' names (`quests.json`) | Public domain (as below) |
 | Natural Earth 1:10m populated places, marine areas and physical regions, and 1:50m countries (naturalearthdata.com, v5) | the ley nodes' names (`nodenames.js`), worked out once offline; no data ships | Public domain: "All versions of Natural Earth raster + vector map data found on this website are in the public domain… No permission is needed" (its Terms of Use page, read 11-10). Credited anyway: Made with Natural Earth |
 | leylines-solids (Joerg Roth) | ley geometry | Apache-2.0 (package.json) |
 | Becker & Hagens; Leland (judsyn.weebly.com); McCooey's Visual Polyhedra | grid origins | credit |

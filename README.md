@@ -43,6 +43,9 @@ your atlas. Then the quest: waymarks stand up each river from near the sea, each
 water carries you up to it), and at the source a spring wakes, with the river's own spring stone. A river compass,
 worn, points the way.
 
+**Rivers and lakes** are water now (Natural Earth's, `scripts/water`): ribbons down the valleys, lakes flat at their
+shore's height. Walk into one and you're told its name.
+
 **Your atlas** is a map of where you've been: the Earth in its climate's colours, under cloud everywhere else. The
 shrines, ley nodes and landmarks you've found are marked on it, to tap and travel back to.
 
