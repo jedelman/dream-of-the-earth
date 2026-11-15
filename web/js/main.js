@@ -28,7 +28,7 @@ import { screenTilt, tiltSteer, shakeDetector } from "./tilt.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
-import { RANGE, critterLine, fledLine, treeLine, butterflyLine, fireflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
+import { RANGE, critterLine, fledLine, treeLine, butterflyLine, fireflyLine, seaLine, drinkLine, waterAsks, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
 import { buildGlints } from "./glints.js";
 import { buildCairns } from "./cairns.js";
 import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted, isBot, pigeonsFor } from "./atproto.js";
@@ -54,6 +54,7 @@ import { BORN, ASLEEP, WAKER, bornOf, asleep, effective, bornStats, maxDepth, sp
 import { buildFinds, FIND_COLOUR } from "./finds.js";
 import { ensureKoppen, ensureKoppenAll, koppenAt, koppenLoaded } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
+import { tideNow, tideLine } from "./tides.js";
 import { ensureBasins, basinAt, basinTotal, basinByKey, knowLine, areaText, endsText } from "./basins.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem, portalFor, nextPortalAt } from "./inventory.js";
 import { whenText, lunationOf } from "./moon.js";
@@ -1840,6 +1841,41 @@ function touchFirefly(x, y, z, seed) {
     bursts.emit({ at: new THREE.Vector3(f.x, f.y, f.z), colors: [new THREE.Color(0xd9ff66)], n: 5, spread: 0.6, up: 0.4, fall: 0.1, life: 1.6 });
   logLine(fireflyLine(Math.round(seed * 1e6), fireflyTouches++), "creature");
 }
+// ---- Touching water (11-15, from the "more things to touch" list: fireflies, the sea, ley pillars) ----
+/**
+ * The water in reach, or null: the sea you're afloat on (or standing at the edge of), the river or lake you're wading
+ * in. { water: "sea" | "river" | "lake", name?, reservoir?, level?, x, y, z }, the place being where a splash goes.
+ */
+function waterHere() {
+  if (!world || state.realm || state.ride) return null;
+  const p = state.pos, fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
+  if (state.mode === "water") return p.y > -3 ? { water: "sea", x: p.x + fx * 4, y: 0, z: p.z + fz * 4 } : null;
+  if (state.mode !== "ground") return null;
+  const w = world.inland.wadingAt(p.x, p.z, p.y);
+  if (w) return { water: w.kind, name: w.name, reservoir: w.reservoir, level: w.level, x: p.x + fx * 4, y: p.y + 1.2, z: p.z + fz * 4 };
+  if (p.y > 2.5) return null;
+  // On a beach: the sea within thirty metres, ahead of you first, then to either side and behind.
+  for (const turn of [0, 0.8, -0.8, 1.6, -1.6, 2.4, -2.4, Math.PI]) {
+    const c = Math.cos(turn), s = Math.sin(turn), dx = fx * c - fz * s, dz = fx * s + fz * c;
+    for (const far of [12, 30]) if (world.terrain.heightAt(p.x + dx * far, p.z + dz * far) < 0) return { water: "sea", x: p.x + dx * (far - 2), y: 0, z: p.z + dz * (far - 2) };
+  }
+  return null;
+}
+/**
+ * Splash the sea, and it tells you its tide (from where the Moon and the Sun really are, tides.js); drink from a river
+ * or a lake, and it tells you where that water is going (the basin you're in, basins.js). Nothing is changed or kept.
+ */
+let splashes = 0;
+function touchWater(c) {
+  sound.splash();
+  bursts.emit({ at: new THREE.Vector3(c.x, c.y, c.z), colors: [new THREE.Color(0xffffff), new THREE.Color(0xbfeaff), new THREE.Color(0x7fd6e8)], n: 28, spread: 2.2, up: 6, fall: 12, life: 1.4, ground: c.y - 0.5 });
+  const ll = world.frame.toLatLon(state.pos.x, state.pos.z), here = [ll.lat, ll.lon];
+  if (c.water === "sea") { logLine(seaLine(tideLine(tideNow(realNow(), ll.lat, ll.lon)), splashes++), "note"); return; }
+  ensureBasins(ll.lat, ll.lon).catch(() => {}).then(() => {
+    const b = basinAt(ll.lat, ll.lon), to = b && (b.kind === "river" || b.kind === "lake") ? b.mouth : null;
+    logLine(drinkLine(c, b, to ? `${kmText(questMetres(here, to))} ${compassWords(questBearing(here, to))}` : ""), "note");
+  });
+}
 /** What the small creatures did this frame (ran from you), and now and then a croak or a song from nearby. */
 let fledAt = -10, fledEver = false, chorusAt = 0;
 function critterNews(events, t, sunAltitude) {
@@ -1959,6 +1995,8 @@ function inReach() {
   for (const e of cairns.near(p.x, p.z, RANGE.artifact)) {
     add({ kind: "artifact", key: `a${e.a.uri}`, d: Math.hypot(e.x - p.x, e.z - p.z), range: RANGE.artifact, entry: e, handle: e.a.handle, own: e.a.own }, e.x, e.z);
   }
+  const wt = waterAsks(out) && waterHere();
+  if (wt) add({ kind: "water", key: `water:${wt.water}:${wt.name ?? ""}`, d: 0, range: 1, ...wt }, wt.x, wt.z);
   return out;
 }
 /** Where a thing's glint sits: on the near side of a crown, on a butterfly, a sky being, the line overhead. */
@@ -1970,6 +2008,7 @@ function glintSpot(c, v, bs) {
   }
   if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
   if (c.kind === "firefly") return v.set(c.x, c.y, c.z);
+  if (c.kind === "water") return v.set(c.x, c.y + 0.8, c.z);
   if (c.kind === "find") return v.set(c.f.x, c.f.y + 0.7, c.f.z);
   if (c.kind === "shrine") return v.set(c.s.x, c.s.y + 2.4, c.s.z);
   if (c.kind === "stones") return v.set(c.c.x, c.c.y + 3.5, c.c.z);
@@ -2026,6 +2065,7 @@ function interact() {
   if (c.kind === "tree") return shakeTree(c.rec);
   if (c.kind === "butterfly") { const b = world.insects.butterflies().find((q) => q.seed === c.seed); return b ? chirp(b.k) : squeak(); }
   if (c.kind === "firefly") return touchFirefly(c.x, c.y, c.z, c.seed);
+  if (c.kind === "water") return touchWater(c);
   if (c.kind === "find") return pickUp(c.f);
   if (c.kind === "shrine") return canDream(c.s) ? enterDream(c.s) : castSpell(c.s);
   if (c.kind === "critter") return touchCritter(c.key);
@@ -2995,7 +3035,7 @@ function openHelp() {
   maker.custom("help", [
     h("h2", {}, "How to play"),
     ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space", "jump; with Wings, take off and climb (▲)"], ["Shift", "crouch, slow and quiet (small creatures don't start); flying, go down (▼)"], ["Tap anything", "go to it; close enough, it answers"], ["E at a ley node's stones", "the light lifts you to its ring: A/D chooses a lane, E or W sets off, Space or Shift lets go"], ["Wheel · + − · pinch", "the camera nearer or farther (about 500 m back; a far feather, or a shrine of the soaring eye, lifts it higher)"]]),
-    ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
+    ...group("Touching", [["E", "touch what glints (the bottom-right prompt): trees, creatures, shrines, the water you stand in"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
     ...group("On a phone", [["Drag", "move and turn"], ["Tap", "go there; close enough, it answers"], ["Pinch", "the camera nearer or farther"], ["✦", "touch what glints"], ["▲ ▼", "show when they do something, and say what (jump, fly, climb; crouch, dive, step off, let go)"], ["☰", "the menus; a dot means something new came"], ["Tilt to steer (in ☰)", "tip the phone to turn, away to go, toward you to slow; a shake squeaks"]]),
     ...group("A controller", [["Left stick", "move and turn"], ["Right stick", "turn; up or down, the camera nearer or farther (or LB · RB)"], ["A", "jump; with Wings, take off and climb; in a ley node's ring, set off"], ["B", "crouch; flying, go down; on a highway, step off; in a ring, let go"], ["X · Y", "touch what glints · take a picture"], ["D-pad", "moves like the left stick (in a ley node's ring: left and right choose, up sets off)"], ["Start", "into the menus (again to leave): the D-pad walks them, A presses, B closes"], ["Back", "Esc"]]),
     ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: ride one from a ley node's stones)"], ["ATLAS ▾", "a map of where you've been (the rest is cloud): tap a place you found to go back"], ["Waymarks", "river stones with a blue light, up each river from near the sea: read one for the way to the next, touch it again and the water carries you; the last wakes the spring at the source (its stone is the river's own)"], ["River compass", "worn, the HUD's arrow points up the river you're in, to its next waymark"], ["Rivers and lakes", "real ones (Natural Earth's), drawn as water; wade into one and you're told its name"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
@@ -3250,7 +3290,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), inland: () => world && { ...world.inland.stats, here: world.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y) }, compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), tide: () => { const l = world.frame.toLatLon(state.pos.x, state.pos.z), td = tideNow(realNow(), l.lat, l.lon); return { ...td, line: tideLine(td) }; }, interact: () => interact(), inland: () => world && { ...world.inland.stats, here: world.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y) }, compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };
