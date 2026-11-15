@@ -269,7 +269,7 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
     drift the vertex shader flies is mirrored on the CPU (`fireflyAt`, tested), so a touch finds the firefly where
     you see it. No new data, nothing stored. Still on the list: ley pillars (the sea came 11-15, below).
   - **Water answers (built 11-15, overnight, from the same list; `tides.js`, `waterHere` and `touchWater` in
-    `main.js`):** afloat at the surface, or on a beach with the sea within 30 m, the prompt is "(E) Splash the sea";
+    `main.js`):** afloat within 6 m of the surface (a swimmer who dropped in rests a few metres under), or on a beach with the sea within 30 m, the prompt is "(E) Splash the sea";
     wading in a river or a lake, "Drink from the Loire" / "Drink from Lago Titicaca". A splash of white and pale-blue
     drops, a slap-and-patter sound (WebAudio), and a line that says something true:
     - **The sea tells you its tide,** from where the Moon and the Sun really are (the astrological clock's own
