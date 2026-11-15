@@ -1849,7 +1849,8 @@ function touchFirefly(x, y, z, seed) {
 function waterHere() {
   if (!world || state.realm || state.ride) return null;
   const p = state.pos, fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-  if (state.mode === "water") return p.y > -3 ? { water: "sea", x: p.x + fx * 4, y: 0, z: p.z + fz * 4 } : null;
+  if (state.mode === "water") return p.y > -6 ? // nothing lifts a swimmer back to the surface, so one who dropped in rests a few metres under: still in reach of it
+    { water: "sea", x: p.x + fx * 4, y: 0, z: p.z + fz * 4 } : null;
   if (state.mode !== "ground") return null;
   const w = world.inland.wadingAt(p.x, p.z, p.y);
   if (w) return { water: w.kind, name: w.name, reservoir: w.reservoir, level: w.level, x: p.x + fx * 4, y: p.y + 1.2, z: p.z + fz * 4 };
