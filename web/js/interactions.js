@@ -60,6 +60,36 @@ export function butterflyLine(hue, seed, n = 0) {
 export function fireflyLine(seed, n = 0) {
   return pickOf(["You cup your wings around a firefly. It blinks inside, steady as a heartbeat.", "The fireflies near you all flash at once, then go back to their own time.", "A firefly lands on your nose and glows there, very proud.", "A few fireflies drift in close and blink in step with you."], hash2(seed, n, 43));
 }
+
+// ---- Touching water (11-15): the sea, a river, a lake ----
+/** A river or lake as the prompt and the log name it: "the Loire", "Lago Titicaca", "the river", "the lake". */
+export const waterName = (w) => (w.water === "lake" ? w.name || (w.reservoir ? "the reservoir" : "the lake") : w.name ? `the ${w.name}` : "the river");
+const SPLASHES = ["You splash the sea. It splashes back.", "You slap the water. Salt spray, everywhere.", "You scoop up the sea and let it run through your claws.", "You splash about. A wave lifts you, sets you down."];
+/** Splashing the sea: a splash, then what the tide is doing (tides.js's sentence). */
+export const seaLine = (tide, n = 0) => `${pickOf(SPLASHES, hash2(n, 5, 83))} ${tide}`;
+/**
+ * Drinking from a river or lake, and where that water is going. w: { water: "river" | "lake", name, reservoir, level
+ * (a lake's height, m) }; basin: basins.js's basin here or null; far: "215 km west" to the basin's mouth, or "".
+ */
+export function drinkLine(w, basin, far = "") {
+  const here = waterName(w), bare = (n) => (n || "").toLowerCase().replace(/\b(river|rio|río|rivière|fleuve)\b/g, "").trim(), same = (a, b) => !!bare(a) && bare(a) === bare(b); // "Loire" is the "Loire River"
+  const head = `You drink from ${here}.${w.water === "lake" && w.level > 1 ? ` It lies ${Math.round(w.level).toLocaleString("en")} m above the sea.` : ""}`;
+  const away = far ? `, ${far} of here` : "";
+  if (!basin) return `${head} ${w.water === "lake" ? "Cold, and very still." : "Cold, and in a hurry."}`;
+  if (basin.kind === "river") {
+    if (w.water === "river" && same(w.name, basin.river)) return `${head} This water is bound for the sea${away}.`;
+    return `${head} This water ${w.water === "lake" ? "leaves by" : "joins"} the ${basin.river}, and meets the sea${away}.`;
+  }
+  if (basin.kind === "lake") {
+    if (w.water === "lake" && same(w.name, basin.lake)) return `${head} This water never reaches the sea: every river round here ends in it.`;
+    return `${head} This water never reaches the sea: it ends in ${basin.lake}${away}.`;
+  }
+  if (basin.kind === "hollow") return `${head} This water never reaches the sea: it runs to the lowest ground and stays.`;
+  return `${head} This water hasn't far to go: it runs straight to the sea.`;
+}
+/** Water asks for the prompt only when nothing you'd have come for is in reach: trees and butterflies it can outbid, a find or a shrine never. */
+const WATER_WAITS = new Set(["find", "shrine", "stones", "door", "waymark", "spring", "artifact", "critter", "mutual", "firefly"]);
+export const waterAsks = (cands) => !cands.some((c) => WATER_WAITS.has(c.kind));
 export function beingLine(seed, n = 0) {
   return pickOf(["The sky being hums, low and slow, and the air shimmers.", "Something vast hums back at you. Your feathers tingle.", "The sky being turns one of its many eyes toward you, and hums."], hash2(seed, n, 51));
 }
@@ -92,6 +122,7 @@ export function promptFor(c) {
   }
   if (c.kind === "butterfly") return `Greet the ${hueName(c.hue)} butterfly`;
   if (c.kind === "firefly") return "Cup the firefly";
+  if (c.kind === "water") return c.water === "sea" ? "Splash the sea" : `Drink from ${waterName(c)}`;
   if (c.kind === "find") return `Pick up the ${c.name}`;
   if (c.kind === "shrine" && c.dream) return `Enter the dream of ${c.name}`;
   if (c.kind === "shrine" && c.wake) return `Wake ${c.name}`;
@@ -110,7 +141,7 @@ export function promptFor(c) {
 
 // Small things close at hand come before big things far off: beside a tree, with a
 // sky being on the horizon, the tree is what you meant.
-const BIAS = { find: -0.12, stones: -0.2, door: -0.2, waymark: -0.2, spring: -0.2, shrine: -0.08, artifact: -0.05, critter: -0.02, butterfly: 0, firefly: 0, tree: 0.05, being: 0.4 };
+const BIAS = { find: -0.12, stones: -0.2, door: -0.2, waymark: -0.2, spring: -0.2, shrine: -0.08, artifact: -0.05, critter: -0.02, butterfly: 0, firefly: 0, tree: 0.05, being: 0.4, water: 0.45 };
 
 /**
  * How much a thing in reach wants the prompt (lower wins). c: { kind, d, range, facing, species? },

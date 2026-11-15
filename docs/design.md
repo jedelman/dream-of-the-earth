@@ -267,7 +267,32 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
     tapping one (a 20 px target) walks you up first, like a butterfly. The nearest few flare together in
     yellow-green sparks, a soft rising bell plays (WebAudio), and the log says something that varies by hash. The
     drift the vertex shader flies is mirrored on the CPU (`fireflyAt`, tested), so a touch finds the firefly where
-    you see it. No new data, nothing stored. Still on the list: the sea, ley pillars.
+    you see it. No new data, nothing stored. Still on the list: ley pillars (the sea came 11-15, below).
+  - **Water answers (built 11-15, overnight, from the same list; `tides.js`, `waterHere` and `touchWater` in
+    `main.js`):** afloat at the surface, or on a beach with the sea within 30 m, the prompt is "(E) Splash the sea";
+    wading in a river or a lake, "Drink from the Loire" / "Drink from Lago Titicaca". A splash of white and pale-blue
+    drops, a slap-and-patter sound (WebAudio), and a line that says something true:
+    - **The sea tells you its tide,** from where the Moon and the Sun really are (the astrological clock's own
+      positions): "By the Moon's pull the tide is rising here: high water in about 3 hours. Spring tides: the Sun and
+      the Moon pull in line." This is the *equilibrium* tide, the height the pull itself would raise on an all-ocean
+      Earth ((3cos²ψ − 1)/2 for each body, ψ its angle from straight up; the Sun's share 0.46 of the Moon's; the Moon's
+      scaled by 1/distance³), so high water falls under the Moon and opposite it. Real coasts lag it by hours as their
+      basins slosh, so it's the sky's tide, not a tide table, and the words say "by the Moon's pull". Springs within
+      25° of new or full moon, neaps within 25° of the quarters. Away from the equator, with the Moon far north or
+      south, one of the day's two tides nearly vanishes ("low water in about 8 hours"): that's real too (the diurnal
+      inequality). **The sea itself doesn't rise or fall:** the computed world stays as it is; this is only said.
+    - **A river or a lake tells you where its water goes,** from the basin you stand in (`basins.js`) and how far its
+      mouth is: "You drink from the Loire. This water is bound for the sea, 216 km west of here."; on a tributary,
+      "…joins the Loire River, and meets the sea…"; in a closed basin, "You drink from Lago Titicaca. It lies 3,819 m
+      above the sea. This water never reaches the sea: it ends in Lago Poopó, 370 km south-east of here." A lake's
+      height is the level the game drew it at (from the terrain round its shore), so it can be a few metres off the
+      surveyed one. Distances are straight lines to the basin's mouth, not along the river.
+    - **It waits its turn:** water asks for the prompt only when no find, shrine, stones, waymark, spring, door,
+      cairn, small creature, firefly or mutual is in reach; a tree close ahead still outbids it. Nothing is kept, sent
+      or changed; no new data, records or scopes.
+    - Tests: 6 (high water under the Moon, two highs a day about 12 h 25 min apart, turns are real turns, springs
+      swing wider than neaps, the words, the prompt's place). Headless, desktop and Pixel 7: the sea off Virginia
+      Beach afloat and from the beach, the Loire, Lago Titicaca.
 
 ## The camera: a director (built 11-08, Jason: "let's make the camera a little more semantic and cinematic")
 `web/js/director.js`, with the maths in `web/js/camerawork.js` (tested).

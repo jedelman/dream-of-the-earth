@@ -45,6 +45,8 @@ worn, points the way.
 
 **Rivers and lakes** are water now (Natural Earth's, `scripts/water`): ribbons down the valleys, lakes flat at their
 shore's height. Walk into one and you're told its name.
+Touch the water (E): the sea tells you its tide, by where the Moon and the Sun really are; a river or a lake tells
+you where its water is going.
 
 **Your atlas** is a map of where you've been: the Earth in its climate's colours, under cloud everywhere else. The
 shrines, ley nodes and landmarks you've found are marked on it, to tap and travel back to.

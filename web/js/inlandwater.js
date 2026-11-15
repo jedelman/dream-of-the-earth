@@ -191,7 +191,7 @@ export function buildInland(frame, terrain) {
 
   function wadingAt(x, z, y) {
     const l = lakeAt(x, z);
-    if (l && y < l.level + 4) return { kind: "lake", name: l.name, reservoir: l.reservoir };
+    if (l && y < l.level + 4) return { kind: "lake", name: l.name, reservoir: l.reservoir, level: l.level };
     const r = riverAt(x, z, 3);
     return r ? { kind: "river", name: r.name } : null;
   }

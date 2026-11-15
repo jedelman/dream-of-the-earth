@@ -143,6 +143,14 @@ export const sound = {
       tone("sine", f * 2, f * 2, t + i * 0.26 + 0.13, 0.35, 0.05);
     });
   },
+  /** Water struck or scooped: a slap, then drops pattering back. */
+  splash() {
+    if (!audio()) return;
+    const t = ctx.currentTime;
+    noise(t, 0.22, 0.4, "lowpass", 2600, 500, 0.7);
+    noise(t + 0.05, 0.5, 0.16, "bandpass", 4200, 2400, 1.4);
+    for (let i = 0; i < 4; i++) tone("sine", 1500 + i * 310, 900 + i * 180, t + 0.22 + i * 0.07, 0.05, 0.05);
+  },
   /** Wings: little birds taking off. */
   flutter() {
     if (!audio()) return;
