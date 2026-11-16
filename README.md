@@ -44,7 +44,8 @@ water carries you up to it), and at the source a spring wakes, with the river's 
 worn, points the way.
 
 **Rivers and lakes** are water now (Natural Earth's, `scripts/water`): ribbons down the valleys, lakes flat at their
-shore's height. Walk into one and you're told its name.
+shore's height. Rivers run downhill: flecks drift down them, and wading in, you're told its name and which way it
+runs.
 Touch the water (E): the sea tells you its tide, by where the Moon and the Sun really are; a river or a lake tells
 you where its water is going.
 

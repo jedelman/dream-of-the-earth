@@ -70,6 +70,27 @@ export function parseWaterTile(j) {
  */
 export const riverWidth = (rank) => Math.max(30, Math.round(1600 * 0.62 ** rank));
 
+/**
+ * Which way a river runs (11-16), from the ground's heights sampled evenly along its line as Natural Earth drew it (it
+ * draws them either way round): 1 if it runs downhill as drawn, -1 if uphill (so turn it round), 0 if it can't tell. It
+ * weighs the mean of the last quarter against the first, not two single points, since one facet can sit in a gully or
+ * on a bank; heights at or below the sea count as the sea's (0), so a far bay's seabed doesn't decide it. A drop under
+ * minDrop metres is too little to trust on ground drawn in coarse facets: such a river is left still, not guessed.
+ */
+export function flowSign(heights, minDrop = 2) {
+  const h = heights.filter(Number.isFinite).map((v) => Math.max(0, v));
+  if (h.length < 2) return 0;
+  const q = Math.max(1, Math.round(h.length / 4)), mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const drop = mean(h.slice(0, q)) - mean(h.slice(-q));
+  return Math.abs(drop) < minDrop ? 0 : Math.sign(drop);
+}
+
+/** How fast a river's streaks run downstream, m/s: the great rivers slow and broad, the small ones quicker (dream speeds). */
+export const flowSpeed = (rank) => Math.min(4, 1.2 + 0.3 * rank);
+
+/** The compass bearing (degrees from north, clockwise) of a step (dx east, dz south) in the game's local frame. */
+export const bearingOf = (dx, dz) => ((((Math.atan2(dx, -dz) * 180) / Math.PI) % 360) + 360) % 360;
+
 /** A polyline (local [x, z]) with no step longer than `step` metres. */
 export function densify(pts, step) {
   const out = [pts[0]];
@@ -84,8 +105,8 @@ export function densify(pts, step) {
  * A river as a ribbon on the ground: positions (x, y, z), uvs (metres along, 0..1 across) and triangle indices. Points
  * where the ground is at or below `seaY` (the sea has the river by then) are left out, which can cut it in pieces.
  */
-export function ribbon(pts, width, heightAt, seaY = 1) {
-  const pos = [], uv = [], idx = [];
+export function ribbon(pts, width, heightAt, seaY = 1, speed = 0) {
+  const pos = [], uv = [], idx = [], flow = [];
   const half = width / 2;
   let along = 0, prevOk = false;
   for (let k = 0; k < pts.length; k++) {
@@ -103,11 +124,12 @@ export function ribbon(pts, width, heightAt, seaY = 1) {
       const v = pos.length / 3;
       pos.push(x + nx, Math.max(hl, seaY), z + nz, x - nx, Math.max(hr, seaY), z - nz);
       uv.push(along, 0, along, 1);
+      flow.push(speed, width, speed, width);
       if (prevOk) idx.push(v - 2, v, v - 1, v - 1, v, v + 1);
     }
     prevOk = ok;
   }
-  return { pos, uv, idx };
+  return { pos, uv, idx, flow };
 }
 
 /** A lake's water level from heights round its shore: low, but not the lowest (a shore sample can fall in a gully). */
@@ -180,12 +202,17 @@ export function distToLine(x, z, pts) {
   return best;
 }
 
-/** What a player wading in says: "You wade into the Loire. …" / "You wade into Lake Titicaca. …" / "…into a river. …". */
+const POINTS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
+/**
+ * What a player wading in says: "You wade into the Loire. It tugs at your feet on its way west." / "You wade into Lake
+ * Titicaca. …" / "…into a river. …". w.toward is the way a river runs there (a bearing), when the ground could tell.
+ */
 export function wadeLine(w) {
   if (!w) return "";
   if (w.kind === "lake") {
     const tail = w.reservoir ? "Somewhere down the valley, a dam holds it back." : "Its water is still, and cold round your feet.";
     return `You wade into ${w.name || (w.reservoir ? "a reservoir" : "a lake")}. ${tail}`;
   }
-  return `You wade into ${w.name ? `the ${w.name}` : "a river"}. It tugs at your feet on its way downhill.`;
+  const way = Number.isFinite(w.toward) ? `on its way ${POINTS[Math.round(w.toward / 45) % 8]}` : "on its way downhill";
+  return `You wade into ${w.name ? `the ${w.name}` : "a river"}. It tugs at your feet ${way}.`;
 }

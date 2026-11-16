@@ -119,3 +119,36 @@ test("wading: the distance to a river, and what you're told", () => {
   assert.match(wadeLine({ kind: "lake", name: "", reservoir: true }), /^You wade into a reservoir\. .*dam/);
   assert.equal(wadeLine(null), "");
 });
+
+test("rivers run downhill (11-16): which way, from the ground along the line; too flat to tell is left still", async () => {
+  const { flowSign, flowSpeed, bearingOf } = await import("../web/js/inland.js");
+  assert.equal(flowSign([300, 280, 250, 200, 120, 60, 20, 5]), 1); // drawn from the hills to the sea
+  assert.equal(flowSign([5, 20, 60, 120, 200, 250, 280, 300]), -1); // drawn from the sea: turn it round
+  // One facet in a gully or on a bank doesn't decide it: the ends are weighed by quarters.
+  assert.equal(flowSign([0, 90, 85, 80, 70, 60, 50, 40, 30, 20, 12, 10]), 1);
+  // A far bay's seabed counts as the sea, not as a 3 km drop.
+  assert.equal(flowSign([12, 10, 8, 6, 4, -3000, -3000, -3000]), 1);
+  assert.equal(flowSign([-3000, -3000, 4, 6, 8, 10, 12, 14]), -1);
+  // Flat ground, too few heights, or none: can't tell.
+  assert.equal(flowSign([40, 41, 40, 39, 40, 41, 40, 40]), 0);
+  assert.equal(flowSign([10]), 0);
+  assert.equal(flowSign([NaN, NaN]), 0);
+  // The great rivers slow, the small ones quicker, never wild.
+  assert.ok(flowSpeed(1) < flowSpeed(8) && flowSpeed(12) <= 4 && flowSpeed(0) > 0);
+  // Bearings in the local frame (x east, z south): north is -z.
+  assert.equal(bearingOf(0, -1), 0);
+  assert.equal(bearingOf(1, 0), 90);
+  assert.equal(bearingOf(0, 1), 180);
+  assert.equal(bearingOf(-1, 0), 270);
+  assert.equal(Math.round(bearingOf(-1, -1)), 315);
+});
+
+test("a ribbon carries its speed and width to the shader, and a wader is told which way the river runs", () => {
+  const m = ribbon([[0, 0], [100, 0], [200, 0]], 40, () => 10, 1, 2.5);
+  assert.equal(m.flow.length, (m.pos.length / 3) * 2);
+  assert.deepEqual(m.flow.slice(0, 4), [2.5, 40, 2.5, 40]);
+  assert.ok(ribbon([[0, 0], [100, 0]], 40, () => 10).flow.every((v, i) => (i % 2 ? v === 40 : v === 0))); // still by default
+  assert.equal(wadeLine({ kind: "river", name: "Loire", toward: 268 }), "You wade into the Loire. It tugs at your feet on its way west.");
+  assert.equal(wadeLine({ kind: "river", name: "Rhine", toward: 350 }), "You wade into the Rhine. It tugs at your feet on its way north.");
+  assert.equal(wadeLine({ kind: "river", name: "", toward: null }), "You wade into a river. It tugs at your feet on its way downhill.");
+});

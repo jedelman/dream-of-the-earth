@@ -1,9 +1,10 @@
 // Inland water, drawn (11-14): rivers as ribbons laid on the land, lakes as flat water at their shore's height. Where
 // they come from and the rules are in inland.js; this file fetches the tiles and builds the meshes. One shader for both,
-// the sea's palette in hard bands, with ripples, a glint and the sky at grazing angles.
+// the sea's palette in hard bands, with ripples, a glint and the sky at grazing angles. Since 11-16 rivers run downhill:
+// each is turned to flow the way its ground falls, and pale streaks drift down it.
 import * as THREE from "three";
 import { CURVE_GLSL, curveUniform } from "./curvature.js";
-import { NEAR_M, FAR_M, BIG_RANK, waterTilesNear, parseWaterTile, riverWidth, densify, ribbon, lakeLevel, lakePolygons, subdivide, distToLine, inRing } from "./inland.js";
+import { NEAR_M, FAR_M, BIG_RANK, waterTilesNear, parseWaterTile, riverWidth, flowSign, flowSpeed, bearingOf, densify, ribbon, lakeLevel, lakePolygons, subdivide, distToLine, inRing } from "./inland.js";
 
 let listed = null, listing = null;
 const tiles = new Map(); // key -> parsed tile (or an empty one if it failed)
@@ -30,10 +31,13 @@ const vertexShader = /* glsl */ `
   #include <fog_pars_vertex>
   #include <logdepthbuf_pars_vertex>
   ${CURVE_GLSL}
+  attribute vec2 flow; // a river's streak speed (m/s, 0 still) and width (m)
   varying vec3 vWorld;
   varying vec2 vUv;
+  varying vec2 vFlow;
   void main() {
     vUv = uv;
+    vFlow = flow;
     vec4 w = modelMatrix * vec4(position, 1.0);
     // Lifted a little off the land, more with distance, so the facets don't show through.
     w.y += 1.2 + 0.0004 * length(w.xz - cameraPosition.xz);
@@ -52,6 +56,7 @@ const fragmentShader = /* glsl */ `
   uniform vec3 uSunDir, uSunColor, uSky, uDeep, uShallow;
   varying vec3 vWorld;
   varying vec2 vUv;
+  varying vec2 vFlow;
   void main() {
     #include <logdepthbuf_fragment>
     vec2 p = vWorld.xz;
@@ -67,6 +72,17 @@ const fragmentShader = /* glsl */ `
     col = mix(col, uSky, clamp(fres * 1.2, 0.0, 0.4)); // less than the sea: a thin river all sky would read as a road
     // A river's banks: a pale band of shallows along each edge (lakes carry 0.5 across, so none).
     col = mix(col, vec3(0.75, 0.95, 1.0), step(0.4, abs(vUv.y - 0.5)) * 0.35);
+    // The current (11-16): pale streaks in lanes across the river, drifting downstream (uv.x is metres downstream), each
+    // lane at its own phase and pace, spaced by the river's width so a great river's read from above as a small one's do.
+    if (vFlow.x > 0.0) {
+      float lanes = 9.0, across = vUv.y * lanes + 0.35 * sin(vUv.x * 0.031); // lanes that meander a little, not painted lines
+      float lane = floor(across);
+      float hsh = fract(sin(lane * 12.9898 + 4.1) * 43758.5453);
+      float period = clamp(vFlow.y * 0.45, 12.0, 140.0) * (0.7 + 0.6 * hsh);
+      float ph = fract((vUv.x - uTime * vFlow.x * (0.75 + 0.5 * hsh)) / period + hsh);
+      float inLane = step(0.4, fract(across)) * step(fract(across), 0.6) * step(abs(vUv.y - 0.5), 0.36);
+      col = mix(col, min(col * 1.25 + 0.06, vec3(1.0)), step(0.9, ph) * inLane * (1.0 - far));
+    }
     vec3 r = reflect(-uSunDir, n);
     col += uSunColor * step(0.4, pow(clamp(dot(r, v), 0.0, 1.0), 90.0)) * uDay * (1.0 - far);
     gl_FragColor = vec4(col, 1.0);
@@ -117,25 +133,36 @@ export function buildInland(frame, terrain) {
   const local = (ll) => { const p = frame.toLocal(ll[1], ll[0]); return [p.x, p.z]; };
   const center = frame.toLatLon(0, 0);
   const keys = listed ? waterTilesNear(center.lat, center.lon, FAR_M + 20000, listed) : [];
-  const pos = [], uv = [], idx = [];
-  const add = (m) => { const base = pos.length / 3; pos.push(...m.pos); uv.push(...m.uv); for (const i of m.idx) idx.push(base + i); };
+  const pos = [], uv = [], idx = [], flow = [];
+  const add = (m) => { const base = pos.length / 3; pos.push(...m.pos); uv.push(...m.uv); flow.push(...(m.flow ?? m.uv.map(() => 0))); for (const i of m.idx) idx.push(base + i); };
   const rivers = [], lakes = [], seen = new Set();
-  let riverCount = 0;
+  const cover = boxOf(FAR_M + 300000); // inside the terrain's rings (±470 km), where heightAt knows the ground
+  let riverCount = 0, flowing = 0, still = 0;
 
   for (const key of keys) {
     const t = tiles.get(key);
     if (!t) continue;
     for (const r of t.rivers) {
       const b = r.rank <= BIG_RANK ? far : near;
-      const pts = r.pts.map(local);
+      let pts = r.pts.map(local);
+      if (!clipRuns(pts, b).length) continue;
       const width = riverWidth(r.rank);
+      // Which way it runs: the ground along the whole line (where the terrain reaches), then turned so it runs as drawn.
+      const inside = pts.filter((p) => inBox(p, cover));
+      let len = 0;
+      for (let k = 1; k < inside.length; k++) len += Math.hypot(inside[k][0] - inside[k - 1][0], inside[k][1] - inside[k - 1][1]);
+      const sample = inside.length > 1 ? densify(inside, Math.max(500, len / 600)) : inside; // at most ~600 heights a river
+      const sign = sample.length > 1 ? flowSign(sample.map((p) => terrain.heightAt(p[0], p[1]))) : 0;
+      if (sign < 0) pts = pts.slice().reverse();
+      const speed = sign ? flowSpeed(r.rank) : 0;
       for (const run of clipRuns(pts, b)) {
         const line = densify(run, Math.max(120, width));
-        const m = ribbon(line, width, terrain.heightAt);
+        const m = ribbon(line, width, terrain.heightAt, 1, speed);
         if (!m.idx.length) continue;
         add(m);
         riverCount++;
-        if (run.some((p) => inBox(p, near))) rivers.push({ name: r.name, width, line });
+        if (speed) flowing++; else still++;
+        if (run.some((p) => inBox(p, near))) rivers.push({ name: r.name, width, line, flows: !!sign });
       }
     }
     for (const l of t.lakes) {
@@ -167,6 +194,7 @@ export function buildInland(frame, terrain) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute("flow", new THREE.Float32BufferAttribute(flow, 2));
     geo.setIndex(idx);
     const mesh = new THREE.Mesh(geo, material);
     mesh.frustumCulled = false; // curvature moves vertices after culling would have run
@@ -187,13 +215,16 @@ export function buildInland(frame, terrain) {
         }
     }
   const lakeAt = (x, z) => lakes.find((l) => x >= l.box.minX && x <= l.box.maxX && z >= l.box.minZ && z <= l.box.maxZ && inRing(x, z, l.outer) && !l.holes.some((h) => inRing(x, z, h))) ?? null;
-  const riverAt = (x, z, margin) => (buckets.get(Math.floor(x / B) * 100000 + Math.floor(z / B)) ?? []).find((s) => distToLine(x, z, s.pts) < s.r.width / 2 + margin)?.r ?? null;
+  const segAt = (x, z, margin) => (buckets.get(Math.floor(x / B) * 100000 + Math.floor(z / B)) ?? []).find((s) => distToLine(x, z, s.pts) < s.r.width / 2 + margin) ?? null;
+  const riverAt = (x, z, margin) => segAt(x, z, margin)?.r ?? null;
 
   function wadingAt(x, z, y) {
     const l = lakeAt(x, z);
     if (l && y < l.level + 4) return { kind: "lake", name: l.name, reservoir: l.reservoir, level: l.level };
-    const r = riverAt(x, z, 3);
-    return r ? { kind: "river", name: r.name } : null;
+    const s = segAt(x, z, 3);
+    if (!s) return null;
+    const [a, b] = s.pts; // downstream, a to b, where the river flows
+    return { kind: "river", name: s.r.name, toward: s.r.flows ? Math.round(bearingOf(b[0] - a[0], b[1] - a[1])) : null };
   }
   /** Whether the ground at (x, z) is under a river or a lake (so nothing grows there). */
   function wet(x, z) {
@@ -201,5 +232,5 @@ export function buildInland(frame, terrain) {
     if (l && terrain.heightAt(x, z) < l.level + 2) return true;
     return !!riverAt(x, z, 2);
   }
-  return { group, wadingAt, wet, stats: { rivers: riverCount, lakes: lakes.length, triangles: idx.length / 3 } };
+  return { group, wadingAt, wet, stats: { rivers: riverCount, flowing, still, lakes: lakes.length, triangles: idx.length / 3 } };
 }
