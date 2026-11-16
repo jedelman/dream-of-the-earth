@@ -1081,9 +1081,31 @@ under 12 m)"), and the river quests made it stranger: a quest up the Amazon, pas
 - **Wading:** walk into one and you're told which, once (until you've been out of it a minute): "You wade into the Loire.
   It tugs at your feet on its way downhill." / "You wade into Lago Titicaca. Its water is still, and cold round your
   feet." Lakes go by Natural Earth's own name for them; rivers by their English name.
+- **Rivers run downhill (built 11-16, overnight; `flowSign`, `flowSpeed` in `inland.js`, the streaks in `inlandwater.js`):**
+  - **Which way:** Natural Earth draws its river lines either way round (the twelve pieces of the Mekong in one tile
+    point every which way, end to end), so the drawing can't be trusted. Each river line is sampled along its length every 500 m or more (at most
+    ~600 heights, only where the terrain's rings reach) and turned so it runs from its higher end to its lower: the mean
+    of the last quarter against the first, so one facet in a gully doesn't decide it, and any height at or below the sea
+    counts as the sea's 0, so a bay's seabed doesn't. The terrain itself, not the basins, decides: it's what the river
+    is drawn on, and it's there for every river in view. The basins' flow directions were the other idea; they're only
+    loaded for the tile you stand in.
+  - **Too flat to tell is left still:** a drop under 2 m along the whole line (on ground drawn in coarse facets) gets no
+    current rather than a guessed one, and the wading line says "on its way downhill" as before.
+  - **You see it:** pale flecks in nine meandering lanes drift downstream, each lane at its own pace and spacing (spaced
+    by the river's width, so a great river reads like a small one; the great rivers slow, about 1.5 m/s, the small ones
+    quicker, up to 4 m/s: dream speeds). They fade out by 6 km, like the ripples. A first version with brighter, regular
+    dashes made the Loire look like a road; these are fainter and wander.
+  - **You feel which way:** wading in, "You wade into the Loire. It tugs at your feet on its way west." (the way the
+    river runs where you stand, in eight compass words).
+  - Checked in headless Chromium against the way eight rivers really run: the Loire at Tours (west), the Rhine at Cologne
+    (north), the Danube at Budapest (south), the Mississippi at Memphis (south), the Amazon below Manaus (north-east,
+    a bend), the Nile at Aswan (north), the Thames at Richmond (north-east, a bend) and the Volga at Volgograd
+    (south-west): all eight right. Nothing stored or sent; no new data, records or scopes.
+  - **The current doesn't push you** (yet): a gentle drift while wading would make it felt, but it would also fight the
+    river quests, which walk you upstream. That's Jason's call.
 - **Not yet (questions for Jason):** swimming in lakes (the lake beds in the terrain are flat at the surface, so there's
-  no depth to dive; a lake could be "water" mode at a fixed depth, or stay wading); frogs and ducks by the water; rivers
-  that flow (Natural Earth's lines aren't reliably drawn downstream, but the basins' flow directions could orient them).
+  no depth to dive; a lake could be "water" mode at a fixed depth, or stay wading); frogs and ducks by the water; should
+  a river's current carry a wader downstream?
 
 ### Highways from the stones only (fixed 11-10)
 Jason: "we shouldn't be able to board a highway from the ground, only from the ley node." Touching a highway (its glint,
