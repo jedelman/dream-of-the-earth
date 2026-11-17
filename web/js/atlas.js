@@ -7,6 +7,7 @@
 // DOM only; main.js supplies the places and the travel.
 import { h } from "./maker.js";
 import { distanceText } from "./artifacts.js";
+import { gridLatLon } from "./basinmap.js";
 import { SEEN_W, SEEN_H, CLEAR_R, cellOf, cellMiddle, cleared, clampView, project, unproject, zoomAbout, panBy } from "./fog.js";
 
 const BEYOND = "#0b0718", NEAR_START = 10; // past the poles; how many degrees across the map opens on, round you
@@ -65,7 +66,8 @@ function buildFog(seen, spots) {
 /**
  * hooks: { places() -> [{ key, kind ("shrine" | "node" | "mark" | "way" | "spring"), name, lat, lon, colour (css), note, song? }],
  * rivers() -> [[{ lat, lon }]] (rivers whose springs you've drunk from, drawn shining), here() -> { lat, lon },
- * seen() -> Set of cells, tally() -> string, spotWords(lat, lon) -> Promise<string> (what's at a clear spot), landReady()
+ * basins() -> Promise<{ segs, tints: [{ px, x0, y0, n }] } | null> (the basins you know: their divides, basinmap.js, and tints
+ * by tile of n × n grid pixels), seen() -> Set of cells, tally() -> string, spotWords(lat, lon) -> Promise<string> (what's at a clear spot), landReady()
  * -> Promise, landColour(lat, lon) -> 0xrrggbb | null (sea), travel(key), globe() }.
  */
 export function buildAtlas({ maker, button, hooks }) {
@@ -84,9 +86,10 @@ export function buildAtlas({ maker, button, hooks }) {
       caption,
       h("p", { class: "small tally" }, hooks.tally()),
       h("div", { class: "row" }, h("button", { onclick: () => { maker.close(); hooks.globe(); } }, "Show on the globe")),
-      h("p", { class: "small" }, "Where you've been is clear; the rest is cloud. Tap a place to go back to it; tap anywhere clear to see what's there. Your atlas is kept on this device and, signed in, in your Bluesky repo, so it follows you."),
+      h("p", { class: "small" }, "Where you've been is clear; the rest is cloud. Blue lines are the divides round the river basins you know, the one you're in brightest. Tap a place to go back to it; tap anywhere clear to see what's there. Your atlas is kept on this device and, signed in, in your Bluesky repo, so it follows you."),
     ], { trigger: button, classes: ["atlas"], onClose: () => { ui = null; } });
-    ui = { canvas, marks, you, caption, map, fog: null, selected: null, places: hooks.places() };
+    ui = { canvas, marks, you, caption, map, fog: null, selected: null, places: hooks.places(), basins: null };
+    loadBasins();
     hookPointer(map);
     map.addEventListener("keydown", (e) => {
       const step = 60, k = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
@@ -100,6 +103,50 @@ export function buildAtlas({ maker, button, hooks }) {
       draw();
       buildBase(hooks).then(() => { if (ui) { ui.caption.textContent = "Tap a place to go back to it."; draw(); } });
     });
+  }
+
+  // The basins you know (Jason, 11-10: know, see, enter): their divides over everything, a tint under the cloud.
+  function loadBasins() {
+    const asked = ui;
+    hooks.basins?.().then((b) => {
+      if (ui !== asked || !b) return;
+      const tints = b.tints.map((t) => { const c = document.createElement("canvas"); c.width = c.height = t.n; c.getContext("2d").putImageData(new ImageData(t.px, t.n, t.n), 0, 0); return { c, ...t }; });
+      ui.basins = { segs: b.segs, tints };
+      draw();
+    }).catch(() => {});
+  }
+  function drawTints(ctx, w, hgt) {
+    for (const t of ui.basins?.tints ?? []) {
+      const nw = gridLatLon(t.x0, t.y0), span = t.n * 0.1 * view.ppd, top = hgt / 2 - (nw.lat - view.lat) * view.ppd;
+      for (let k = -1; k <= 1; k++) {
+        const left = w / 2 + (nw.lon - view.lon + 360 * k) * view.ppd;
+        if (left > w || left + span < 0 || top > hgt || top + span < 0) continue;
+        ctx.drawImage(t.c, Math.floor(left), Math.floor(top), Math.ceil(span) + 1, Math.ceil(span) + 1);
+      }
+    }
+  }
+  function drawDivides(ctx, w, hgt) {
+    const segs = ui.basins?.segs;
+    if (!segs?.length) return;
+    const g = 0.1 * view.ppd, lon0 = -180 - view.lon, lat0 = 90 - view.lat;
+    const path = (here) => {
+      ctx.beginPath();
+      for (let k = -1; k <= 1; k++) {
+        const ox = w / 2 + (lon0 + 360 * k) * view.ppd, oy = hgt / 2 - lat0 * view.ppd;
+        for (const s of segs) {
+          if (s[4] !== here) continue;
+          const x0 = ox + s[0] * g, x1 = ox + s[2] * g, y0 = oy + s[1] * g, y1 = oy + s[3] * g;
+          if (x1 < -2 || x0 > w + 2 || y1 < -2 || y0 > hgt + 2) continue;
+          ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+        }
+      }
+    };
+    ctx.lineCap = "square";
+    for (const here of [0, 1]) {
+      path(here);
+      ctx.lineWidth = here ? 4.4 : 3.2; ctx.strokeStyle = "rgba(8, 14, 48, .62)"; ctx.stroke();
+      ctx.lineWidth = here ? 2.2 : 1.3; ctx.strokeStyle = here ? "#3fe6ff" : "#6aaef5"; ctx.stroke();
+    }
   }
 
   const size = () => { const r = ui.map.getBoundingClientRect(); return { w: Math.max(1, Math.round(r.width)), hgt: Math.max(1, Math.round(r.height)) }; };
@@ -125,7 +172,9 @@ export function buildAtlas({ maker, button, hooks }) {
       }
     };
     layer(base);
+    drawTints(ctx, w, hgt);
     layer(ui.fog);
+    drawDivides(ctx, w, hgt);
     // The rivers whose springs you've drunk from, shining from source to sea (each copy east or west that shows).
     ctx.lineJoin = "round"; ctx.lineCap = "round";
     for (const path of hooks.rivers()) {
@@ -238,6 +287,7 @@ export function buildAtlas({ maker, button, hooks }) {
       if (!ui) return;
       ui.places = hooks.places(); ui.marks.replaceChildren();
       ui.fog = buildFog(hooks.seen(), [...ui.places, hooks.here()]);
+      loadBasins();
       draw();
     },
     /** A controller in the open atlas: the stick moves the map, LB · RB (or the right stick) zoom. */
@@ -247,6 +297,6 @@ export function buildAtlas({ maker, button, hooks }) {
       if (zoomBy) zoom(Math.exp(-zoomBy * 2.2 * dt));
     },
     /** For tests: what the map shows. */
-    state: () => ui && view && { view: { ...view }, marks: [...ui.marks.children].filter((b) => !b.hidden).map((b) => b._place.key), caption: ui.caption.textContent, based: !!base },
+    state: () => ui && view && { view: { ...view }, marks: [...ui.marks.children].filter((b) => !b.hidden).map((b) => b._place.key), caption: ui.caption.textContent, based: !!base, divides: ui.basins?.segs.length ?? 0, tints: ui.basins?.tints.length ?? 0 },
   };
 }

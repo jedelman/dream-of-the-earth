@@ -1029,8 +1029,8 @@ hooks in `main.js`.)
   you face toward the next waymark (or the spring) of the river whose basin you're in. On you, a bronze disc with a
   swimming blue needle.
 - **Your atlas record** gains `ways` (`seine-river:2`) and `springs` (`seine-river`), a lexicon change.
-- **Next:** riding a river (the "enter" stage) instead of being carried, seeing basins, and the other compasses (sky,
-  ley, kin).
+- **Next:** riding a river (the "enter" stage) instead of being carried, seeing basins (the map's divides came 11-17,
+  below), and the other compasses (sky, ley, kin).
 
 ### The atlas as a map, clouded where you haven't been (built 11-10)
 Jason: "For the atlas, let's offer it as a map only - but anything not visited is fogged/clouded over." (`fog.js`,
@@ -1055,6 +1055,29 @@ Jason: "For the atlas, let's offer it as a map only - but anything not visited i
 - **What went:** the lists. The landmarks you hadn't been to were listed as "Still to find"; now they're under cloud
   with everything else. A line under the map keeps the tally (shrines, ley nodes, landmarks of 22, river basins of 321).
   "Show on the globe" stays.
+
+### Seeing the basins you know (built 11-17, overnight)
+The watersheds' second stage. Jason, 11-10, asked how the regions should open: "All 3, in stages" (know, see, enter).
+Knowing came first (11-10); this is seeing. (`basinmap.js`, the `basins` hook in `atlas.js`, `basinsSeen` in `main.js`.)
+- **On the atlas's map,** every basin you know is outlined along its divides: the lines where rain on one side runs to
+  its river and rain on the other runs somewhere else. The one you're in is drawn brighter and a little thicker (cyan);
+  the others are a softer blue, each over a dark edge so they read on cloud and on land alike. Inside, a faint
+  water-blue tint, stronger for the basin you're in.
+- **The outlines show through the cloud; the tint doesn't.** You've stood in the basin, so you know how far it reaches,
+  but the land itself stays clouded until you go. That makes the map a guide for the river quests: you can see where
+  your river's country ends.
+- **Where it comes from:** the same 0.1° basin tiles the game already reads (`web/data/basins/`; all 72, about 100 KB,
+  load the first time the map opens with a basin known). An edge runs between two pixels that drain to different
+  places, when either is a basin you know; runs along a line are merged, and only each basin's own box is scanned
+  (`basinBoxes`), so the Loire takes about 20 ms. Drawn as vector lines, so they stay crisp at every zoom; the divides
+  are as blocky as the 0.1° grid (about 11 km), like the rest of the map's pixel art. Worked out again only when what
+  you know or the basin you're in changes.
+- No new data, records, lexicons or scopes; nothing stored or sent. Tests: 6 (an outline closes all round and only
+  round known basins; shared divides; the basin you're in marked; the dateline and poles; the tint; boxes scan the same
+  as the whole grid; the real Loire round Tours, closed, in France). Headless, desktop and Pixel 7, with the Loire,
+  Seine, Rhône and Garonne known, from Tours.
+- **Still to come for "see":** the water's way (which way the rain runs inside a basin) and, maybe, the divides in the
+  world itself; then "enter" (riding a river).
 
 ### Rivers and lakes, drawn as water (built 11-14, overnight)
 Inland water was on the list since the first night ("inland water (rivers and lakes are drawn as land today, sand where
