@@ -43,6 +43,27 @@ export async function ensureBasins(lat, lon) {
   await Promise.all([listing, pending.get(key)]);
 }
 
+/** Make sure every tile and the list are loaded (about 100 KB in all), for the atlas's map. */
+export async function ensureAllBasins() {
+  const jobs = [];
+  for (let row = 0; row < 6; row++) for (let col = 0; col < 12; col++) jobs.push(ensureBasins(90 - row * 30 - 15, -180 + col * 30 + 15));
+  await Promise.all(jobs);
+}
+
+/** A 0.1° pixel's basin id over the whole Earth (gx east from 180°W, wrapping; gy south from 90°N), 0 where its tile
+ *  is the sea or isn't loaded. */
+export function gridId(gx, gy) {
+  const x = ((gx % 3600) + 3600) % 3600, col = (x / 300) | 0, row = (gy / 300) | 0;
+  const t = tiles.get(`${col}-${row}`);
+  return t ? t[(gy - row * 300) * 300 + (x - col * 300)] : 0;
+}
+
+/** The loaded tiles as rows[row][col] (Uint16Array, or null for the sea or not loaded), for basinBoxes. */
+export const basinRows = () => Array.from({ length: 6 }, (_, row) => Array.from({ length: 12 }, (_, col) => tiles.get(`${col}-${row}`) ?? null));
+
+/** A basin's id by its key, or 0. */
+export const idOfKey = (key) => basinByKey(key)?.id ?? 0;
+
 /** Use a list of basins (basins.json's contents); for tests, too. */
 export function useBasins(j) {
   if (!j || !Array.isArray(j.basins)) return;

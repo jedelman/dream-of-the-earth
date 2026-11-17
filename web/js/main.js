@@ -55,7 +55,8 @@ import { buildFinds, FIND_COLOUR } from "./finds.js";
 import { ensureKoppen, ensureKoppenAll, koppenAt, koppenLoaded } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
 import { tideNow, tideLine } from "./tides.js";
-import { ensureBasins, basinAt, basinTotal, basinByKey, knowLine, areaText, endsText } from "./basins.js";
+import { ensureBasins, ensureAllBasins, basinAt, basinTotal, basinByKey, knowLine, areaText, endsText, gridId, basinRows, idOfKey } from "./basins.js";
+import { basinOutline, basinBoxes, basinTint } from "./basinmap.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem, portalFor, nextPortalAt } from "./inventory.js";
 import { whenText, lunationOf } from "./moon.js";
 import { oncePer, hadIn } from "./once.js";
@@ -2404,6 +2405,31 @@ function changeWorn(kind, on) {
   bursts.emit({ at, colors: [new THREE.Color().setHSL(simT % 1, 0.9, 0.7), new THREE.Color(0xffffff)], n: 12, spread: 2 * creature.size, up: 2, fall: 1.5, life: 0.9 });
   return true;
 }
+/** Seeing the basins you know on the atlas's map (watersheds, stage two): their divides, and a tint inside, the one
+ *  you're in brighter. Worked out from the basin tiles (all 72 load the first time, about 100 KB), kept until what you
+ *  know or where you are changes. */
+let basinsCache = null;
+const atlasHere = () => (state.ride ? rideLatLon(state.ride) : world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn);
+async function basinsSeen() {
+  const keys = Object.keys(been.basins);
+  if (!keys.length) return null;
+  await ensureAllBasins();
+  const p = atlasHere(), here = basinAt(p.lat, p.lon);
+  const ids = new Set(keys.map(idOfKey).filter(Boolean)), hereId = here && ids.has(here.id) ? here.id : 0;
+  const sig = `${[...ids].sort((a, b) => a - b).join(",")}|${hereId}`;
+  if (basinsCache?.sig === sig) return basinsCache.out;
+  const rows = basinRows(), boxes = basinBoxes(rows, ids), segs = [];
+  for (const [id, box] of boxes) segs.push(...basinOutline(gridId, new Set([id]), hereId, box).segs);
+  const tints = [];
+  const touches = (col, row) => [...boxes.values()].some((b) => b.x0 < (col + 1) * 300 && b.x1 >= col * 300 && b.y0 < (row + 1) * 300 && b.y1 >= row * 300);
+  rows.forEach((r, row) => r.forEach((t, col) => {
+    if (!t || !touches(col, row)) return;
+    const px = basinTint(gridId, ids, hereId, col * 300, row * 300, 300, 300);
+    if (px) tints.push({ px, x0: col * 300, y0: row * 300, n: 300 });
+  }));
+  basinsCache = { sig, out: { segs, tints } };
+  return basinsCache.out;
+}
 atlasView = buildAtlas({
   maker,
   button: document.getElementById("atlas"),
@@ -2419,7 +2445,8 @@ atlasView = buildAtlas({
       ...allQuests().filter((q) => been.springs[q.key] != null).map((q) => ({ key: `spring:${q.key}`, kind: "spring", name: `The spring of the ${riverWords(q).river ?? riverWords(q).label}`, lat: q.source.at[0], lon: q.source.at[1], note: "its source", colour: `hsl(${Math.round(stoneOf(q).hue * 360)} 80% 65%)`, song: () => sound.river(songOf(q)) })),
     ],
     rivers: () => allQuests().filter((q) => been.springs[q.key] != null).map((q) => q.line.map(([la, lo]) => ({ lat: la, lon: lo }))),
-    here: () => (state.ride ? rideLatLon(state.ride) : world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn),
+    here: atlasHere,
+    basins: basinsSeen,
     seen: () => been.seen,
     tally: () => {
       const n = (o) => Object.keys(o).length, marks = n(been.marks), known = n(been.basins);
