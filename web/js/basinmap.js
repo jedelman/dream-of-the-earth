@@ -87,3 +87,51 @@ export function basinTint(idAt, known, here, x0, y0, tw, th) {
 
 /** A grid point (x east from 180°W, y south from 90°N) as latitude and longitude. */
 export const gridLatLon = (x, y) => ({ lat: 90 - y * GRID_RES, lon: -180 + x * GRID_RES });
+
+// ---- The water's way (still "see"): each known basin's main stem, where you've cleared the cloud, flowing to the sea ----
+
+/**
+ * The stretches of a river's main stem that show, each running downstream (from the source toward the mouth).
+ * line: the stem from the mouth up, [[lat, lon, km from the mouth]] (quests.json's `line`); clear(lat, lon) -> whether
+ * that point is out of the cloud. The stem is walked every step degrees, so a stretch starts and ends close to the edge
+ * of the clear, and a stretch needs two points to show. Returns [[[lat, lon]]].
+ */
+export function stemRuns(line, clear, step = 0.1) {
+  const runs = [];
+  if (!Array.isArray(line) || line.length < 2) return runs;
+  let run = null;
+  const add = (lat, lon) => {
+    if (clear(lat, lon)) (run ??= []).push([lat, lon]);
+    else { if (run?.length >= 2) runs.push(run); run = null; }
+  };
+  for (let k = line.length - 1; k > 0; k--) {
+    const a = line[k], b = line[k - 1];
+    let dlon = b[1] - a[1];
+    if (dlon > 180) dlon -= 360; else if (dlon < -180) dlon += 360; // across the dateline the short way round
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], dlon) / step));
+    for (let j = 0; j < n; j++) add(a[0] + ((b[0] - a[0]) * j) / n, wrap(a[1] + (dlon * j) / n));
+  }
+  add(line[0][0], line[0][1]);
+  if (run?.length >= 2) runs.push(run);
+  return runs;
+}
+const wrap = (lon) => ((((lon + 180) % 360) + 360) % 360) - 180;
+
+/**
+ * Chevrons along a drawn path, one every `every` pixels, each pointing the way the path runs.
+ * pts: [{ x, y }] on screen, in order downstream; a jump wider than `jump` (a copy of the Earth east or west) breaks it.
+ * Returns [{ x, y, a }] with a the angle in radians (0 points east, π/2 points down the screen).
+ */
+export function chevronsAlong(pts, every = 44, jump = Infinity) {
+  const out = [];
+  let left = every / 2;
+  for (let k = 1; k < pts.length; k++) {
+    const p = pts[k - 1], q = pts[k], dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy);
+    if (!len) continue;
+    if (len > jump) { left = every / 2; continue; }
+    let at = left;
+    while (at <= len) { out.push({ x: p.x + (dx * at) / len, y: p.y + (dy * at) / len, a: Math.atan2(dy, dx) }); at += every; }
+    left = at - len;
+  }
+  return out;
+}

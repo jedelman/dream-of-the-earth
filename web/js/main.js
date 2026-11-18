@@ -49,14 +49,14 @@ import { buildMaker, h } from "./maker.js";
 import { buildEditor } from "./editor.js";
 import { buildBag } from "./bag.js";
 import { makeAtlasRecord, parseAtlasRecord, mergeAtlas, mergeBeen, mergeSeen, atlasKey } from "./atlas-record.js";
-import { cellOf } from "./fog.js";
+import { cellOf, cleared } from "./fog.js";
 import { BORN, ASLEEP, WAKER, bornOf, asleep, effective, bornStats, maxDepth, spawnAround } from "./birth.js";
 import { buildFinds, FIND_COLOUR } from "./finds.js";
 import { ensureKoppen, ensureKoppenAll, koppenAt, koppenLoaded } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
 import { tideNow, tideLine } from "./tides.js";
 import { ensureBasins, ensureAllBasins, basinAt, basinTotal, basinByKey, knowLine, areaText, endsText, gridId, basinRows, idOfKey } from "./basins.js";
-import { basinOutline, basinBoxes, basinTint } from "./basinmap.js";
+import { basinOutline, basinBoxes, basinTint, stemRuns } from "./basinmap.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem, portalFor, nextPortalAt } from "./inventory.js";
 import { whenText, lunationOf } from "./moon.js";
 import { oncePer, hadIn } from "./once.js";
@@ -2430,6 +2430,19 @@ async function basinsSeen() {
   basinsCache = { sig, out: { segs, tints } };
   return basinsCache.out;
 }
+/** The water's way (watersheds, still "see"): the main stem of each river basin you know, where you've cleared the
+ *  cloud, running downstream; a river whose spring you've drunk from is drawn whole already (rivers). Kept until what you
+ *  know, where you've been or where you are changes. */
+let stemsCache = null;
+function stemsSeen() {
+  const p = atlasHere(), keys = Object.keys(been.basins).filter((k) => been.springs[k] == null && questOf(k)).sort();
+  const sig = `${keys.join(",")}|${been.seen.size}|${cellOf(p.lat, p.lon)}`;
+  if (stemsCache?.sig === sig) return stemsCache.out;
+  const clear = (lat, lon) => cleared(lat, lon, been.seen, [p]);
+  const out = keys.flatMap((k) => stemRuns(questOf(k).line, clear).map((run) => run.map(([lat, lon]) => ({ lat, lon }))));
+  stemsCache = { sig, out };
+  return out;
+}
 atlasView = buildAtlas({
   maker,
   button: document.getElementById("atlas"),
@@ -2445,6 +2458,7 @@ atlasView = buildAtlas({
       ...allQuests().filter((q) => been.springs[q.key] != null).map((q) => ({ key: `spring:${q.key}`, kind: "spring", name: `The spring of the ${riverWords(q).river ?? riverWords(q).label}`, lat: q.source.at[0], lon: q.source.at[1], note: "its source", colour: `hsl(${Math.round(stoneOf(q).hue * 360)} 80% 65%)`, song: () => sound.river(songOf(q)) })),
     ],
     rivers: () => allQuests().filter((q) => been.springs[q.key] != null).map((q) => q.line.map(([la, lo]) => ({ lat: la, lon: lo }))),
+    stems: stemsSeen,
     here: atlasHere,
     basins: basinsSeen,
     seen: () => been.seen,

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { basinOutline, basinBoxes, basinTint, gridLatLon, GRID_W, GRID_H } from "../web/js/basinmap.js";
+import { basinOutline, basinBoxes, basinTint, gridLatLon, GRID_W, GRID_H, stemRuns, chevronsAlong } from "../web/js/basinmap.js";
 import { basinId } from "../web/js/basins.js";
 import { readPng } from "./png.js";
 
@@ -92,4 +92,51 @@ test("the real Loire: its outline closes round Tours, and only round the Loire",
   }
   assert.ok([...deg.values()].every((d) => d % 2 === 0), "the outline closes");
   assert.ok(ms < 200, `${ms} ms`);
+});
+
+test("stemRuns: the stem runs downstream, cut where the cloud is", () => {
+  // Mouth at 0°E, source at 2°E, along the equator.
+  const line = [[0, 0, 0], [0, 1, 111], [0, 2, 222]];
+  const all = stemRuns(line, () => true);
+  assert.equal(all.length, 1);
+  assert.deepEqual(all[0][0], [0, 2]); // starts at the source
+  assert.deepEqual(all[0].at(-1), [0, 0]); // ends at the mouth
+  assert.ok(all[0].length >= 20); // walked every 0.1°
+  // Clear only near the source and near the mouth: two stretches, each still downstream.
+  const two = stemRuns(line, (lat, lon) => lon > 1.6 || lon < 0.45);
+  assert.equal(two.length, 2);
+  assert.ok(two[0][0][1] > two[0].at(-1)[1] && two[0][0][1] > 1.6);
+  assert.ok(two[1].at(-1)[1] === 0);
+  // Nothing clear, or a single clear point: nothing shows.
+  assert.equal(stemRuns(line, () => false).length, 0);
+  assert.equal(stemRuns(line, (lat, lon) => Math.abs(lon - 1) < 0.01).length, 0);
+  assert.equal(stemRuns([[0, 0, 0]], () => true).length, 0);
+});
+
+test("stemRuns: across the dateline the short way", () => {
+  const run = stemRuns([[60, 179.5, 0], [60, -179.5, 55]], () => true)[0];
+  assert.ok(run.length <= 12, `${run.length} points`);
+  for (const [, lon] of run) assert.ok(Math.abs(lon) >= 179.4, `${lon}`);
+});
+
+test("stemRuns: the real Loire runs west to the sea, and where you've been is all that shows", () => {
+  const q = JSON.parse(fs.readFileSync(new URL("../web/data/basins/quests.json", import.meta.url))).quests.find((x) => x.key === "loire-river");
+  const whole = stemRuns(q.line, () => true)[0];
+  assert.ok(whole[0][1] > whole.at(-1)[1] + 3, "source well east of the mouth");
+  // Only round Tours (47.39, 0.69) cleared.
+  const near = stemRuns(q.line, (lat, lon) => Math.hypot(lat - 47.39, lon - 0.69) < 0.5);
+  assert.equal(near.length, 1);
+  assert.ok(near[0][0][1] > near[0].at(-1)[1], "flows west at Tours");
+  for (const [lat, lon] of near[0]) assert.ok(Math.hypot(lat - 47.39, lon - 0.69) < 0.5);
+});
+
+test("chevronsAlong: evenly spaced, pointing along, broken at a jump", () => {
+  const c = chevronsAlong([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }], 40);
+  assert.deepEqual(c.map((v) => Math.round(v.x)), [20, 60, 100, 100, 100]);
+  assert.deepEqual(c.map((v) => Math.round(v.y)), [0, 0, 0, 40, 80]);
+  assert.equal(c[0].a, 0);
+  assert.equal(c.at(-1).a, Math.PI / 2);
+  const j = chevronsAlong([{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 900, y: 0 }, { x: 930, y: 0 }], 40, 400);
+  assert.deepEqual(j.map((v) => Math.round(v.x)), [20, 920]);
+  assert.equal(chevronsAlong([{ x: 0, y: 0 }], 40).length, 0);
 });

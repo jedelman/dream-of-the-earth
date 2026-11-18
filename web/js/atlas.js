@@ -8,6 +8,7 @@
 import { h } from "./maker.js";
 import { distanceText } from "./artifacts.js";
 import { gridLatLon } from "./basinmap.js";
+import { chevronsAlong } from "./basinmap.js";
 import { SEEN_W, SEEN_H, CLEAR_R, cellOf, cellMiddle, cleared, clampView, project, unproject, zoomAbout, panBy } from "./fog.js";
 
 const BEYOND = "#0b0718", NEAR_START = 10; // past the poles; how many degrees across the map opens on, round you
@@ -65,7 +66,8 @@ function buildFog(seen, spots) {
 
 /**
  * hooks: { places() -> [{ key, kind ("shrine" | "node" | "mark" | "way" | "spring"), name, lat, lon, colour (css), note, song? }],
- * rivers() -> [[{ lat, lon }]] (rivers whose springs you've drunk from, drawn shining), here() -> { lat, lon },
+ * rivers() -> [[{ lat, lon }]] (rivers whose springs you've drunk from, drawn shining, from the mouth up),
+ * stems() -> [[{ lat, lon }]] (the main stems of the basins you know, where clear, each from upstream down), here() -> { lat, lon },
  * basins() -> Promise<{ segs, tints: [{ px, x0, y0, n }] } | null> (the basins you know: their divides, basinmap.js, and tints
  * by tile of n × n grid pixels), seen() -> Set of cells, tally() -> string, spotWords(lat, lon) -> Promise<string> (what's at a clear spot), landReady()
  * -> Promise, landColour(lat, lon) -> 0xrrggbb | null (sea), travel(key), globe() }.
@@ -86,7 +88,7 @@ export function buildAtlas({ maker, button, hooks }) {
       caption,
       h("p", { class: "small tally" }, hooks.tally()),
       h("div", { class: "row" }, h("button", { onclick: () => { maker.close(); hooks.globe(); } }, "Show on the globe")),
-      h("p", { class: "small" }, "Where you've been is clear; the rest is cloud. Blue lines are the divides round the river basins you know, the one you're in brightest. Tap a place to go back to it; tap anywhere clear to see what's there. Your atlas is kept on this device and, signed in, in your Bluesky repo, so it follows you."),
+      h("p", { class: "small" }, "Where you've been is clear; the rest is cloud. Blue lines are the divides round the river basins you know, the one you're in brightest; inside, where you've been, each basin's river shows the way its water runs to the sea. Tap a place to go back to it; tap anywhere clear to see what's there. Your atlas is kept on this device and, signed in, in your Bluesky repo, so it follows you."),
     ], { trigger: button, classes: ["atlas"], onClose: () => { ui = null; } });
     ui = { canvas, marks, you, caption, map, fog: null, selected: null, places: hooks.places(), basins: null };
     loadBasins();
@@ -175,20 +177,36 @@ export function buildAtlas({ maker, button, hooks }) {
     drawTints(ctx, w, hgt);
     layer(ui.fog);
     drawDivides(ctx, w, hgt);
-    // The rivers whose springs you've drunk from, shining from source to sea (each copy east or west that shows).
+    // The water's way: the main stems of the basins you know, where you've been, and the rivers whose springs you've
+    // drunk from, shining from source to sea; chevrons on both point downstream (each copy east or west that shows).
     ctx.lineJoin = "round"; ctx.lineCap = "round";
-    for (const path of hooks.rivers()) {
-      for (const [width, colour] of [[4, "rgba(127, 255, 224, .25)"], [1.6, "#9ff7ff"]]) {
-        ctx.beginPath(); ctx.lineWidth = width; ctx.strokeStyle = colour;
-        let last = null;
-        for (const pt of path) {
-          const q = project(pt.lat, pt.lon, view, w, hgt);
-          if (last && Math.abs(q.x - last.x) > w / 2) ctx.moveTo(q.x, q.y); else if (last) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y);
-          last = q;
-        }
-        ctx.stroke();
-      }
+    const onScreen = (path) => path.map((pt) => project(pt.lat, pt.lon, view, w, hgt));
+    const stroke = (pts, width, colour) => {
+      ctx.beginPath(); ctx.lineWidth = width; ctx.strokeStyle = colour;
+      pts.forEach((q, k) => (k && Math.abs(q.x - pts[k - 1].x) <= w / 2 ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+      ctx.stroke();
+    };
+    const flows = [];
+    for (const path of hooks.stems?.() ?? []) {
+      const pts = onScreen(path);
+      stroke(pts, 4.4, "rgba(8, 14, 48, .6)"); stroke(pts, 2.2, "#3d8bff");
+      flows.push(pts);
     }
+    for (const path of hooks.rivers()) {
+      const pts = onScreen(path);
+      stroke(pts, 4, "rgba(127, 255, 224, .25)"); stroke(pts, 1.6, "#9ff7ff");
+      flows.push(pts.reverse());
+    }
+    ctx.lineWidth = 1.6; ctx.strokeStyle = "#f2fdff";
+    ctx.beginPath();
+    for (const pts of flows) for (const c of chevronsAlong(pts, 46, w / 2)) {
+      if (c.x < -6 || c.x > w + 6 || c.y < -6 || c.y > hgt + 6) continue;
+      const ax = Math.cos(c.a), ay = Math.sin(c.a), s = 3.8;
+      ctx.moveTo(c.x - s * ax - s * ay, c.y - s * ay + s * ax);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(c.x - s * ax + s * ay, c.y - s * ay - s * ax);
+    }
+    ctx.stroke();
     // Far out, a cleared patch is smaller than a pixel: show each seen cell as a speck of its land, so you can see where
     // you've been on the whole Earth.
     const cw = view.ppd * 0.25;
@@ -297,6 +315,6 @@ export function buildAtlas({ maker, button, hooks }) {
       if (zoomBy) zoom(Math.exp(-zoomBy * 2.2 * dt));
     },
     /** For tests: what the map shows. */
-    state: () => ui && view && { view: { ...view }, marks: [...ui.marks.children].filter((b) => !b.hidden).map((b) => b._place.key), caption: ui.caption.textContent, based: !!base, divides: ui.basins?.segs.length ?? 0, tints: ui.basins?.tints.length ?? 0 },
+    state: () => ui && view && { view: { ...view }, marks: [...ui.marks.children].filter((b) => !b.hidden).map((b) => b._place.key), caption: ui.caption.textContent, based: !!base, divides: ui.basins?.segs.length ?? 0, stems: hooks.stems?.().length ?? 0, tints: ui.basins?.tints.length ?? 0 },
   };
 }

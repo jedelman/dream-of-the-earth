@@ -260,7 +260,9 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
     holds unless something clearly better comes along, so it doesn't flicker between two trees. E (or tapping the
     prompt; a ✦ stands in for the key on touch screens) does it; with nothing in reach, E squeaks. On a phone the
     prompt sits above ▲▼, under the right thumb. It stays bottom right on a computer too: centred, it covered
-    the creature and collided with the log. Highway glints sit 30 m along each line the way you face, so at a
+    the creature and collided with the log. On a phone the prompt sits 130 px above the log's foot, so the log is capped
+    at 120 px tall (11-18): long wrapped lines lose their oldest rows off the top, faded, instead of running under the
+    prompt (seen on a Pixel 7 on 11-16: "Drink from the Rhine" over the first log line). Highway glints sit 30 m along each line the way you face, so at a
     node they fan out along the roads instead of stacking on the node.
   - **Fireflies answer too (built 11-10, from the "more things to touch" list: fireflies, the sea, ley pillars):**
     at night, in the biomes that have them, a firefly within 14 m glints and gets the prompt "(E) Cup the firefly";
@@ -1076,8 +1078,18 @@ Knowing came first (11-10); this is seeing. (`basinmap.js`, the `basins` hook in
   round known basins; shared divides; the basin you're in marked; the dateline and poles; the tint; boxes scan the same
   as the whole grid; the real Loire round Tours, closed, in France). Headless, desktop and Pixel 7, with the Loire,
   Seine, Rhône and Garonne known, from Tours.
-- **Still to come for "see":** the water's way (which way the rain runs inside a basin) and, maybe, the divides in the
-  world itself; then "enter" (riding a river).
+- **The water's way (built 11-18, overnight; `stemRuns`, `chevronsAlong` in `basinmap.js`, `stemsSeen` in `main.js`):**
+  inside every basin you know, its main stem (the same line the river quests climb, `quests.json`'s `line`) is drawn on
+  the map in water blue over a dark edge, with small white chevrons every 46 px pointing downstream, toward the mouth.
+  Only where you've cleared the cloud: the stem is walked every 0.1° and cut where the cloud starts, so the quest still
+  draws the river as you follow it, and the spring's reward (the whole river shining, source to sea) stays a reward. The
+  shining rivers carry the chevrons too. Kept until what you know, where you've been or the cell you're in changes. Only
+  the main stem: tributaries would need flow directions shipped as data, and the stem is what the quests are about.
+  No new data, records, lexicons or scopes. Tests: 4 (a stem runs source to mouth and is cut by the cloud; the dateline;
+  the real Loire flows west at Tours, and only the clear part shows; chevrons spaced, pointing along, broken where a
+  copy of the Earth jumps). Headless, desktop and Pixel 7, from Tours with the Loire, Seine, Rhône and Garonne known
+  and the Rhône's spring drunk from: the Loire's chevrons point west, the Rhône's south.
+- **Still to come for "see":** maybe the divides in the world itself; then "enter" (riding a river).
 
 ### Rivers and lakes, drawn as water (built 11-14, overnight)
 Inland water was on the list since the first night ("inland water (rivers and lakes are drawn as land today, sand where
