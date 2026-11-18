@@ -13,6 +13,13 @@ export function logLine(text, kind = "note") {
   line.textContent = text;
   box.appendChild(line);
   while (box.children.length > MAX_LINES) box.firstChild.remove();
+  clipped();
   setTimeout(() => line.classList.add("old"), FADE_MS);
-  setTimeout(() => line.remove(), GONE_MS);
+  setTimeout(() => { line.remove(); clipped(); }, GONE_MS);
+}
+// On a phone the log is capped in height (index.html); while its oldest rows run off the top, fade that edge.
+function clipped() {
+  // (Overflow at the top of a flex-end column isn't counted in scrollHeight, so compare the oldest line's top.)
+  const first = box.firstElementChild;
+  box.classList.toggle("clipped", !!first && first.getBoundingClientRect().top < box.getBoundingClientRect().top - 1);
 }

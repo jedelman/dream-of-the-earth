@@ -51,7 +51,8 @@ you where its water is going.
 
 **Your atlas** is a map of where you've been: the Earth in its climate's colours, under cloud everywhere else. The
 shrines, ley nodes and landmarks you've found are marked on it, to tap and travel back to. The river basins you know
-are outlined on it, even under the cloud: blue lines along the divides where the rain parts, the one you're in brightest.
+are outlined on it, even under the cloud: blue lines along the divides where the rain parts, the one you're in brightest. Inside, wherever you've been, each
+basin's river is drawn with small chevrons pointing the way its water runs to the sea.
 
 **Sky beings:** sparkling eldritch things grown from L-systems drift slowly along every ley line, and everyone
 sees the same one in the same place at the same moment.
