@@ -10,12 +10,14 @@
 
 /** Where the creature is, what it's doing: walking the world, on a trip you tapped for, held in a ley node's ring,
  *  riding a highway, in a dream, or travelling (the world regrowing round you after a ride or a jump). */
-export const TRAVEL = ["world", "trip", "ring", "ride", "dream", "travelling"];
+export const TRAVEL = ["world", "trip", "ring", "ride", "dream", "travelling", "river"];
 
 /** Each state's events and where they lead. An event missing from a state is refused. */
 export const TRANSITIONS = {
-  world: { trip: "trip", enterStones: "ring", board: "ride", dream: "dream", travel: "travelling" },
+  world: { trip: "trip", enterStones: "ring", board: "ride", dream: "dream", travel: "travelling", float: "river" },
   trip: { arrive: "world", cancel: "world", trip: "trip", enterStones: "ring", board: "ride", dream: "dream", travel: "travelling" },
+  // Riding a river (11-19): carried downstream until you step ashore, it gives you to the sea, or it runs out.
+  river: { ashore: "world", travel: "travelling" },
   // The ring is left only by a lane, letting go, or a jump elsewhere: no tapping onto a highway from inside it.
   ring: { takeLane: "ride", letGo: "world", travel: "travelling" },
   ride: { hop: "ride", leave: "travelling", travel: "travelling" },
@@ -32,8 +34,9 @@ export const next = (state, event) => TRANSITIONS[state]?.[event] ?? null;
  * The travel state the data describes: { state, conflict }. data: { ride (with .leaving), gate, realm, target,
  * travelling }. conflict lists the states when more than one is set (it should never be; main.js counts it).
  */
-export function travelOf({ ride = null, gate = null, realm = null, target = null, travelling = null } = {}) {
+export function travelOf({ ride = null, gate = null, realm = null, target = null, travelling = null, float = null } = {}) {
   const on = [];
+  if (float) on.push("river");
   if (realm) on.push("dream");
   if (gate) on.push("ring");
   if (ride && !ride.leaving) on.push("ride");
@@ -52,9 +55,9 @@ export const ALLOW = {
   tap: IN("world", "trip"), // tap to go, tap to touch (a dream says to walk instead)
   globeTap: IN("world", "trip", "ring"), // a dot on the globe: travel there
   capture: IN("world"), // flying along a highway takes you (not on a trip you tapped for, or anywhere else)
-  regrowFar: IN("world", "trip"), // walking far regrows the world round you
+  regrowFar: IN("world", "trip", "river"), // walking (or riding a river) far regrows the world round you
   pigeon: IN("world", "trip"), // a pigeon may land by you
-  travel: IN("world", "trip", "ring", "ride", "dream"), // the atlas, a portal, a cairn, the globe
+  travel: IN("world", "trip", "ring", "ride", "dream", "river"), // the atlas, a portal, a cairn, the globe
 };
 
 /**

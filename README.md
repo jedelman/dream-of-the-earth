@@ -42,7 +42,7 @@ bronze ones in cooler water, ice fish near the poles), and kelp forests sway on 
 your way. Rush through a shoal and it scatters; swim up gently and greet it, and it swirls round you.
 
 **Tides and currents:** the sea rises and falls with the real Moon and Sun, and so do the great lakes. Stand still in a
-river and its current carries you downstream. Walk into a lake and you swim. Ducks paddle on rivers and lakes, and
+river and its current carries you downstream. Face downstream in a river and it will carry you, as fast as it is deep, all the way to the sea. Walk into a lake and you swim. Ducks paddle on rivers and lakes, and
 frogs croak along the banks.
 
 **Watersheds:** every bit of land drains somewhere. The first time you're in one of 321 river basins (worked out from

@@ -137,13 +137,15 @@ export function promptFor(c) {
   if (c.kind === "door") return `Enter ${c.name} \u2197`; // ↗: it opens in a new tab
   if (c.kind === "lane") return "Set off along this lane";
   if (c.kind === "ride") return "Step off";
+  if (c.kind === "rideriver") return c.name ? `Ride the ${c.name} downstream` : "Ride the river downstream";
+  if (c.kind === "ashore") return "Step out onto the bank";
   if (c.kind === "artifact") return c.own ? "Tend your cairn" : c.handle ? `Read @${c.handle}'s cairn` : "Read the cairn";
   return "Squeak";
 }
 
 // Small things close at hand come before big things far off: beside a tree, with a
 // sky being on the horizon, the tree is what you meant.
-const BIAS = { find: -0.12, stones: -0.2, door: -0.2, waymark: -0.2, spring: -0.2, shrine: -0.08, artifact: -0.05, critter: -0.02, shoal: -0.02, butterfly: 0, firefly: 0, tree: 0.05, being: 0.4, water: 0.45 };
+const BIAS = { find: -0.12, stones: -0.2, door: -0.2, waymark: -0.2, spring: -0.2, shrine: -0.08, artifact: -0.05, critter: -0.02, shoal: -0.02, butterfly: 0, firefly: 0, tree: 0.05, being: 0.4, water: 0.45, rideriver: 0.1 };
 
 /**
  * How much a thing in reach wants the prompt (lower wins). c: { kind, d, range, facing, species? },

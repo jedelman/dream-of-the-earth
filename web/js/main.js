@@ -78,6 +78,7 @@ import { buildInsects } from "./insects.js";
 import { buildCritters } from "./critters.js";
 import { buildFish } from "./fish.js";
 import { shoalLine, SCATTER_LINE } from "./fishlife.js";
+import { riverAt, nearestOnStem, advance as alongRiver, pointAt, rideLine } from "./riverride.js";
 import { LANDMARKS, landmarkQuery } from "./landmarks.js";
 import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
 import { createKept } from "./kept.js";
@@ -460,6 +461,76 @@ function riverDrift(thrust, dt) {
   state.pos.x += v.x * dt;
   state.pos.z += v.z * dt;
   if (drift.still > 2 && drift.said !== wading.key) { drift.said = wading.key; logLine(currentLine(w.name), "note"); }
+}
+// ---- Riding a river (the watersheds' "enter" stage; Jason, 11-19: "Riding a river should have speed based on depth and
+// flow volume") ----
+// Face downstream in a flowing river and E: the river takes you, as fast as its depth (from how much water it carries,
+// riverride.js) says. Steer across it; it flows on from piece to piece of the river's line as the world regrows round
+// you; Shift, ▼ or E steps you out onto the bank; at the sea it lets you go.
+/** How much water the river carries here, from your basin's main stem if this is it, else from its rank. */
+function riverHere(r, x, z) {
+  const ll = world.frame.toLatLon(x, z), b = basinHere.b, q = b && b.kind === "river" ? questOf(b.key) : null;
+  const near = q ? nearestOnStem(q.line, ll.lat, ll.lon) : null;
+  const bare = (n) => (n || "").toLowerCase().replace(/\b(river|rio|río|rivière|fleuve)\b/g, "").trim();
+  const onStem = near && (near.km < 6 || (near.km < 25 && bare(r.name) && bare(r.name) === bare(b.river)));
+  return riverAt(onStem ? { basinKm2: b.area, lenKm: q.len, sFromSeaKm: near.s } : { rank: r.rank });
+}
+function startFloat(at) {
+  if (!go("float")) return;
+  clearTarget();
+  const info = riverHere(at.r, state.pos.x, state.pos.z);
+  state.float = { r: at.r, k: at.k, t: at.t, off: 0, v: Math.max(2, Math.abs(state.speed)), info, world, since: simT, name: at.r.name };
+  state.speed = 0; state.vy = 0; state.mode = "water";
+  sound.splash();
+  logLine(rideLine(at.r.name, info), "note");
+  scanAt = 0;
+}
+function endFloat(how) {
+  const f = state.float;
+  if (!f || !go("ashore")) return;
+  state.float = null;
+  const p = state.pos, h = world.terrain.heightAt(p.x, p.z);
+  if (how === "sea" || h < 0) { state.mode = "water"; logLine(`${f.name ? `The ${f.name}` : "The river"} gives you to the sea.`, "note"); }
+  else {
+    // Out onto the bank on the side you're nearer.
+    const here = pointAt(f.r.line, f.k, f.t), side = f.off >= 0 ? 1 : -1, nx = -here.dz * side, nz = here.dx * side;
+    p.x = here.x + nx * (f.r.width / 2 + 6); p.z = here.z + nz * (f.r.width / 2 + 6);
+    p.y = Math.max(0, world.terrain.heightAt(p.x, p.z)); state.mode = "ground";
+    if (how === "end") logLine(`${f.name ? `The ${f.name}` : "The river"} slows, and sets you down on the bank.`, "note");
+  }
+  state.speed = 0; state.vy = 0; scanAt = 0;
+}
+function floatStep(dt) {
+  const f = state.float, manual = input();
+  if (acts.letGo.pressed && simT - f.since > 0.6) return endFloat("ashore"); // Shift, S, ▼, B, as off a highway
+  if (f.world !== world) {
+    // The world regrew round you: find the river again where you are.
+    const again = world.inland.rideFrom(state.pos.x, state.pos.z, 400);
+    if (!again) return endFloat("end");
+    Object.assign(f, { r: again.r, k: again.k, t: again.t, world, off: Math.max(-again.r.width / 2, Math.min(again.r.width / 2, f.off)) });
+  }
+  f.v += (f.info.speed - f.v) * Math.min(1, dt * 0.6); // the river's own pace, picked up over a few seconds
+  let n = alongRiver(f.r.line, f.k, f.t, f.v * dt);
+  if (n.end) {
+    const end = f.r.line[f.r.line.length - 1], on = world.inland.riverOnFrom(end[0], end[1], f.r.name, f.r);
+    if (on) { f.r = on; n = alongRiver(on.line, 0, 0, n.over); if (n.end) n = { k: 0, t: 0 }; f.info = riverHere(on, end[0], end[1]); if (on.name && on.name !== f.name) { f.name = on.name; logLine(rideLine(on.name, f.info), "note"); } }
+    else { const p = state.pos; p.x = end[0]; p.z = end[1]; return endFloat(world.terrain.heightAt(end[0], end[1]) < 2 ? "sea" : "end"); }
+  }
+  f.k = n.k; f.t = n.t;
+  const here = pointAt(f.r.line, f.k, f.t), half = Math.max(0, f.r.width / 2 - 3);
+  f.off = Math.max(-half, Math.min(half, f.off - manual.turn * 12 * dt)); // steer across it
+  const p = state.pos, nx = -here.dz, nz = here.dx;
+  p.x = here.x + nx * f.off; p.z = here.z + nz * f.off;
+  const ground = world.terrain.heightAt(p.x, p.z);
+  if (ground < -2) return endFloat("sea");
+  p.y = Math.max(ground, 0) + 0.6;
+  const want2 = Math.atan2(-here.dx, -here.dz);
+  state.heading += Math.atan2(Math.sin(want2 - state.heading), Math.cos(want2 - state.heading)) * Math.min(1, dt * 3);
+  state.mode = "water";
+  if (Math.hypot(p.x, p.z) > 15000 && allows("regrowFar") && !rebuilding) {
+    const ll = world.frame.toLatLon(p.x, p.z);
+    regrow(ll.lat, ll.lon, (w) => { swapWorld(w); setStatus(""); });
+  }
 }
 // Watersheds, the first stage (Jason, 11-10: "All 3, in stages"; know, see, enter): the first time you're in a basin you
 // know it. Its name, where its rain goes, and that it begins somewhere upstream (the clues come later); into your atlas.
@@ -1245,6 +1316,7 @@ function step(dt) {
   sp = speeds(body(), (graph.scale / TYPICAL_SCALE) * spellLegs);
   if (state.realm) sp.run = Math.min(sp.run, DREAM_PACE); // in a dream you move as in a dream: no faster than a trot
   if (state.gate) return gateStep(dt);
+  if (state.float) return floatStep(dt);
   const manual = input();
   if (manual.turn || manual.thrust || manual.up) { director.input(simT); if (state.target) clearTarget(); } // your hands back on the controls
   const { turn, thrust, up } = (!manual.turn && !manual.thrust && !manual.up && autopilot()) || manual;
@@ -2070,7 +2142,12 @@ function inReach() {
   for (const e of cairns.near(p.x, p.z, RANGE.artifact)) {
     add({ kind: "artifact", key: `a${e.a.uri}`, d: Math.hypot(e.x - p.x, e.z - p.z), range: RANGE.artifact, entry: e, handle: e.a.handle, own: e.a.own }, e.x, e.z);
   }
-  const wt = waterAsks(out) && waterHere();
+  // In a flowing river, facing downstream (within about 50°), the river offers to take you, whatever else is about (a
+  // duck right under your nose still wins); facing any other way, a drink, when nothing you came for is in reach.
+  const wading = state.mode === "ground" && !state.realm && !state.ride ? world.inland.wadingAt(p.x, p.z, p.y) : null;
+  const downstream = wading?.flow && -Math.sin(state.heading) * wading.flow.x + -Math.cos(state.heading) * wading.flow.z > 0.64;
+  if (downstream) add({ kind: "rideriver", key: `ride:${wading.name ?? ""}`, name: wading.name, d: 0, range: 1 }, p.x, p.z);
+  const wt = !downstream && waterAsks(out) && waterHere();
   if (wt) add({ kind: "water", key: `water:${wt.water}:${wt.name ?? ""}`, d: 0, range: 1, ...wt }, wt.x, wt.z);
   return out;
 }
@@ -2084,6 +2161,7 @@ function glintSpot(c, v, bs) {
   if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
   if (c.kind === "firefly") return v.set(c.x, c.y, c.z);
   if (c.kind === "water") return v.set(c.x, c.y + 0.8, c.z);
+  if (c.kind === "rideriver") return v.set(state.pos.x - Math.sin(state.heading) * 6, state.pos.y + 1.2, state.pos.z - Math.cos(state.heading) * 6);
   if (c.kind === "find") return v.set(c.f.x, c.f.y + 0.7, c.f.z);
   if (c.kind === "shrine") return v.set(c.s.x, c.s.y + 2.4, c.s.z);
   if (c.kind === "stones") return v.set(c.c.x, c.c.y + 3.5, c.c.z);
@@ -2106,7 +2184,7 @@ function updateReach(t, dt) {
     lit = glinting(reach, focus, 5);
   }
   const r = state.ride, g = state.gate;
-  const words = r ? (!r.leaving && r.age > 0.6 ? promptFor({ kind: "ride" }) : "") : g ? (g.phase === "choose" ? promptFor({ kind: "lane" }) : "") : focus ? promptFor(focus) : "";
+  const words = state.float ? promptFor({ kind: "ashore" }) : r ? (!r.leaving && r.age > 0.6 ? promptFor({ kind: "ride" }) : "") : g ? (g.phase === "choose" ? promptFor({ kind: "lane" }) : "") : focus ? promptFor(focus) : "";
   if (words !== shownPrompt) {
     shownPrompt = words;
     if (words) actWhat.textContent = words;
@@ -2128,6 +2206,7 @@ function interact() {
   const r = state.ride;
   if (r) { if (!r.leaving && r.age > 0.6) leaveRide(false); return; }
   if (state.gate) { if (state.gate.phase === "choose") takeLane(); return; }
+  if (state.float) return endFloat("ashore");
   const m = modeSnap();
   if (!m.ready || m.view === "globe" || m.travel === "travelling") return;
   director.input(simT);
@@ -2142,6 +2221,7 @@ function interact() {
   if (c.kind === "butterfly") { const b = world.insects.butterflies().find((q) => q.seed === c.seed); return b ? chirp(b.k) : squeak(); }
   if (c.kind === "firefly") return touchFirefly(c.x, c.y, c.z, c.seed);
   if (c.kind === "water") return touchWater(c);
+  if (c.kind === "rideriver") { const at = world.inland.rideFrom(state.pos.x, state.pos.z); return at ? startFloat(at) : squeak(); }
   if (c.kind === "find") return pickUp(c.f);
   if (c.kind === "shrine") return canDream(c.s) ? enterDream(c.s) : castSpell(c.s);
   if (c.kind === "critter") return touchCritter(c.key);

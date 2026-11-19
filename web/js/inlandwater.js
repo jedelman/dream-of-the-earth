@@ -168,7 +168,7 @@ export function buildInland(frame, terrain) {
         add(m);
         riverCount++;
         if (speed) flowing++; else still++;
-        if (run.some((p) => inBox(p, near))) rivers.push({ name: r.name, width, line, flows: !!sign, speed });
+        if (run.some((p) => inBox(p, near))) rivers.push({ name: r.name, rank: r.rank, width, line, flows: !!sign, speed });
       }
     }
     for (const l of t.lakes) {
@@ -240,5 +240,23 @@ export function buildInland(frame, terrain) {
     if (l && terrain.heightAt(x, z) < l.level + 2) return true;
     return !!riverAt(x, z, 2);
   }
-  return { group, wadingAt, wet, lakeAt, stats: { rivers: riverCount, flowing, still, lakes: lakes.length, triangles: idx.length / 3 } };
+  /** The river you're in, to ride: { r (its name, rank, width, line downstream), k, t (segment k, t metres in) } or null. */
+  function rideFrom(x, z, margin = 3) {
+    const s = segAt(x, z, margin);
+    if (!s || !s.r.flows) return null;
+    const L = s.r.line, a = s.pts[0], k = L.indexOf(a);
+    if (k < 0) return null;
+    return { r: s.r, k, t: Math.min(Math.hypot(x - a[0], z - a[1]), Math.hypot(s.pts[1][0] - a[0], s.pts[1][1] - a[1])) };
+  }
+  /** The river a ride flows on into from (x, z), the end of the last: a flowing line starting within 400 m, the same name first. */
+  function riverOnFrom(x, z, name, not) {
+    let best = null, bestD = 400;
+    for (const r of rivers) {
+      if (r === not || !r.flows) continue;
+      const d = Math.hypot(r.line[0][0] - x, r.line[0][1] - z) - (r.name === name ? 150 : 0);
+      if (d < bestD) { best = r; bestD = d; }
+    }
+    return best;
+  }
+  return { group, wadingAt, wet, lakeAt, rideFrom, riverOnFrom, stats: { rivers: riverCount, flowing, still, lakes: lakes.length, triangles: idx.length / 3 } };
 }
