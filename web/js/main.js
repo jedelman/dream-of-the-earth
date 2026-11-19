@@ -77,7 +77,7 @@ import { buildPlants } from "./plants.js";
 import { buildInsects } from "./insects.js";
 import { buildCritters } from "./critters.js";
 import { buildFish } from "./fish.js";
-import { shoalLine, SCATTER_LINE } from "./fishlife.js";
+import { shoalLine, SCATTER_LINE, coralLine } from "./fishlife.js";
 import { riverAt, nearestOnStem, advance as alongRiver, pointAt, rideLine } from "./riverride.js";
 import { LANDMARKS, landmarkQuery } from "./landmarks.js";
 import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
@@ -2038,6 +2038,14 @@ function fishNews(events, t) {
     if (t - scatteredAt > 8) { logLine(SCATTER_LINE(ev.s.name, !scatteredEver), "creature"); scatteredAt = t; scatteredEver = true; }
   }
 }
+let coralTouches = 0;
+function touchCoral(key) {
+  const c = world.fish.touchCoral(key, simT);
+  if (!c) return squeak();
+  sound.glow();
+  bursts.emit({ at: new THREE.Vector3(c.x, c.y + 0.5, c.z), colors: [new THREE.Color(0xfff2c0), new THREE.Color(0xcff6ff)], n: 8, spread: 1, up: 1.4, fall: -0.3, life: 1.6 });
+  logLine(coralLine(c.name, hashString(key), coralTouches++), "creature");
+}
 function touchShoal(key) {
   const s = world.fish.touch(key, simT);
   if (!s) return squeak();
@@ -2127,6 +2135,9 @@ function inReach() {
     const d = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z);
     if (d < RANGE.critter) add({ kind: "critter", key: c.key, species: c.kind, name: c.name, d, range: RANGE.critter, c }, c.x, c.z);
   }
+  if (state.mode === "water") for (const c of world.fish.corals(p.x, p.y, p.z, RANGE.coral)) {
+    add({ kind: "coral", key: c.key, name: c.name, d: Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z), range: RANGE.coral, c }, c.x, c.z);
+  }
   for (const s of world.fish.near(p.x, p.y, p.z, RANGE.shoal)) {
     add({ kind: "shoal", key: s.key, name: s.name, d: Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z), range: RANGE.shoal, s }, s.x, s.z);
   }
@@ -2168,6 +2179,7 @@ function glintSpot(c, v, bs) {
   if (c.kind === "door") return v.set(c.door.x, c.door.y + 6, c.door.z);
   if (c.kind === "waymark" || c.kind === "spring") return v.set(c.w.x, c.w.y + (c.kind === "spring" ? 3 : 5), c.w.z);
   if (c.kind === "critter") { const q = world.critters.near(c.c.x, c.c.z, 40).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 1.3, q.z) : null; }
+  if (c.kind === "coral") return v.set(c.c.x, c.c.y + c.c.size * 0.6, c.c.z);
   if (c.kind === "shoal") { const q = world.fish.near(c.s.x, c.s.y, c.s.z, 60).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 2, q.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
   if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
@@ -2226,6 +2238,7 @@ function interact() {
   if (c.kind === "shrine") return canDream(c.s) ? enterDream(c.s) : castSpell(c.s);
   if (c.kind === "critter") return touchCritter(c.key);
   if (c.kind === "shoal") return touchShoal(c.key);
+  if (c.kind === "coral") return touchCoral(c.key);
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "stones") return enterStones(c.c);
   if (c.kind === "door") return openDoor(c.door);
