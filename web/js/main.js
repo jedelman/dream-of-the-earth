@@ -18,7 +18,7 @@ import { buildStones, CIRCLE_R } from "./stones.js";
 import { buildDoors } from "./doors.js";
 import { buildWaymarks } from "./waymarks.js";
 import { ensureWater, buildInland, updateInland } from "./inlandwater.js";
-import { wadeLine } from "./inland.js";
+import { wadeLine, currentOf, currentLine } from "./inland.js";
 import { ensureQuests, questOf, allQuests, wayKey, springAwake, target as questTarget, clueLine, landing, stretch, densify, songOf, stoneOf, metres as questMetres, bearing as questBearing, compassWords, arrow, kmText } from "./quests.js";
 import { placeOfNode } from "./nodenames.js";
 import { next as nextMode, travelOf, can as modeAllows, viewOf as cameraRegion } from "./modes.js";
@@ -54,7 +54,7 @@ import { BORN, ASLEEP, WAKER, bornOf, asleep, effective, bornStats, maxDepth, sp
 import { buildFinds, FIND_COLOUR } from "./finds.js";
 import { ensureKoppen, ensureKoppenAll, koppenAt, koppenLoaded } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
-import { tideNow, tideLine } from "./tides.js";
+import { tideNow, tideLine, seaRise } from "./tides.js";
 import { ensureBasins, ensureAllBasins, basinAt, basinTotal, basinByKey, knowLine, areaText, endsText, gridId, basinRows, idOfKey } from "./basins.js";
 import { basinOutline, basinBoxes, basinTint, stemRuns } from "./basinmap.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem, portalFor, nextPortalAt } from "./inventory.js";
@@ -446,6 +446,18 @@ function wade() {
   if (key === wading.key) return;
   wading.key = key;
   logLine(wadeLine(w), "note");
+}
+// The current carries a wader who stands still (Jason, 11-19: "Yes, fun!"); walking, even upstream, it leaves you be.
+const drift = { still: 0, said: "" };
+function riverDrift(thrust, dt) {
+  const w = state.mode === "ground" && !state.realm && !state.ride && !state.target && thrust === 0 && Math.abs(state.speed) < 0.5 ? world?.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y) : null;
+  if (!w || !w.flow) { drift.still = 0; return; }
+  drift.still += dt;
+  const v = currentOf(w.flow, drift.still);
+  if (!v) return;
+  state.pos.x += v.x * dt;
+  state.pos.z += v.z * dt;
+  if (drift.still > 2 && drift.said !== wading.key) { drift.said = wading.key; logLine(currentLine(w.name), "note"); }
 }
 // Watersheds, the first stage (Jason, 11-10: "All 3, in stages"; know, see, enter): the first time you're in a basin you
 // know it. Its name, where its rain goes, and that it begins somewhere upstream (the clues come later); into your atlas.
@@ -1207,6 +1219,9 @@ function realmTick() {
 
 /** How far the ground can fall away under you in a frame and still be followed (m): a step, more at speed. */
 const groundStick = () => 0.8 + Math.abs(state.speed) * 0.05;
+/** The sea rises and falls with the real Moon and Sun (Jason, 11-19: "Absolutely! And large enough lakes should have tides!"). */
+const tide = { at: -99, want: 0, y: 0 };
+const seaY = () => (state.realm ? 0 : tide.y);
 /** The fastest a crouch goes (m/s): slow enough that small creatures don't start (they start at 10). */
 const CROUCH_PACE = 5;
 /** The fastest anything runs in a dream (m/s): the islands are small, and dreams are slow. */
@@ -1229,7 +1244,7 @@ function step(dt) {
   // stay on it, following it over bumps and down slopes, until you jump or take off (Space) or walk off a real drop.
   const pressed = acts.up.pressed;
   const wasGround = state.mode === "ground";
-  if (p.y <= 0 && ground < 0) state.mode = "water";
+  if (p.y <= seaY() && ground < 0) state.mode = "water";
   else if (ground >= 0 && state.vy <= 0 && (p.y <= ground + 0.3 || (wasGround && p.y - ground < groundStick()))) { state.mode = "ground"; p.y = ground; }
   else state.mode = "air";
   state.airT = state.mode === "air" ? (state.airT ?? 0) + dt : 0;
@@ -1283,6 +1298,7 @@ function step(dt) {
   }
   p.x += fx * state.speed * dt * stride;
   p.z += fz * state.speed * dt * stride;
+  riverDrift(thrust, dt);
   p.y += state.vy * dt;
 
   const g2 = floorUnder(p.x, p.z, p.y);
@@ -1294,7 +1310,7 @@ function step(dt) {
     state.heading -= a;
   }
   if (state.mode === "water") {
-    if (p.y > -1.5 && !(up > 0 && wings() > 0)) { p.y = -1.5; state.vy = Math.min(state.vy, 0); } // float at the surface
+    if (p.y > seaY() - 1.5 && !(up > 0 && wings() > 0)) { p.y = seaY() - 1.5; state.vy = Math.min(state.vy, 0); } // float at the surface, as the tide has it
     if (p.y < g2 + 2) p.y = g2 + 2;
     // Dive depth is the sea's gate (Jason, 11-09: "Oceans gate by being large - dive depth is the unlock").
     const deepest = -1.5 - maxDepth(body().swim);
@@ -3205,9 +3221,11 @@ function frame() {
   scene.background = scene.fog.color;
 
   sea.mesh.visible = !state.realm; // a dream hangs over no sea
-  sea.mesh.position.set(camera.position.x, 0, camera.position.z); // its waves are keyed to world position
+  if (t - tide.at > 5 && view.ll) { tide.at = t; tide.want = seaRise(realNow(), view.ll.lat, view.ll.lon); }
+  tide.y += (tide.want - tide.y) * Math.min(1, dt * 0.5); // eased, so a regrown world doesn't jump
+  sea.mesh.position.set(camera.position.x, state.realm ? 0 : tide.y, camera.position.z); // its waves are keyed to world position
   sea.update(t, dir, day, horizon);
-  updateInland(t, dir, day, horizon);
+  updateInland(t, dir, day, horizon, tide.y);
   // The shared clock: the real one, or ?t= when it's fixed. Sky beings and
   // clouds follow it, so every player sees the same sky.
   const unix = unixAt(t);
@@ -3339,7 +3357,7 @@ function worldView(dt, t) {
   const eye = eyeLocal.clone().multiplyScalar(creature.size).multiply(sh).applyAxisAngle(UP_AXIS, state.heading);
   director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: creature.size * sh.y, eyes, eye });
   cameraSpell();
-  const underwater = camera.position.y < 0 && world.terrain.heightAt(camera.position.x, camera.position.z) < camera.position.y;
+  const underwater = camera.position.y < seaY() && world.terrain.heightAt(camera.position.x, camera.position.z) < camera.position.y;
   return { ll: world.frame.toLatLon(p.x, p.z), pos: p, underwater };
 }
 
@@ -3362,7 +3380,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, kept: () => ({ keep, carry, mapping, sending }), mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), tide: () => { const l = world.frame.toLatLon(state.pos.x, state.pos.z), td = tideNow(realNow(), l.lat, l.lon); return { ...td, line: tideLine(td) }; }, interact: () => interact(), inland: () => world && { ...world.inland.stats, here: world.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y) }, compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, seaLevel: () => tide.y, kept: () => ({ keep, carry, mapping, sending }), mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), tide: () => { const l = world.frame.toLatLon(state.pos.x, state.pos.z), td = tideNow(realNow(), l.lat, l.lon); return { ...td, line: tideLine(td) }; }, interact: () => interact(), inland: () => world && { ...world.inland.stats, here: world.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y) }, compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

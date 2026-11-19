@@ -102,3 +102,16 @@ test("touching water: the prompt, the lines, and its place in the queue", () => 
   for (const kind of ["find", "shrine", "stones", "door", "waymark", "spring", "artifact", "critter", "mutual", "firefly"]) assert.equal(waterAsks([{ kind: "tree" }, { kind }]), false, kind);
   assert.equal(chooseFocus([water, { kind: "tree", key: "t2", species: "quercus", d: 28, range: 30, facing: -1 }]).kind, "water");
 });
+
+test("the sea rises and falls by a metre to the Moon's mean pull, and lakes feel it by their size", async () => {
+  const { seaRise, lakeTideShare, tideLevel, TIDE_M } = await import("../web/js/tides.js");
+  const t = 1795000000;
+  assert.equal(seaRise(t, 10, 20), TIDE_M * tideLevel(t, 10, 20));
+  let lo = Infinity, hi = -Infinity;
+  for (let s = 0; s < 30 * 86400; s += 1800) { const r = seaRise(t + s, 40, -70); lo = Math.min(lo, r); hi = Math.max(hi, r); }
+  assert.ok(lo > -1 && lo < -0.3 && hi > 0.6 && hi < 1.8, `${lo} ${hi}`);
+  assert.equal(lakeTideShare(82000), 1);
+  assert.ok(Math.abs(lakeTideShare(8372) - 0.42) < 0.01);
+  assert.ok(lakeTideShare(580) < 0.05);
+  assert.equal(lakeTideShare(-1), 0);
+});

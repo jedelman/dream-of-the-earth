@@ -88,6 +88,20 @@ export function flowSign(heights, minDrop = 2) {
 /** How fast a river's streaks run downstream, m/s: the great rivers slow and broad, the small ones quicker (dream speeds). */
 export const flowSpeed = (rank) => Math.min(4, 1.2 + 0.3 * rank);
 
+/**
+ * The current carrying a wader (Jason, 11-19: "Yes, fun!"): only while you stand still in a flowing river, so walking
+ * upstream on a river quest is never slowed. It builds up over `settle` seconds of standing, to `share` of the river's
+ * own pace. still: seconds you've been standing in it. Returns { x, z } in m/s, or null.
+ */
+export function currentOf(flow, still, share = 0.7, settle = 1.5) {
+  if (!flow || !(flow.speed > 0) || still <= 0) return null;
+  const k = Math.min(1, still / settle), v = flow.speed * share * k * k * (3 - 2 * k);
+  return { x: flow.x * v, z: flow.z * v };
+}
+
+/** Said once a wading, the first time the current takes you. */
+export const currentLine = (name) => `You stand still, and ${name ? `the ${name}` : "the river"} carries you along.`;
+
 /** The compass bearing (degrees from north, clockwise) of a step (dx east, dz south) in the game's local frame. */
 export const bearingOf = (dx, dz) => ((((Math.atan2(dx, -dz) * 180) / Math.PI) % 360) + 360) % 360;
 
