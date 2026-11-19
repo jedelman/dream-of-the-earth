@@ -1206,8 +1206,13 @@ under 12 m)"), and the river quests made it stranger: a quest up the Amazon, pas
     half to 70% of the river's own pace (the flecks' speed: the great rivers about 1 m/s, the small ones up to 2.8), the
     way the river runs there. The first time it takes you in a wading: "You stand still, and the Loire carries you
     along." Rivers too flat to tell which way they run carry nobody.
-- **Answered 11-19:** swimming in lakes ("Definitely!"), frogs and ducks by the water ("OH YELL YES"), tides in large
-  lakes ("large enough lakes should have tides!"). Being built.
+- **Swimming in lakes (built 11-19; `LAKE_DEPTH`, `waterTop` in `main.js`).** Asked, Jason: "Definitely!" The terrain
+  under a lake is flat at its surface (the lake is drawn at its shore's height), so there's no real depth: every lake is
+  8 m deep, a dream depth, and its surface is where it's drawn, rising and falling with its share of the tide. Walk in
+  and you swim ("You swim out into Lake Geneva. It's deep, still and cold, and nobody's waves but yours."); the HUD reads
+  "LAKE GENEVA · 8 M DEEP · 4 M DOWN"; dive as deep as your swim lets you (a land-born creature ducks 3 m); the prompt is
+  "Drink from Lake Geneva". The sea's rules otherwise. Rivers are still waded. No fish in lakes yet.
+- **Answered 11-19:** frogs and ducks by the water ("OH YELL YES"). Being built.
 
 ### The sea rises and falls (built 11-19)
 Jason, asked whether the sea should visibly rise and fall: "Absolutely! And large enough lakes should have tides!"

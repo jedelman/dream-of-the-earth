@@ -165,3 +165,8 @@ test("the current carries a wader who stands still, building up, and never one w
   assert.equal(driftLine("Loire"), "You stand still, and the Loire carries you along.");
   assert.equal(driftLine(null), "You stand still, and the river carries you along.");
 });
+
+test("swimming out into a lake says so", () => {
+  assert.equal(wadeLine({ kind: "lake", name: "Lago Titicaca", swim: true }), "You swim out into Lago Titicaca. It's deep, still and cold, and nobody's waves but yours.");
+  assert.match(wadeLine({ kind: "lake", name: "", reservoir: true, swim: true }), /^You swim out into a reservoir\. Somewhere down the valley/);
+});
