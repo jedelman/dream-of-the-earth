@@ -112,3 +112,23 @@ test("reefs grow on warm, shallow seabeds, in patches, four forms in a reef's co
   assert.match(coralLine("sea fan", 3, 0), /sea fan/);
   assert.equal(waterAsks([{ kind: "coral" }]), false);
 });
+
+test("the sea's real warmth (NOAA ERSSTv5) decides who lives where, once it's in", async () => {
+  const fs = await import("node:fs");
+  const { parseSst, warmthAt } = await import("../web/js/sst.js");
+  const { kelpWater } = await import("../web/js/fishlife.js");
+  const g = parseSst(JSON.parse(fs.readFileSync(new URL("../web/data/sst.json", import.meta.url))));
+  assert.ok(g && g.cold.length === 89 * 180);
+  const w = (lat, lon) => warmthAt(g, lat, lon);
+  assert.equal(seaBand(27.9, w(27.9, 34.3)), "tropical", "the northern Red Sea is reef water, latitude or not");
+  assert.equal(seaBand(-16.5, w(-16.5, 146)), "tropical", "the Great Barrier Reef");
+  assert.equal(seaBand(36.6, w(36.6, -122)), "temperate", "Monterey Bay");
+  assert.equal(seaBand(78, w(78, 15)), "cold", "Svalbard");
+  assert.ok(kelpWater(-34.2, w(-34.2, 18.3)), "kelp off Cape Point");
+  assert.ok(kelpWater(56, w(56, 3)), "kelp in the North Sea");
+  assert.ok(!kelpWater(38, w(38, 15)), "none in the warm Mediterranean summer");
+  assert.ok(!kelpWater(27.9, w(27.9, 34.3)), "none on a Red Sea reef");
+  assert.ok(Math.abs(w(0, 179.9).cold - w(0, -179.9).cold) < 1, "the dateline joins");
+  // With the grid, shoals off Monterey are temperate fish even though it's within reef latitudes of nothing.
+  assert.ok(shoalHomes(36.6, -122, sea(36.6, -122, -30), w).every((s) => s.band === "temperate"));
+});

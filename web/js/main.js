@@ -3259,6 +3259,7 @@ const credits = () => [
 * United States 3DEP (formerly NED) and global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey.`),
   h("p", {}, "Climate: Köppen-Geiger classification, 1991–2020 (Beck et al. 2023, Scientific Data 10:724)."),
   h("p", {}, "Made with Natural Earth: rivers, lakes, places and regions (the rivers and lakes you see, and the ley nodes' and the basins' names)."),
+  h("p", {}, "Sea temperatures: NOAA Extended Reconstructed Sea Surface Temperature (ERSST), Version 5, 1991–2020 monthly means (Huang et al. 2017, NOAA National Centers for Environmental Information, doi:10.7289/V5T72FNM), via NOAA CoastWatch ERDDAP: who lives in the sea, and where kelp grows."),
   h("p", {}, "Ley lines: leylines-solids (Joerg Roth, Apache-2.0), after Becker & Hagens and Leland. Rendering: three.js (MIT). Sign-in: @atproto/oauth-client-browser (MIT). Artifacts are found through Constellation (microcosm); mutuals through Bluesky's public AppView."),
 ];
 helpBtn.addEventListener("click", openHelp);

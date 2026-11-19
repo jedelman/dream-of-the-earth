@@ -4,6 +4,7 @@
 import * as THREE from "three";
 import { SHOAL, KELP, REEF, CORAL_FORMS, shoalHomes, kelpHomes, coralHomes, fishAt, shoalAt, burstAt, swirlAt, BURST_S } from "./fishlife.js";
 import { curved } from "./curvature.js";
+import { ensureSst, seaWarmth } from "./sst.js";
 
 const REGROW_M = 100;
 const MAX_FISH = SHOAL.max * SHOAL.fish[1];
@@ -187,7 +188,7 @@ function kelpMesh() {
 }
 
 /** terrain: heights. Returns { group, update(t, clock, me), near, all, touch, counts }. */
-export function buildFish(frame, terrain, warmth = () => null) {
+export function buildFish(frame, terrain, warmth = seaWarmth) {
   const group = new THREE.Group();
   const F = fishMesh(), K = kelpMesh(), C = Object.fromEntries(CORAL_FORMS.map((f) => [f, coralMesh(f)]));
   group.add(F.m, K.m, ...Object.values(C).map((c) => c.m));
@@ -195,6 +196,7 @@ export function buildFish(frame, terrain, warmth = () => null) {
   const glowing = new Map(); // coral key -> when it was touched (this phone's clock)
   const local = new Map(); // shoal key -> { burstAt, swirlAt }
   let centre = null, shoals = [], kelp = [];
+  ensureSst().then((g) => { if (g) centre = null; }); // once the sea's warmth is in, settle again with it
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, "YXZ"), sc = new THREE.Vector3(), p3 = new THREE.Vector3(), col = new THREE.Color();
 
   const at = (c) => {
