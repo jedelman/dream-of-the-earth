@@ -76,6 +76,8 @@ import { biomeFor, koppenCode, BIOMES } from "./biome.js";
 import { buildPlants } from "./plants.js";
 import { buildInsects } from "./insects.js";
 import { buildCritters } from "./critters.js";
+import { buildFish } from "./fish.js";
+import { shoalLine, SCATTER_LINE } from "./fishlife.js";
 import { LANDMARKS, landmarkQuery } from "./landmarks.js";
 import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
 
@@ -714,6 +716,7 @@ async function buildWorld(lat, lon) {
   const plants = buildPlants(frame, terrain);
   const insects = buildInsects(frame, terrain);
   const critters = buildCritters(frame, terrain, plants);
+  const fish = buildFish(frame, terrain);
   const shrines = buildShrines(frame, terrain);
   const finds = buildFinds(frame, terrain);
   finds.setTaken((f) => tookHere(inv, f.key, realNow())); // one you've had this moon isn't there for you
@@ -721,9 +724,9 @@ async function buildWorld(lat, lon) {
   const waymarks = buildWaymarks(frame, terrain);
   waymarks.set(waymarkItems());
   const group = new THREE.Group();
-  group.add(terrain.mesh, inland.group, highways.group, stones.group, beings.group, plants.group, insects.group, critters.group, shrines.group, finds.group, doors.group, waymarks.group);
+  group.add(terrain.mesh, inland.group, highways.group, stones.group, beings.group, plants.group, insects.group, critters.group, fish.group, shrines.group, finds.group, doors.group, waymarks.group);
   layerTransparent(group); // glows, sparkles and fireflies draw after the sky
-  return { frame, terrain, inland, highways, stones, beings, plants, insects, critters, shrines, finds, doors, waymarks, group };
+  return { frame, terrain, inland, highways, stones, beings, plants, insects, critters, fish, shrines, finds, doors, waymarks, group };
 }
 function swapWorld(next, place) {
   if (place) {
@@ -1648,6 +1651,14 @@ function pick(clientX, clientY) {
     if (v.z > 1) continue;
     if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 24) found.push({ kind: "critter", d, c });
   }
+  for (const s of world.fish.all()) {
+    v.set(s.x, s.y, s.z);
+    const d = v.distanceTo(camera.position);
+    if (d > 400) continue; // the sea hides them past that
+    v.project(camera);
+    if (v.z > 1) continue;
+    if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 36) found.push({ kind: "shoal", d, s });
+  }
   const bh = seesBeings() ? tapRay.intersectObject(world.beings.group, true)[0] : null;
   if (bh) { let o = bh.object; while (o && !o.userData.being) o = o.parent; if (o) found.push({ kind: "being", d: bh.distance, being: o.userData.being, obj: o }); }
   const fh = tapRay.intersectObjects(world.finds.pickables(), true)[0], fe = fh && world.finds.entryOf(fh.object);
@@ -1718,6 +1729,11 @@ function onTap(clientX, clientY) {
     // Walking up to it, it doesn't run (others on the way might).
     const c = hit.c, act = () => touchCritter(c.key);
     return flat(c.x, c.z) < RANGE.critter ? act() : moveTo({ x: c.x, z: c.z, h: c.y }, { range: RANGE.critter * 0.6, act, critter: c.key });
+  }
+  if (hit.kind === "shoal") {
+    // Swimming up to it, it doesn't scatter.
+    const sh = hit.s, act = () => touchShoal(sh.key);
+    return Math.hypot(sh.x - p.x, sh.y - p.y, sh.z - p.z) < RANGE.shoal ? act() : moveTo({ x: sh.x, z: sh.z, h: sh.y }, { range: RANGE.shoal * 0.6, act, critter: sh.key });
   }
   if (hit.kind === "being") {
     hit.obj.getWorldPosition(v);
@@ -1905,6 +1921,23 @@ function touchCritter(key) {
   bursts.emit({ at, colors: [new THREE.Color(0xffb8de), new THREE.Color(0xffffff)], n: 8, spread: 0.8, up: 1.6, fall: 0.6, life: 1.2 });
   logLine(critterLine(c.kind, c.name, myName, hashString(key), critterTouches++), "creature");
 }
+/** Under the sea: a shoal scattered by a rush now and then says so; touched gently, it swirls round you. */
+let scatteredAt = -10, scatteredEver = false, shoalTouches = 0;
+function fishNews(events, t) {
+  for (const ev of events) {
+    sound.bubble(3);
+    if (t - scatteredAt > 8) { logLine(SCATTER_LINE(ev.s.name, !scatteredEver), "creature"); scatteredAt = t; scatteredEver = true; }
+  }
+}
+function touchShoal(key) {
+  const s = world.fish.touch(key, simT);
+  if (!s) return squeak();
+  sound.bubble();
+  const at = new THREE.Vector3(state.pos.x, state.pos.y + 1.5, state.pos.z);
+  director.play("butterfly", simT, butterflyShot(state.pos.clone(), new THREE.Vector3(s.x, s.y, s.z)), { dur: 3, blendIn: 0.5, blendOut: 0.9 });
+  bursts.emit({ at, colors: [new THREE.Color(0xcff6ff), new THREE.Color(0xffffff)], n: 12, spread: 1.4, up: 2.4, fall: -0.4, life: 1.6 });
+  logLine(shoalLine(s.name, myName, hashString(key), shoalTouches++), "creature");
+}
 function hum(being, obj) {
   director.play("being", simT, beingShot(state.pos.clone(), obj.getWorldPosition(new THREE.Vector3())), { dur: 4.5, blendIn: 0.9, blendOut: 1.2 });
   humWith(being);
@@ -1985,6 +2018,9 @@ function inReach() {
     const d = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z);
     if (d < RANGE.critter) add({ kind: "critter", key: c.key, species: c.kind, name: c.name, d, range: RANGE.critter, c }, c.x, c.z);
   }
+  for (const s of world.fish.near(p.x, p.y, p.z, RANGE.shoal)) {
+    add({ kind: "shoal", key: s.key, name: s.name, d: Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z), range: RANGE.shoal, s }, s.x, s.z);
+  }
   for (const o of seesBeings() ? world.beings.group.children : []) {
     const being = o.userData.being;
     if (!being) continue;
@@ -2017,6 +2053,7 @@ function glintSpot(c, v, bs) {
   if (c.kind === "door") return v.set(c.door.x, c.door.y + 6, c.door.z);
   if (c.kind === "waymark" || c.kind === "spring") return v.set(c.w.x, c.w.y + (c.kind === "spring" ? 3 : 5), c.w.z);
   if (c.kind === "critter") { const q = world.critters.near(c.c.x, c.c.z, 40).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 1.3, q.z) : null; }
+  if (c.kind === "shoal") { const q = world.fish.near(c.s.x, c.s.y, c.s.z, 60).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 2, q.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
   if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
   if (c.kind === "mutual") return v.set(c.m.x, c.m.y + 6 * c.m.entry.body.size, c.m.z);
@@ -2071,6 +2108,7 @@ function interact() {
   if (c.kind === "find") return pickUp(c.f);
   if (c.kind === "shrine") return canDream(c.s) ? enterDream(c.s) : castSpell(c.s);
   if (c.kind === "critter") return touchCritter(c.key);
+  if (c.kind === "shoal") return touchShoal(c.key);
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "stones") return enterStones(c.c);
   if (c.kind === "door") return openDoor(c.door);
@@ -3199,13 +3237,15 @@ function frame() {
     world.waymarks.update(state.pos.x, state.pos.z, t);
     world.waymarks.group.visible = zoom < 120000;
     const life = zoom < 6000;
-    world.plants.group.visible = world.insects.group.visible = world.critters.group.visible = life;
+    world.plants.group.visible = world.insects.group.visible = world.critters.group.visible = world.fish.group.visible = life;
     if (life) {
       window.__dream.plants = world.plants.update(state.pos.x, state.pos.z, t, camera.position, detail.scale);
       window.__dream.insects = world.insects.update(state.pos.x, state.pos.z, unix % 86400, sunState.altitude);
       const me = { x: state.pos.x, y: state.pos.y, z: state.pos.z, speed: Math.hypot(state.speed, state.vy), ground: Math.max(0, world.terrain.heightAt(state.pos.x, state.pos.z)), target: state.target?.critter ?? null };
       critterNews(world.critters.update(t, unix, sunState.altitude, me), t, sunState.altitude);
       window.__dream.critters = world.critters.counts;
+      fishNews(world.fish.update(t, unix, { ...me, target: state.target?.critter ?? null }), t);
+      window.__dream.fish = world.fish.counts;
     }
   }
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }

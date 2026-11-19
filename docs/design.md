@@ -513,6 +513,30 @@ Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
   nearby at dusk and through the night, and a bird sings by day.
 - **Next, maybe:** frogs by inland water once rivers and lakes exist; ducks; birds that follow you a little way.
 
+### Under the sea: shoals and kelp (built 11-19, overnight)
+On the list since the first nights ("maybe kelp and fish underwater"): a sea-born creature dives into an empty sea, with
+nothing under the surface but the seabed. (`fishlife.js`, pure and tested; `fish.js` draws them; hooks in `main.js`.)
+- **Shoals** of 5 to 10 little fish (dream-sized, 1.1 to 1.8 m, a third of you), on the global cell grid like the small
+  creatures on land (80 m cells, up to 22 within 340 m), wherever the sea is 4 m deep or more. Each swims a slow figure
+  of eight round its home, 16 to 32 m across, at its own depth (under the surface, over the seabed, no deeper than 30 m,
+  so a creature that can only duck under still meets some), on the shared clock: everyone sees the same shoal in the
+  same water. Each fish keeps its own place in the shoal and wags its tail. 14 triangles a fish, one instanced mesh.
+- **Who lives where,** by the sea's warmth from latitude: within 28° of the equator, little blue, yellow, orange and violet
+  reef fish; to 52°, little silver, blue-backed and bronze fish; beyond, little ice fish and grey fish. Latitude is
+  crude (a cold current makes a warm latitude cold), but there's no sea temperature in the game's data yet.
+- **Kelp** in forests (patches about 160 m across, half of them) on cool seabeds 3 to 26 m down, 30° to 66° from the
+  equator, each stalk reaching most of the way to the surface, up to 22 m. It sways in the shader, a wave running up the
+  stalk, and leans out of your way as you swim through. 24 triangles a stalk, up to 420.
+- **What they do about you is local,** as with the small creatures: rush through a shoal faster than 7 m/s and it bursts
+  apart and gathers again over 4.5 s ("The little silver fish scatter from you in a flash. Swim up slowly, or tap the
+  shoal."). In reach (22 m, in three dimensions, so not from the beach above), "(E) Greet the shoal of little blue reef
+  fish": it swirls once round you and goes back to its way, with bubbles and a run of bubbly notes. A shoal outbids
+  "Splash the sea" for the prompt.
+- Nothing stored or sent; no new data, records, lexicons or scopes. Tests: 6. Checked headless (desktop and Pixel 7) in
+  the kelp off Cape Point and on a Red Sea reef by Sharm el-Sheikh, with no page errors.
+- **Next, maybe:** coral heads on tropical seabeds; a sea-temperature source instead of latitude (it would need a
+  licence check); fish that follow a sea-born creature a little way.
+
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
   each with scale, rotation, colour and a palette cycle. Any number of heads, wings, legs, eyes or tails. The

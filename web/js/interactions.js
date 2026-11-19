@@ -4,7 +4,7 @@
 import { hash2 } from "./plantforms.js";
 
 /** How close you need to be (metres) before a tapped thing answers. */
-export const RANGE = { tree: 20, butterfly: 30, firefly: 14, being: 3000, artifact: 30, critter: 26, shrine: 24, find: 7, stones: 24, door: 24, waymark: 24 };
+export const RANGE = { tree: 20, butterfly: 30, firefly: 14, being: 3000, artifact: 30, critter: 26, shoal: 22, shrine: 24, find: 7, stones: 24, door: 24, waymark: 24 };
 
 export const TREE_NAMES = {
   ceiba: "kapok", ficus: "banyan", cocos: "coconut palm", adansonia: "baobab", vachellia: "umbrella thorn",
@@ -88,7 +88,7 @@ export function drinkLine(w, basin, far = "") {
   return `${head} This water hasn't far to go: it runs straight to the sea.`;
 }
 /** Water asks for the prompt only when nothing you'd have come for is in reach: trees and butterflies it can outbid, a find or a shrine never. */
-const WATER_WAITS = new Set(["find", "shrine", "stones", "door", "waymark", "spring", "artifact", "critter", "mutual", "firefly"]);
+const WATER_WAITS = new Set(["find", "shrine", "stones", "door", "waymark", "spring", "artifact", "critter", "shoal", "mutual", "firefly"]);
 export const waterAsks = (cands) => !cands.some((c) => WATER_WAITS.has(c.kind));
 export function beingLine(seed, n = 0) {
   return pickOf(["The sky being hums, low and slow, and the air shimmers.", "Something vast hums back at you. Your feathers tingle.", "The sky being turns one of its many eyes toward you, and hums."], hash2(seed, n, 51));
@@ -128,6 +128,7 @@ export function promptFor(c) {
   if (c.kind === "shrine" && c.wake) return `Wake ${c.name}`;
   if (c.kind === "shrine") return c.state === "asleep" ? `${c.name[0].toUpperCase()}${c.name.slice(1)} sleeps` : c.state === "resting" ? `${c.name[0].toUpperCase()}${c.name.slice(1)} rests` : `Touch ${c.name}`;
   if (c.kind === "critter") return c.species === "bunny" ? `Pet the ${c.name}` : c.species === "frog" ? `Boop the ${c.name}` : `Whistle to the ${c.name}`;
+  if (c.kind === "shoal") return `Greet the shoal of ${c.name}`;
   if (c.kind === "being") return "Hum to the sky being";
   if (c.kind === "stones") return "Step into the stones";
   if (c.kind === "waymark") return c.read ? "Follow the river upstream" : "Read the waymark";
@@ -141,7 +142,7 @@ export function promptFor(c) {
 
 // Small things close at hand come before big things far off: beside a tree, with a
 // sky being on the horizon, the tree is what you meant.
-const BIAS = { find: -0.12, stones: -0.2, door: -0.2, waymark: -0.2, spring: -0.2, shrine: -0.08, artifact: -0.05, critter: -0.02, butterfly: 0, firefly: 0, tree: 0.05, being: 0.4, water: 0.45 };
+const BIAS = { find: -0.12, stones: -0.2, door: -0.2, waymark: -0.2, spring: -0.2, shrine: -0.08, artifact: -0.05, critter: -0.02, shoal: -0.02, butterfly: 0, firefly: 0, tree: 0.05, being: 0.4, water: 0.45 };
 
 /**
  * How much a thing in reach wants the prompt (lower wins). c: { kind, d, range, facing, species? },
