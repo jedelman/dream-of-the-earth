@@ -534,8 +534,17 @@ nothing under the surface but the seabed. (`fishlife.js`, pure and tested; `fish
   "Splash the sea" for the prompt.
 - Nothing stored or sent; no new data, records, lexicons or scopes. Tests: 6. Checked headless (desktop and Pixel 7) in
   the kelp off Cape Point and on a Red Sea reef by Sharm el-Sheikh, with no page errors.
-- **Next, maybe:** coral heads on tropical seabeds; a sea-temperature source instead of latitude (it would need a
-  licence check); fish that follow a sea-born creature a little way.
+- **Reefs (built 11-19; `coralHomes` in `fishlife.js`, the coral meshes in `fish.js`).** Jason: "Then let's do reefs!"
+  Coral grows in reefs (patches about 110 m across, a little over half of them) on seabeds 1.5 to 30 m down where the sea
+  is reef water (`seaBand` "tropical": within 28° of the equator, or by the sea's real warmth once that's in). Four forms,
+  each a single instanced mesh of 15 to 21 triangles, dream-sized (1.4 to 4.4 m, smaller in the shallows): **brain
+  coral** (a lumpy dome), **staghorn** (a thicket of forking spikes), **table coral** (a plate on a stalk) and **sea
+  fans** (a flat lace that rocks in the swell). Colours from a reef's range (rose, orange, gold, teal, violet, green, red,
+  pink), brighter near the light. Up to 600 within 150 m, the same for everyone. Swimming within 9 m: "(E) Brush the brain
+  coral": it glows from inside and fades over three seconds ("You brush the brain coral. It glows, very softly, from
+  somewhere inside."). Nothing stored or sent. Tests: 1 (warm and shallow only, patches, the four forms, the same reef for
+  everyone, the words). Headless at a Red Sea reef by Sharm el-Sheikh (359 corals, desktop and Pixel 7, no page errors).
+- **Next, maybe:** reef fish that keep to the coral; anemones; fish that follow a sea-born creature a little way.
 
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,

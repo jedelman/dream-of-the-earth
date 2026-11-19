@@ -39,7 +39,8 @@ fireflies blink at night.
 
 **Under the sea:** shoals of little fish swim slow loops at their own depths (reef fish in the tropics, silver and
 bronze ones in cooler water, ice fish near the poles), and kelp forests sway on cool, shallow seabeds, leaning out of
-your way. Rush through a shoal and it scatters; swim up gently and greet it, and it swirls round you.
+your way. Coral reefs grow on warm ones: brain coral, staghorn, table coral and sea fans, glowing
+when you brush them. Rush through a shoal and it scatters; swim up gently and greet it, and it swirls round you.
 
 **Tides and currents:** the sea rises and falls with the real Moon and Sun, and so do the great lakes. Stand still in a
 river and its current carries you downstream. Face downstream in a river and it will carry you, as fast as it is deep, all the way to the sea. Walk into a lake and you swim. Ducks paddle on rivers and lakes, and

@@ -145,3 +145,42 @@ export function shoalLine(name, me, seed, n = 0) {
   return pickOf(SHOAL_LINES(name, me), hash2(seed | 0, n, 89));
 }
 export const SCATTER_LINE = (name, first) => `The ${name} scatter from you in a flash.` + (first ? " Swim up slowly, or tap the shoal." : "");
+
+// ---- Reefs (Jason, 11-19: "Then let's do reefs!") ----
+// Coral grows in reefs (patches some 120 m across, a little over half of them) on warm seabeds, 1.5 to 30 m down, where
+// the sea is reef water (seaBand "tropical": the coldest month at 18 °C or more once the sea's warmth is in, else within
+// 28° of the equator). Four forms, dream-sized: brain coral (a lumpy dome), staghorn (a thicket of branches), table coral
+// (a plate on a stalk) and sea fans (a flat lace that sways). The same for everyone.
+export const REEF = { cell: 9, radius: 150, salt: 887, max: 600, depth: [1.5, 30], patch: 0.55, chance: 0.55 };
+export const CORAL_FORMS = ["brain", "staghorn", "table", "fan"];
+const CORAL_SIZE = { brain: [1.4, 3.2], staghorn: [1.6, 3.6], table: [2, 4.4], fan: [1.6, 3.4] };
+const CORAL_NAMES = { brain: "brain coral", staghorn: "staghorn coral", table: "table coral", fan: "sea fan" };
+// Colours: [hue, saturation, lightness], a reef's whole range, brighter in the shallows.
+const CORAL_HUES = [[0.97, 0.75, 0.62], [0.08, 0.85, 0.6], [0.13, 0.85, 0.6], [0.55, 0.6, 0.55], [0.78, 0.55, 0.6], [0.33, 0.5, 0.5], [0.02, 0.6, 0.45], [0.9, 0.65, 0.65]];
+
+/**
+ * Coral near a point: [{ key, form, name, x, z, floor, size, yaw, seed, hsl }]. at(cell) as for shoals; warmth(lat, lon)
+ * as for seaBand, or null.
+ */
+export function coralHomes(lat, lon, at, warmth = () => null) {
+  const out = [];
+  if (seaBand(lat, warmth(lat, lon)) !== "tropical") return out;
+  for (const c of cellsAround(lat, lon, REEF.radius, REEF.cell, REEF.salt)) {
+    if (unit(hash2(Math.floor(c.lat * 900), Math.floor(c.lon * 900), REEF.salt + 3)) >= REEF.patch) continue; // not a reef here
+    if (unit(c.h) >= REEF.chance) continue;
+    const s = at(c);
+    if (!s) continue;
+    const depth = -s.floor;
+    if (depth < REEF.depth[0] || depth > REEF.depth[1]) continue;
+    const g = hash2(c.h, 13), form = CORAL_FORMS[Math.floor(unit(g, 2) * CORAL_FORMS.length)], [lo, hi] = CORAL_SIZE[form];
+    const size = Math.min(lo + (hi - lo) * unit(g, 9), depth * 0.6);
+    const [h, sat, l] = CORAL_HUES[Math.floor(unit(g, 5) * CORAL_HUES.length)];
+    const shallow = Math.max(0, 1 - depth / REEF.depth[1]); // brighter near the light
+    out.push({ key: `coral${c.h}`, form, name: CORAL_NAMES[form], x: s.p.x, z: s.p.z, floor: s.floor, size, yaw: unit(c.h, 7) * Math.PI * 2, seed: unit(c.h, 12), hsl: [h, sat, Math.min(0.8, l * (0.8 + 0.35 * shallow))] });
+    if (out.length >= REEF.max) break;
+  }
+  return out;
+}
+const CORAL_LINES = (n) => [`You brush the ${n}. It glows, very softly, from somewhere inside.`, `The ${n} lights up where you touch it, and the light spreads slowly out to its edges.`, `Tiny things living in the ${n} pull back in, then peek out again.`, `The ${n} is rough and warm, and full of small lives.`];
+/** The log line for coral brushed gently. */
+export const coralLine = (name, seed, n = 0) => pickOf(CORAL_LINES(name), hash2(seed | 0, n, 97));

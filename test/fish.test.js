@@ -95,3 +95,20 @@ test("a shoal answers a touch: its prompt, its lines, and it outbids splashing t
   assert.ok(SCATTER_LINE("little ice fish", true).includes("tap the shoal"));
   assert.ok(!SCATTER_LINE("little ice fish", false).includes("tap"));
 });
+
+test("reefs grow on warm, shallow seabeds, in patches, four forms in a reef's colours; a coral answers a touch", async () => {
+  const { coralHomes, coralLine, REEF, CORAL_FORMS } = await import("../web/js/fishlife.js");
+  assert.equal(coralHomes(50, -5, sea(50, -5, -10)).length, 0, "no reefs in cool water");
+  assert.equal(coralHomes(-16.5, 146, sea(-16.5, 146, -60)).length, 0, "none too deep");
+  assert.equal(coralHomes(-16.5, 146, sea(-16.5, 146, -1)).length, 0, "none in the surf");
+  assert.equal(coralHomes(-16.5, 146, () => null).length, 0, "none on land");
+  const reef = coralHomes(-16.5, 146, sea(-16.5, 146, -10));
+  assert.ok(reef.length > 50 && reef.length <= REEF.max, `${reef.length}`);
+  assert.deepEqual(new Set(reef.map((c) => c.form)), new Set(CORAL_FORMS));
+  assert.ok(reef.every((c) => c.size > 0 && c.size <= 10 * 0.6 && c.hsl.length === 3));
+  assert.deepEqual(reef, coralHomes(-16.5, 146, sea(-16.5, 146, -10)), "the same reef for everyone");
+  assert.ok(coralHomes(-16.5, 146, sea(-16.5, 146, -1.8)).every((c) => c.size <= 1.8 * 0.6 + 1e-9), "small in the shallows");
+  assert.equal(promptFor({ kind: "coral", name: "brain coral" }), "Brush the brain coral");
+  assert.match(coralLine("sea fan", 3, 0), /sea fan/);
+  assert.equal(waterAsks([{ kind: "coral" }]), false);
+});
