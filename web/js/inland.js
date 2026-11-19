@@ -225,6 +225,7 @@ export function wadeLine(w) {
   if (!w) return "";
   if (w.kind === "lake") {
     const tail = w.reservoir ? "Somewhere down the valley, a dam holds it back." : "Its water is still, and cold round your feet.";
+    if (w.swim) return `You swim out into ${w.name || (w.reservoir ? "a reservoir" : "a lake")}. ${w.reservoir ? "Somewhere down the valley, a dam holds it back." : "It's deep, still and cold, and nobody's waves but yours."}`;
     return `You wade into ${w.name || (w.reservoir ? "a reservoir" : "a lake")}. ${tail}`;
   }
   const way = Number.isFinite(w.toward) ? `on its way ${POINTS[Math.round(w.toward / 45) % 8]}` : "on its way downhill";

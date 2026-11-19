@@ -240,5 +240,5 @@ export function buildInland(frame, terrain) {
     if (l && terrain.heightAt(x, z) < l.level + 2) return true;
     return !!riverAt(x, z, 2);
   }
-  return { group, wadingAt, wet, stats: { rivers: riverCount, flowing, still, lakes: lakes.length, triangles: idx.length / 3 } };
+  return { group, wadingAt, wet, lakeAt, stats: { rivers: riverCount, flowing, still, lakes: lakes.length, triangles: idx.length / 3 } };
 }

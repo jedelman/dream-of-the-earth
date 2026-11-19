@@ -438,8 +438,10 @@ function discoverPlaces() {
 // been out of it for a while), so a river has a name where you meet it.
 const wading = { key: "", since: 0 };
 function wade() {
-  if (!world || state.ride || state.realm || state.mode !== "ground") return;
-  const w = world.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y), now = realNow();
+  if (!world || state.ride || state.realm || (state.mode !== "ground" && state.mode !== "water")) return;
+  const lk = state.mode === "water" ? world.inland.lakeAt(state.pos.x, state.pos.z) : null;
+  if (state.mode === "water" && !lk) return; // the sea says nothing as you swim it
+  const w = lk ? { kind: "lake", name: lk.name, reservoir: lk.reservoir, level: lk.level, swim: true } : world.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y), now = realNow();
   if (!w) { if (wading.key && now - wading.since > 60) wading.key = ""; return; }
   const key = `${w.kind}:${w.name}`;
   wading.since = now;
@@ -1030,7 +1032,7 @@ function contextButtons() {
   else if (state.mode === "ground") {
     up = wings() > 0 ? "FLY" : "JUMP";
     if (!state.realm && world.critters.near(state.pos.x, state.pos.z, 45).length) down = "CROUCH";
-  } else if (state.mode === "water") { up = wings() > 0 ? "FLY" : state.pos.y < -2.5 ? "RISE" : null; down = "DIVE"; }
+  } else if (state.mode === "water") { up = wings() > 0 ? "FLY" : state.pos.y < waterTop(state.pos.x, state.pos.z).top - 2.5 ? "RISE" : null; down = "DIVE"; }
   else if (wings() > 0) { up = "CLIMB"; down = "DOWN"; }
   for (const [key, word] of [["up", up], ["down", down]]) {
     const c = ctxBtn[key];
@@ -1127,7 +1129,7 @@ function modeCheck() {
 /** The floor under (x, z): the land, or in a dream its islands and bridges (no higher than a small step over y). */
 function floorUnder(x, z, y = Infinity) {
   const r = state.realm;
-  if (!r) return world.terrain.heightAt(x, z);
+  if (!r) { const h = world.terrain.heightAt(x, z), l = world.inland.lakeAt(x, z); return l ? Math.min(h, l.level - LAKE_DEPTH) : h; }
   const f = floorAt(r.L, x - r.anchor.x, z - r.anchor.z, y - r.anchor.y, simT - r.t0);
   return f === -Infinity ? -Infinity : r.anchor.y + f;
 }
@@ -1222,6 +1224,16 @@ const groundStick = () => 0.8 + Math.abs(state.speed) * 0.05;
 /** The sea rises and falls with the real Moon and Sun (Jason, 11-19: "Absolutely! And large enough lakes should have tides!"). */
 const tide = { at: -99, want: 0, y: 0 };
 const seaY = () => (state.realm ? 0 : tide.y);
+// Swimming in lakes (Jason, 11-19: "Definitely!"). The terrain under a lake is flat at its surface, so there's no real
+// depth to dive: a lake is LAKE_DEPTH metres deep everywhere, a dream depth, and its surface is where it's drawn (with
+// its share of the tide).
+const LAKE_DEPTH = 8;
+const lakeTop = (l) => l.level + 1.2 + tide.y * (l.share ?? 0);
+/** The water's surface at (x, z) and the lake there, if any: { top, lake }. Out of a lake, the sea's. */
+function waterTop(x, z) {
+  const l = !state.realm && world ? world.inland.lakeAt(x, z) : null;
+  return l ? { top: lakeTop(l), lake: l } : { top: seaY(), lake: null };
+}
 /** The fastest a crouch goes (m/s): slow enough that small creatures don't start (they start at 10). */
 const CROUCH_PACE = 5;
 /** The fastest anything runs in a dream (m/s): the islands are small, and dreams are slow. */
@@ -1244,7 +1256,8 @@ function step(dt) {
   // stay on it, following it over bumps and down slopes, until you jump or take off (Space) or walk off a real drop.
   const pressed = acts.up.pressed;
   const wasGround = state.mode === "ground";
-  if (p.y <= seaY() && ground < 0) state.mode = "water";
+  const wt = waterTop(p.x, p.z);
+  if (p.y <= wt.top && (ground < 0 || (wt.lake && ground < wt.top - 1))) state.mode = "water";
   else if (ground >= 0 && state.vy <= 0 && (p.y <= ground + 0.3 || (wasGround && p.y - ground < groundStick()))) { state.mode = "ground"; p.y = ground; }
   else state.mode = "air";
   state.airT = state.mode === "air" ? (state.airT ?? 0) + dt : 0;
@@ -1310,10 +1323,11 @@ function step(dt) {
     state.heading -= a;
   }
   if (state.mode === "water") {
-    if (p.y > seaY() - 1.5 && !(up > 0 && wings() > 0)) { p.y = seaY() - 1.5; state.vy = Math.min(state.vy, 0); } // float at the surface, as the tide has it
+    const top = waterTop(p.x, p.z).top;
+    if (p.y > top - 1.5 && !(up > 0 && wings() > 0)) { p.y = top - 1.5; state.vy = Math.min(state.vy, 0); } // float at the surface, as the tide has it
     if (p.y < g2 + 2) p.y = g2 + 2;
     // Dive depth is the sea's gate (Jason, 11-09: "Oceans gate by being large - dive depth is the unlock").
-    const deepest = -1.5 - maxDepth(body().swim);
+    const deepest = top - 1.5 - maxDepth(body().swim);
     if (p.y < deepest) { p.y = deepest; state.vy = Math.max(0, state.vy); if (up < 0) tooDeep(); }
   }
   // Land only on purpose: a flyer not heading down skims a slope too steep to climb, still flying.
@@ -1883,8 +1897,11 @@ function touchFirefly(x, y, z, seed) {
 function waterHere() {
   if (!world || state.realm || state.ride) return null;
   const p = state.pos, fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-  if (state.mode === "water") return p.y > -6 ? // nothing lifts a swimmer back to the surface, so one who dropped in rests a few metres under: still in reach of it
-    { water: "sea", x: p.x + fx * 4, y: 0, z: p.z + fz * 4 } : null;
+  if (state.mode === "water") {
+    const wt = waterTop(p.x, p.z);
+    if (p.y < wt.top - 6) return null; // nothing lifts a swimmer back to the surface, so one who dropped in rests a few metres under: still in reach of it
+    return wt.lake ? { water: "lake", name: wt.lake.name, reservoir: wt.lake.reservoir, level: wt.lake.level, x: p.x + fx * 4, y: wt.top, z: p.z + fz * 4 } : { water: "sea", x: p.x + fx * 4, y: wt.top, z: p.z + fz * 4 };
+  }
   if (state.mode !== "ground") return null;
   const w = world.inland.wadingAt(p.x, p.z, p.y);
   if (w) return { water: w.kind, name: w.name, reservoir: w.reservoir, level: w.level, x: p.x + fx * 4, y: p.y + 1.2, z: p.z + fz * 4 };
@@ -2996,8 +3013,9 @@ function updateHud() {
   } else {
     const ll = world.frame.toLatLon(state.pos.x, state.pos.z), ground = world.terrain.heightAt(state.pos.x, state.pos.z);
     const k = koppenAt(ll.lat, ll.lon), biome = biomeFor(k, world.terrain.reliefAt(state.pos.x, state.pos.z), ll.lat, ground);
-    const where = state.realm ? REALMS[state.realm.kind].name.toUpperCase() : ground < 0 ? `THE SEA · ${Math.round(-ground)} M DEEP` : biome.toUpperCase();
-    const height = state.realm ? "DREAMING" : state.mode === "water" ? (state.pos.y < -3 ? `${Math.round(-state.pos.y)} M DOWN` : "AFLOAT") : state.mode === "air" ? `${Math.round(state.pos.y - Math.max(0, ground))} M UP` : "ON THE GROUND";
+    const wt = waterTop(state.pos.x, state.pos.z), lakeName = wt.lake && state.mode === "water" ? (wt.lake.name || (wt.lake.reservoir ? "the reservoir" : "the lake")).toUpperCase() : null;
+    const where = state.realm ? REALMS[state.realm.kind].name.toUpperCase() : lakeName ? `${lakeName} · ${LAKE_DEPTH} M DEEP` : ground < 0 ? `THE SEA · ${Math.round(-ground)} M DEEP` : biome.toUpperCase();
+    const height = state.realm ? "DREAMING" : state.mode === "water" ? (state.pos.y < wt.top - 3 ? `${Math.round(wt.top - state.pos.y)} M DOWN` : "AFLOAT") : state.mode === "air" ? `${Math.round(state.pos.y - Math.max(0, ground))} M UP` : "ON THE GROUND";
     const quiet = placeQuiet(`${where}|${state.realm ? "dream" : state.mode}`);
     const cp = compassNow();
     lines.push(quiet ? "" : `${where} · ${height}${fold}`, sky, targetLine(), spellsLine(), cp ? `${arrow(cp.rel)} ${kmText(cp.d).toUpperCase()} · ${cp.t.kind === "spring" ? "THE SPRING" : `WAYMARK ${cp.t.i + 1} OF ${cp.q.ways.length}`}` : "", COARSE ? zoomNote() : zoomLine());
@@ -3357,7 +3375,7 @@ function worldView(dt, t) {
   const eye = eyeLocal.clone().multiplyScalar(creature.size).multiply(sh).applyAxisAngle(UP_AXIS, state.heading);
   director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: creature.size * sh.y, eyes, eye });
   cameraSpell();
-  const underwater = camera.position.y < seaY() && world.terrain.heightAt(camera.position.x, camera.position.z) < camera.position.y;
+  const underwater = camera.position.y < waterTop(camera.position.x, camera.position.z).top && floorUnder(camera.position.x, camera.position.z) < camera.position.y;
   return { ll: world.frame.toLatLon(p.x, p.z), pos: p, underwater };
 }
 
