@@ -225,7 +225,10 @@
     #hud { max-width: calc(100vw - 76px); transition: opacity .9s ease; }
     #hud.hush { opacity: 0; }
     #help { display: none; } /* the hint is the log's first line instead (main.js) */
-    #log { bottom: max(30px, calc(env(safe-area-inset-bottom) + 24px)); max-width: calc(100vw - 96px); }
+    /* No taller than the gap under the prompt (it sits 130px above the log's foot): long wrapped lines lose their oldest
+       rows off the top, never run into it (11-18; seen on a Pixel 7 since 11-16). */
+    #log { bottom: max(30px, calc(env(safe-area-inset-bottom) + 24px)); max-width: calc(100vw - 96px); max-height: 120px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+    #log.clipped { -webkit-mask-image: linear-gradient(transparent, #000 18px); mask-image: linear-gradient(transparent, #000 18px); }
     .btn { width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid rgba(255, 211, 77, .7); background: rgba(14, 8, 30, .35); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; font-size: 17px; text-shadow: 1px 1px 0 #000; transition: opacity .25s ease-out, transform .25s ease-out; -webkit-tap-highlight-color: transparent; }
     .btn .w { font-size: 8px; letter-spacing: .08em; }
     .btn:active { background: rgba(255, 211, 77, .25); }

@@ -17,6 +17,8 @@ import { chooseCapture, startRide, advance, rideLatLon, remainingMeters, hop, cr
 import { buildStones, CIRCLE_R } from "./stones.js";
 import { buildDoors } from "./doors.js";
 import { buildWaymarks } from "./waymarks.js";
+import { ensureWater, buildInland, updateInland } from "./inlandwater.js";
+import { wadeLine } from "./inland.js";
 import { ensureQuests, questOf, allQuests, wayKey, springAwake, target as questTarget, clueLine, landing, stretch, densify, songOf, stoneOf, metres as questMetres, bearing as questBearing, compassWords, arrow, kmText } from "./quests.js";
 import { placeOfNode } from "./nodenames.js";
 import { next as nextMode, travelOf, can as modeAllows, viewOf as cameraRegion } from "./modes.js";
@@ -26,7 +28,7 @@ import { screenTilt, tiltSteer, shakeDetector } from "./tilt.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
-import { RANGE, critterLine, fledLine, treeLine, butterflyLine, fireflyLine, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
+import { RANGE, critterLine, fledLine, treeLine, butterflyLine, fireflyLine, seaLine, drinkLine, waterAsks, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
 import { buildGlints } from "./glints.js";
 import { buildCairns } from "./cairns.js";
 import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted, isBot, pigeonsFor } from "./atproto.js";
@@ -47,12 +49,14 @@ import { buildMaker, h } from "./maker.js";
 import { buildEditor } from "./editor.js";
 import { buildBag } from "./bag.js";
 import { makeAtlasRecord, parseAtlasRecord, mergeAtlas, mergeBeen, mergeSeen, atlasKey } from "./atlas-record.js";
-import { cellOf } from "./fog.js";
+import { cellOf, cleared } from "./fog.js";
 import { BORN, ASLEEP, WAKER, bornOf, asleep, effective, bornStats, maxDepth, spawnAround } from "./birth.js";
 import { buildFinds, FIND_COLOUR } from "./finds.js";
 import { ensureKoppen, ensureKoppenAll, koppenAt, koppenLoaded } from "./koppen.js";
 import { buildAtlas } from "./atlas.js";
-import { ensureBasins, basinAt, basinTotal, basinByKey, knowLine, areaText, endsText } from "./basins.js";
+import { tideNow, tideLine } from "./tides.js";
+import { ensureBasins, ensureAllBasins, basinAt, basinTotal, basinByKey, knowLine, areaText, endsText, gridId, basinRows, idOfKey } from "./basins.js";
+import { basinOutline, basinBoxes, basinTint, stemRuns } from "./basinmap.js";
 import { firstInventory, moonseedFor, spend, refund, countOf, makeInventoryRecord, parseInventoryRecord, reconcileInventory, nextSeedAt, kitUp, wornOf, wearing, wear, takeOff, ITEMS, WORN_MAX, boostsOf, take, tookHere, receive, hadPigeon, slotGem, unslotGem, portalFor, nextPortalAt } from "./inventory.js";
 import { whenText, lunationOf } from "./moon.js";
 import { oncePer, hadIn } from "./once.js";
@@ -72,6 +76,8 @@ import { biomeFor, koppenCode, BIOMES } from "./biome.js";
 import { buildPlants } from "./plants.js";
 import { buildInsects } from "./insects.js";
 import { buildCritters } from "./critters.js";
+import { buildFish } from "./fish.js";
+import { shoalLine, SCATTER_LINE } from "./fishlife.js";
 import { LANDMARKS, landmarkQuery } from "./landmarks.js";
 import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
 import { createKept } from "./kept.js";
@@ -426,6 +432,20 @@ function discoverPlaces() {
   if (!state.ride) { const c = cellOf(ll.lat, ll.lon); if (!been.seen.has(c)) { been.seen.add(c); added = true; } }
   if (added) keepAtlas();
   knowBasin(ll);
+  wade();
+}
+// Inland water (11-14): rivers and lakes are water now, not land. Walking into one, you're told which (once, until you've
+// been out of it for a while), so a river has a name where you meet it.
+const wading = { key: "", since: 0 };
+function wade() {
+  if (!world || state.ride || state.realm || state.mode !== "ground") return;
+  const w = world.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y), now = realNow();
+  if (!w) { if (wading.key && now - wading.since > 60) wading.key = ""; return; }
+  const key = `${w.kind}:${w.name}`;
+  wading.since = now;
+  if (key === wading.key) return;
+  wading.key = key;
+  logLine(wadeLine(w), "note");
 }
 // Watersheds, the first stage (Jason, 11-10: "All 3, in stages"; know, see, enter): the first time you're in a basin you
 // know it. Its name, where its rain goes, and that it begins somewhere upstream (the clues come later); into your atlas.
@@ -686,13 +706,18 @@ const state = { pos: new THREE.Vector3(), heading: headingParam !== null ? (-Num
 let world = null, rebuilding = false, worldToken = 0;
 async function buildWorld(lat, lon) {
   const frame = makeFrame(lat, lon);
+  const water = ensureWater(lat, lon); // the rivers and lakes, fetched while the terrain loads
   const terrain = await buildTerrain(frame, lat, lon);
+  await water;
+  const inland = buildInland(frame, terrain);
+  terrain.wet = inland.wet; // plants, critters and insects keep out of the water
   const highways = buildHighways(frame, terrain.heightAt);
   const stones = buildStones(highways.pillars, terrain.heightAt);
   const beings = buildSkyBeings(frame, terrain.heightAt);
   const plants = buildPlants(frame, terrain);
   const insects = buildInsects(frame, terrain);
   const critters = buildCritters(frame, terrain, plants);
+  const fish = buildFish(frame, terrain);
   const shrines = buildShrines(frame, terrain);
   const finds = buildFinds(frame, terrain);
   finds.setTaken((f) => tookHere(inv, f.key, realNow())); // one you've had this moon isn't there for you
@@ -700,9 +725,9 @@ async function buildWorld(lat, lon) {
   const waymarks = buildWaymarks(frame, terrain);
   waymarks.set(waymarkItems());
   const group = new THREE.Group();
-  group.add(terrain.mesh, highways.group, stones.group, beings.group, plants.group, insects.group, critters.group, shrines.group, finds.group, doors.group, waymarks.group);
+  group.add(terrain.mesh, inland.group, highways.group, stones.group, beings.group, plants.group, insects.group, critters.group, fish.group, shrines.group, finds.group, doors.group, waymarks.group);
   layerTransparent(group); // glows, sparkles and fireflies draw after the sky
-  return { frame, terrain, highways, stones, beings, plants, insects, critters, shrines, finds, doors, waymarks, group };
+  return { frame, terrain, inland, highways, stones, beings, plants, insects, critters, fish, shrines, finds, doors, waymarks, group };
 }
 function swapWorld(next, place) {
   if (place) {
@@ -1627,6 +1652,14 @@ function pick(clientX, clientY) {
     if (v.z > 1) continue;
     if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 24) found.push({ kind: "critter", d, c });
   }
+  for (const s of world.fish.all()) {
+    v.set(s.x, s.y, s.z);
+    const d = v.distanceTo(camera.position);
+    if (d > 400) continue; // the sea hides them past that
+    v.project(camera);
+    if (v.z > 1) continue;
+    if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 36) found.push({ kind: "shoal", d, s });
+  }
   const bh = seesBeings() ? tapRay.intersectObject(world.beings.group, true)[0] : null;
   if (bh) { let o = bh.object; while (o && !o.userData.being) o = o.parent; if (o) found.push({ kind: "being", d: bh.distance, being: o.userData.being, obj: o }); }
   const fh = tapRay.intersectObjects(world.finds.pickables(), true)[0], fe = fh && world.finds.entryOf(fh.object);
@@ -1697,6 +1730,11 @@ function onTap(clientX, clientY) {
     // Walking up to it, it doesn't run (others on the way might).
     const c = hit.c, act = () => touchCritter(c.key);
     return flat(c.x, c.z) < RANGE.critter ? act() : moveTo({ x: c.x, z: c.z, h: c.y }, { range: RANGE.critter * 0.6, act, critter: c.key });
+  }
+  if (hit.kind === "shoal") {
+    // Swimming up to it, it doesn't scatter.
+    const sh = hit.s, act = () => touchShoal(sh.key);
+    return Math.hypot(sh.x - p.x, sh.y - p.y, sh.z - p.z) < RANGE.shoal ? act() : moveTo({ x: sh.x, z: sh.z, h: sh.y }, { range: RANGE.shoal * 0.6, act, critter: sh.key });
   }
   if (hit.kind === "being") {
     hit.obj.getWorldPosition(v);
@@ -1821,6 +1859,42 @@ function touchFirefly(x, y, z, seed) {
     bursts.emit({ at: new THREE.Vector3(f.x, f.y, f.z), colors: [new THREE.Color(0xd9ff66)], n: 5, spread: 0.6, up: 0.4, fall: 0.1, life: 1.6 });
   logLine(fireflyLine(Math.round(seed * 1e6), fireflyTouches++), "creature");
 }
+// ---- Touching water (11-15, from the "more things to touch" list: fireflies, the sea, ley pillars) ----
+/**
+ * The water in reach, or null: the sea you're afloat on (or standing at the edge of), the river or lake you're wading
+ * in. { water: "sea" | "river" | "lake", name?, reservoir?, level?, x, y, z }, the place being where a splash goes.
+ */
+function waterHere() {
+  if (!world || state.realm || state.ride) return null;
+  const p = state.pos, fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
+  if (state.mode === "water") return p.y > -6 ? // nothing lifts a swimmer back to the surface, so one who dropped in rests a few metres under: still in reach of it
+    { water: "sea", x: p.x + fx * 4, y: 0, z: p.z + fz * 4 } : null;
+  if (state.mode !== "ground") return null;
+  const w = world.inland.wadingAt(p.x, p.z, p.y);
+  if (w) return { water: w.kind, name: w.name, reservoir: w.reservoir, level: w.level, x: p.x + fx * 4, y: p.y + 1.2, z: p.z + fz * 4 };
+  if (p.y > 2.5) return null;
+  // On a beach: the sea within thirty metres, ahead of you first, then to either side and behind.
+  for (const turn of [0, 0.8, -0.8, 1.6, -1.6, 2.4, -2.4, Math.PI]) {
+    const c = Math.cos(turn), s = Math.sin(turn), dx = fx * c - fz * s, dz = fx * s + fz * c;
+    for (const far of [12, 30]) if (world.terrain.heightAt(p.x + dx * far, p.z + dz * far) < 0) return { water: "sea", x: p.x + dx * (far - 2), y: 0, z: p.z + dz * (far - 2) };
+  }
+  return null;
+}
+/**
+ * Splash the sea, and it tells you its tide (from where the Moon and the Sun really are, tides.js); drink from a river
+ * or a lake, and it tells you where that water is going (the basin you're in, basins.js). Nothing is changed or kept.
+ */
+let splashes = 0;
+function touchWater(c) {
+  sound.splash();
+  bursts.emit({ at: new THREE.Vector3(c.x, c.y, c.z), colors: [new THREE.Color(0xffffff), new THREE.Color(0xbfeaff), new THREE.Color(0x7fd6e8)], n: 28, spread: 2.2, up: 6, fall: 12, life: 1.4, ground: c.y - 0.5 });
+  const ll = world.frame.toLatLon(state.pos.x, state.pos.z), here = [ll.lat, ll.lon];
+  if (c.water === "sea") { logLine(seaLine(tideLine(tideNow(realNow(), ll.lat, ll.lon)), splashes++), "note"); return; }
+  ensureBasins(ll.lat, ll.lon).catch(() => {}).then(() => {
+    const b = basinAt(ll.lat, ll.lon), to = b && (b.kind === "river" || b.kind === "lake") ? b.mouth : null;
+    logLine(drinkLine(c, b, to ? `${kmText(questMetres(here, to))} ${compassWords(questBearing(here, to))}` : ""), "note");
+  });
+}
 /** What the small creatures did this frame (ran from you), and now and then a croak or a song from nearby. */
 let fledAt = -10, fledEver = false, chorusAt = 0;
 function critterNews(events, t, sunAltitude) {
@@ -1847,6 +1921,23 @@ function touchCritter(key) {
   director.play("butterfly", simT, butterflyShot(state.pos.clone(), at), { dur: 2.6, blendIn: 0.5, blendOut: 0.9 });
   bursts.emit({ at, colors: [new THREE.Color(0xffb8de), new THREE.Color(0xffffff)], n: 8, spread: 0.8, up: 1.6, fall: 0.6, life: 1.2 });
   logLine(critterLine(c.kind, c.name, myName, hashString(key), critterTouches++), "creature");
+}
+/** Under the sea: a shoal scattered by a rush now and then says so; touched gently, it swirls round you. */
+let scatteredAt = -10, scatteredEver = false, shoalTouches = 0;
+function fishNews(events, t) {
+  for (const ev of events) {
+    sound.bubble(3);
+    if (t - scatteredAt > 8) { logLine(SCATTER_LINE(ev.s.name, !scatteredEver), "creature"); scatteredAt = t; scatteredEver = true; }
+  }
+}
+function touchShoal(key) {
+  const s = world.fish.touch(key, simT);
+  if (!s) return squeak();
+  sound.bubble();
+  const at = new THREE.Vector3(state.pos.x, state.pos.y + 1.5, state.pos.z);
+  director.play("butterfly", simT, butterflyShot(state.pos.clone(), new THREE.Vector3(s.x, s.y, s.z)), { dur: 3, blendIn: 0.5, blendOut: 0.9 });
+  bursts.emit({ at, colors: [new THREE.Color(0xcff6ff), new THREE.Color(0xffffff)], n: 12, spread: 1.4, up: 2.4, fall: -0.4, life: 1.6 });
+  logLine(shoalLine(s.name, myName, hashString(key), shoalTouches++), "creature");
 }
 function hum(being, obj) {
   director.play("being", simT, beingShot(state.pos.clone(), obj.getWorldPosition(new THREE.Vector3())), { dur: 4.5, blendIn: 0.9, blendOut: 1.2 });
@@ -1928,6 +2019,9 @@ function inReach() {
     const d = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z);
     if (d < RANGE.critter) add({ kind: "critter", key: c.key, species: c.kind, name: c.name, d, range: RANGE.critter, c }, c.x, c.z);
   }
+  for (const s of world.fish.near(p.x, p.y, p.z, RANGE.shoal)) {
+    add({ kind: "shoal", key: s.key, name: s.name, d: Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z), range: RANGE.shoal, s }, s.x, s.z);
+  }
   for (const o of seesBeings() ? world.beings.group.children : []) {
     const being = o.userData.being;
     if (!being) continue;
@@ -1940,6 +2034,8 @@ function inReach() {
   for (const e of cairns.near(p.x, p.z, RANGE.artifact)) {
     add({ kind: "artifact", key: `a${e.a.uri}`, d: Math.hypot(e.x - p.x, e.z - p.z), range: RANGE.artifact, entry: e, handle: e.a.handle, own: e.a.own }, e.x, e.z);
   }
+  const wt = waterAsks(out) && waterHere();
+  if (wt) add({ kind: "water", key: `water:${wt.water}:${wt.name ?? ""}`, d: 0, range: 1, ...wt }, wt.x, wt.z);
   return out;
 }
 /** Where a thing's glint sits: on the near side of a crown, on a butterfly, a sky being, the line overhead. */
@@ -1951,12 +2047,14 @@ function glintSpot(c, v, bs) {
   }
   if (c.kind === "butterfly") { const b = bs.find((q) => q.seed === c.seed); return b ? v.set(b.x, b.y + 0.6, b.z) : null; }
   if (c.kind === "firefly") return v.set(c.x, c.y, c.z);
+  if (c.kind === "water") return v.set(c.x, c.y + 0.8, c.z);
   if (c.kind === "find") return v.set(c.f.x, c.f.y + 0.7, c.f.z);
   if (c.kind === "shrine") return v.set(c.s.x, c.s.y + 2.4, c.s.z);
   if (c.kind === "stones") return v.set(c.c.x, c.c.y + 3.5, c.c.z);
   if (c.kind === "door") return v.set(c.door.x, c.door.y + 6, c.door.z);
   if (c.kind === "waymark" || c.kind === "spring") return v.set(c.w.x, c.w.y + (c.kind === "spring" ? 3 : 5), c.w.z);
   if (c.kind === "critter") { const q = world.critters.near(c.c.x, c.c.z, 40).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 1.3, q.z) : null; }
+  if (c.kind === "shoal") { const q = world.fish.near(c.s.x, c.s.y, c.s.z, 60).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 2, q.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
   if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
   if (c.kind === "mutual") return v.set(c.m.x, c.m.y + 6 * c.m.entry.body.size, c.m.z);
@@ -2007,9 +2105,11 @@ function interact() {
   if (c.kind === "tree") return shakeTree(c.rec);
   if (c.kind === "butterfly") { const b = world.insects.butterflies().find((q) => q.seed === c.seed); return b ? chirp(b.k) : squeak(); }
   if (c.kind === "firefly") return touchFirefly(c.x, c.y, c.z, c.seed);
+  if (c.kind === "water") return touchWater(c);
   if (c.kind === "find") return pickUp(c.f);
   if (c.kind === "shrine") return canDream(c.s) ? enterDream(c.s) : castSpell(c.s);
   if (c.kind === "critter") return touchCritter(c.key);
+  if (c.kind === "shoal") return touchShoal(c.key);
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "stones") return enterStones(c.c);
   if (c.kind === "door") return openDoor(c.door);
@@ -2344,6 +2444,44 @@ function changeWorn(kind, on) {
   bursts.emit({ at, colors: [new THREE.Color().setHSL(simT % 1, 0.9, 0.7), new THREE.Color(0xffffff)], n: 12, spread: 2 * creature.size, up: 2, fall: 1.5, life: 0.9 });
   return true;
 }
+/** Seeing the basins you know on the atlas's map (watersheds, stage two): their divides, and a tint inside, the one
+ *  you're in brighter. Worked out from the basin tiles (all 72 load the first time, about 100 KB), kept until what you
+ *  know or where you are changes. */
+let basinsCache = null;
+const atlasHere = () => (state.ride ? rideLatLon(state.ride) : world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn);
+async function basinsSeen() {
+  const keys = Object.keys(been.basins);
+  if (!keys.length) return null;
+  await ensureAllBasins();
+  const p = atlasHere(), here = basinAt(p.lat, p.lon);
+  const ids = new Set(keys.map(idOfKey).filter(Boolean)), hereId = here && ids.has(here.id) ? here.id : 0;
+  const sig = `${[...ids].sort((a, b) => a - b).join(",")}|${hereId}`;
+  if (basinsCache?.sig === sig) return basinsCache.out;
+  const rows = basinRows(), boxes = basinBoxes(rows, ids), segs = [];
+  for (const [id, box] of boxes) segs.push(...basinOutline(gridId, new Set([id]), hereId, box).segs);
+  const tints = [];
+  const touches = (col, row) => [...boxes.values()].some((b) => b.x0 < (col + 1) * 300 && b.x1 >= col * 300 && b.y0 < (row + 1) * 300 && b.y1 >= row * 300);
+  rows.forEach((r, row) => r.forEach((t, col) => {
+    if (!t || !touches(col, row)) return;
+    const px = basinTint(gridId, ids, hereId, col * 300, row * 300, 300, 300);
+    if (px) tints.push({ px, x0: col * 300, y0: row * 300, n: 300 });
+  }));
+  basinsCache = { sig, out: { segs, tints } };
+  return basinsCache.out;
+}
+/** The water's way (watersheds, still "see"): the main stem of each river basin you know, where you've cleared the
+ *  cloud, running downstream; a river whose spring you've drunk from is drawn whole already (rivers). Kept until what you
+ *  know, where you've been or where you are changes. */
+let stemsCache = null;
+function stemsSeen() {
+  const p = atlasHere(), keys = Object.keys(been.basins).filter((k) => been.springs[k] == null && questOf(k)).sort();
+  const sig = `${keys.join(",")}|${been.seen.size}|${cellOf(p.lat, p.lon)}`;
+  if (stemsCache?.sig === sig) return stemsCache.out;
+  const clear = (lat, lon) => cleared(lat, lon, been.seen, [p]);
+  const out = keys.flatMap((k) => stemRuns(questOf(k).line, clear).map((run) => run.map(([lat, lon]) => ({ lat, lon }))));
+  stemsCache = { sig, out };
+  return out;
+}
 atlasView = buildAtlas({
   maker,
   button: document.getElementById("atlas"),
@@ -2359,7 +2497,9 @@ atlasView = buildAtlas({
       ...allQuests().filter((q) => been.springs[q.key] != null).map((q) => ({ key: `spring:${q.key}`, kind: "spring", name: `The spring of the ${riverWords(q).river ?? riverWords(q).label}`, lat: q.source.at[0], lon: q.source.at[1], note: "its source", colour: `hsl(${Math.round(stoneOf(q).hue * 360)} 80% 65%)`, song: () => sound.river(songOf(q)) })),
     ],
     rivers: () => allQuests().filter((q) => been.springs[q.key] != null).map((q) => q.line.map(([la, lo]) => ({ lat: la, lon: lo }))),
-    here: () => (state.ride ? rideLatLon(state.ride) : world ? world.frame.toLatLon(state.pos.x, state.pos.z) : spawn),
+    stems: stemsSeen,
+    here: atlasHere,
+    basins: basinsSeen,
     seen: () => been.seen,
     tally: () => {
       const n = (o) => Object.keys(o).length, marks = n(been.marks), known = n(been.basins);
@@ -2965,10 +3105,10 @@ function openHelp() {
   maker.custom("help", [
     h("h2", {}, "How to play"),
     ...group("Moving", [["WASD · arrows", "move and turn (on a phone, drag)"], ["Space", "jump; with Wings, take off and climb (▲)"], ["Shift", "crouch, slow and quiet (small creatures don't start); flying, go down (▼)"], ["Tap anything", "go to it; close enough, it answers"], ["E at a ley node's stones", "the light lifts you to its ring: A/D chooses a lane, E or W sets off, Space or Shift lets go"], ["Wheel · + − · pinch", "the camera nearer or farther (about 500 m back; a far feather, or a shrine of the soaring eye, lifts it higher)"]]),
-    ...group("Touching", [["E", "touch what glints (the bottom-right prompt)"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
+    ...group("Touching", [["E", "touch what glints (the bottom-right prompt): trees, creatures, shrines, the water you stand in"], ["Enter", "say something to mutuals nearby"], ["P", "a picture of this moment, to share"], ["Esc", "lift a spell, or wake from a dream"], ["I", "more on the HUD (top left; or tap it)"], ["M", "sound on or off"]]),
     ...group("On a phone", [["Drag", "move and turn"], ["Tap", "go there; close enough, it answers"], ["Pinch", "the camera nearer or farther"], ["✦", "touch what glints"], ["▲ ▼", "show when they do something, and say what (jump, fly, climb; crouch, dive, step off, let go)"], ["☰", "the menus; a dot means something new came"], ["Tilt to steer (in ☰)", "tip the phone to turn, away to go, toward you to slow; a shake squeaks"]]),
     ...group("A controller", [["Left stick", "move and turn"], ["Right stick", "turn; up or down, the camera nearer or farther (or LB · RB)"], ["A", "jump; with Wings, take off and climb; in a ley node's ring, set off"], ["B", "crouch; flying, go down; on a highway, step off; in a ring, let go"], ["X · Y", "touch what glints · take a picture"], ["D-pad", "moves like the left stick (in a ley node's ring: left and right choose, up sets off)"], ["Start", "into the menus (again to leave): the D-pad walks them, A presses, B closes"], ["Back", "Esc"]]),
-    ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: ride one from a ley node's stones)"], ["ATLAS ▾", "a map of where you've been (the rest is cloud): tap a place you found to go back"], ["Waymarks", "river stones with a blue light, up each river from near the sea: read one for the way to the next, touch it again and the water carries you; the last wakes the spring at the source (its stone is the river's own)"], ["River compass", "worn, the HUD's arrow points up the river you're in, to its next waymark"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
+    ...group("The dream", [["Shrines", "columns of light: touch one awake for a minute's spell, and again while it holds to enter its dream"], ["Dreams", "gather three lights for a gem"], ["RHIZOME ▾", "set gems; linked ones wake boosts and powers (Wings: flight)"], ["BAG ▾", "what you carry and wear (the prism shows the gold highways: ride one from a ley node's stones)"], ["ATLAS ▾", "a map of where you've been (the rest is cloud): tap a place you found to go back"], ["Waymarks", "river stones with a blue light, up each river from near the sea: read one for the way to the next, touch it again and the water carries you; the last wakes the spring at the source (its stone is the river's own)"], ["River compass", "worn, the HUD's arrow points up the river you're in, to its next waymark"], ["Rivers and lakes", "real ones (Natural Earth's), drawn as water; wade into one and you're told its name"], ["Your creature's name ▾", "change how it looks (its stats, with a moonseed)"], ["BLUESKY ▾", "sign in: your mutuals, their cairns, pigeons"]]),
     h("details", { class: "credits" }, h("summary", {}, "Credits"), ...credits()),
   ], { trigger: helpBtn, classes: ["help"] });
 }
@@ -2988,7 +3128,7 @@ const credits = () => [
 * United Kingdom terrain data © Environment Agency copyright and/or database right 2015. All rights reserved;
 * United States 3DEP (formerly NED) and global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey.`),
   h("p", {}, "Climate: Köppen-Geiger classification, 1991–2020 (Beck et al. 2023, Scientific Data 10:724)."),
-  h("p", {}, "Made with Natural Earth: rivers, lakes, places and regions (the ley nodes' and the basins' names)."),
+  h("p", {}, "Made with Natural Earth: rivers, lakes, places and regions (the rivers and lakes you see, and the ley nodes' and the basins' names)."),
   h("p", {}, "Ley lines: leylines-solids (Joerg Roth, Apache-2.0), after Becker & Hagens and Leland. Rendering: three.js (MIT). Sign-in: @atproto/oauth-client-browser (MIT). Artifacts are found through Constellation (microcosm); mutuals through Bluesky's public AppView."),
 ];
 helpBtn.addEventListener("click", openHelp);
@@ -3067,6 +3207,7 @@ function frame() {
   sea.mesh.visible = !state.realm; // a dream hangs over no sea
   sea.mesh.position.set(camera.position.x, 0, camera.position.z); // its waves are keyed to world position
   sea.update(t, dir, day, horizon);
+  updateInland(t, dir, day, horizon);
   // The shared clock: the real one, or ?t= when it's fixed. Sky beings and
   // clouds follow it, so every player sees the same sky.
   const unix = unixAt(t);
@@ -3086,13 +3227,15 @@ function frame() {
     world.waymarks.update(state.pos.x, state.pos.z, t);
     world.waymarks.group.visible = zoom < 120000;
     const life = zoom < 6000;
-    world.plants.group.visible = world.insects.group.visible = world.critters.group.visible = life;
+    world.plants.group.visible = world.insects.group.visible = world.critters.group.visible = world.fish.group.visible = life;
     if (life) {
       window.__dream.plants = world.plants.update(state.pos.x, state.pos.z, t, camera.position, detail.scale);
       window.__dream.insects = world.insects.update(state.pos.x, state.pos.z, unix % 86400, sunState.altitude);
       const me = { x: state.pos.x, y: state.pos.y, z: state.pos.z, speed: Math.hypot(state.speed, state.vy), ground: Math.max(0, world.terrain.heightAt(state.pos.x, state.pos.z)), target: state.target?.critter ?? null };
       critterNews(world.critters.update(t, unix, sunState.altitude, me), t, sunState.altitude);
       window.__dream.critters = world.critters.counts;
+      fishNews(world.fish.update(t, unix, { ...me, target: state.target?.critter ?? null }), t);
+      window.__dream.fish = world.fish.counts;
     }
   }
   if (t - lastHud > 0.25) { updateHud(); lastHud = t; }
@@ -3219,7 +3362,7 @@ function rideView(dt, t) {
 }
 
 // ---- Boot ----
-window.__dream = { seed, stats, genes, spawn, kept: () => ({ keep, carry, mapping, sending }), mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
+window.__dream = { seed, stats, genes, spawn, kept: () => ({ keep, carry, mapping, sending }), mode: () => ({ ...modeSnap(), refused: [...modes.refused], conflicts: modes.conflicts }), pad: () => ({ turn: pad.last?.turn ?? 0, thrust: pad.last?.thrust ?? 0, held: [...pad.held], using: pad.using }), input: () => input(), actions: () => acts, inv: () => inv, been: () => been, travelTo: (a) => travelTo(a), travelToPlace: (k) => travelToShrine(k), takePicture: () => takePicture(), hereUrl: () => hereUrl(), rhizome: () => { const z = rhiz(); return { R: z.R, filled: z.filled, fx: { ...z.fx, powers: [...z.fx.powers], deeper: [...z.fx.deeper], looks: [...z.fx.looks] }, view: z.R && (() => { const v = viewOf(z.R, z.filled); return { visible: [...v.visible], fillable: [...v.fillable], woken: [...v.woken] }; })() }; }, setGem: (i) => setGem(i), zoomNow: () => zoom, zoomBy: (f) => zoomBy(f), realm: () => state.realm && { kind: state.realm.kind, got: state.realm.got.size, lights: state.realm.L.lights.length, gemOut: state.realm.gemOut, L: state.realm.L, anchor: state.realm.anchor, t: simT - state.realm.t0 }, enterDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); if (s) enterDream(s); }, canDream: (key) => { const s = world.shrines.all().find((q) => q.key === key); return !!s && canDream(s); }, landPigeon: (p) => landPigeon(p), pigeonOnScreen: () => pigeonFx.positions().map((v) => { const q = v.clone().project(camera); return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(v.distanceTo(camera.position))]; }), pigeonsAround: () => flying.list.length, born: () => born, body: () => body(), finds: () => world.finds.all(), pickUp: (key) => pickUp(world.finds.all().find((f) => f.key === key)), wearIt: (k, on = true) => changeWorn(k, on), seesLey: () => seesLey(), triangles: creature.triangles, editor: () => editor, editing: () => editing, shrines: () => world.shrines.all(), doors: () => world.doors.all(), atlas: () => ({ ...found }), atlasMap: () => atlasView.state(), quests: () => ({ ways: { ...been.ways }, springs: { ...been.springs } }), waymarks: () => world.waymarks.all(), tide: () => { const l = world.frame.toLatLon(state.pos.x, state.pos.z), td = tideNow(realNow(), l.lat, l.lon); return { ...td, line: tideLine(td) }; }, interact: () => interact(), inland: () => world && { ...world.inland.stats, here: world.inland.wadingAt(state.pos.x, state.pos.z, state.pos.y) }, compass: () => { const c = compassNow(); return c && { kind: c.t.kind, i: c.t.i ?? null, km: Math.round(c.d / 100) / 10, arrow: arrow(c.rel) }; }, spells: () => Object.fromEntries(Object.entries(spells).map(([k, v]) => [k, v && v.id])), testSpell: (id) => castSpell({ key: "test", spell: id, x: state.pos.x, y: state.pos.y + 3, z: state.pos.z }), endSpells, ready: false, frames: 0, state, objects: { sea: sea.mesh }, world: () => world, detail, pickAt: (x, y) => pick(x, y)?.kind ?? null, viewAs: (handle) => lookAs(handle, false), cairns: () => cairns, maker: () => maker, artifacts: () => artifacts.map((a) => ({ uri: a.uri, handle: a.handle, note: a.note, own: a.own })), pickGlobe: (x, y) => { const r = canvas.getBoundingClientRect(), h = globe.pick(x - r.left, y - r.top, r.width, r.height); return h ? (h.cairn ? `cairn:${h.cairn.handle}` : `mutual:${h.mutual.handle}`) : null; }, flock: () => [...who.values()].map((w) => ({ handle: w.handle, kind: w.intent.kind, genes: w.intent.creature.genes })), sharing: () => ({ ...share, last: share.last && share.last.kind }), everywhere: () => everywhere.map((a) => ({ uri: a.uri, handle: a.handle, lat: a.lat, lon: a.lon })), reach: () => ({ n: reach.length, lit: lit.map((c) => c.kind), focus: focus && { kind: focus.kind, key: focus.key, d: Math.round(focus.d) }, prompt: shownPrompt }) };
 if (film) {
   window.__dream.filmStart = () => { film.ms = performance.now(); film.base = Date.now() - film.ms; film.manual = true; };
   window.__dream.filmStep = (n = 1) => { for (let k = 0; k < n; k++) { film.ms += 1000 / film.fps; frame(); } };

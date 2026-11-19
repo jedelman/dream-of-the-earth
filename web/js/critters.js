@@ -104,7 +104,7 @@ export function buildCritters(frame, terrain, plants) {
 
   const at = (c) => {
     const p = frame.toLocal(c.lat, c.lon), h = terrain.heightAt(p.x, p.z);
-    if (h < 3) return null;
+    if (h < 3 || terrain.wet?.(p.x, p.z)) return null;
     return { p: { x: p.x, z: p.z }, h, biomeId: biomeFor(koppenAt(c.lat, c.lon), terrain.reliefAt(p.x, p.z), c.lat, h) };
   };
   function settle(x, z) {

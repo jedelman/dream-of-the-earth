@@ -37,14 +37,26 @@ where they belong, the same on every phone: kapok and banyan over the rainforest
 the savanna, saguaro in the desert, spreading oaks, cypress flames, giant sequoias and spruce spires. Butterflies of four triangles fly by day, and
 fireflies blink at night.
 
+**Under the sea:** shoals of little fish swim slow loops at their own depths (reef fish in the tropics, silver and
+bronze ones in cooler water, ice fish near the poles), and kelp forests sway on cool, shallow seabeds, leaning out of
+your way. Rush through a shoal and it scatters; swim up gently and greet it, and it swirls round you.
+
 **Watersheds:** every bit of land drains somewhere. The first time you're in one of 321 river basins (worked out from
 the terrain and Natural Earth's rivers, `scripts/basins`), you know it: its name, its size, where its rain goes. It goes in
 your atlas. Then the quest: waymarks stand up each river from near the sea, each telling you the next (and the
 water carries you up to it), and at the source a spring wakes, with the river's own spring stone. A river compass,
 worn, points the way.
 
+**Rivers and lakes** are water now (Natural Earth's, `scripts/water`): ribbons down the valleys, lakes flat at their
+shore's height. Rivers run downhill: flecks drift down them, and wading in, you're told its name and which way it
+runs.
+Touch the water (E): the sea tells you its tide, by where the Moon and the Sun really are; a river or a lake tells
+you where its water is going.
+
 **Your atlas** is a map of where you've been: the Earth in its climate's colours, under cloud everywhere else. The
-shrines, ley nodes and landmarks you've found are marked on it, to tap and travel back to.
+shrines, ley nodes and landmarks you've found are marked on it, to tap and travel back to. The river basins you know
+are outlined on it, even under the cloud: blue lines along the divides where the rain parts, the one you're in brightest. Inside, wherever you've been, each
+basin's river is drawn with small chevrons pointing the way its water runs to the sea.
 
 **Sky beings:** sparkling eldritch things grown from L-systems drift slowly along every ley line, and everyone
 sees the same one in the same place at the same moment.

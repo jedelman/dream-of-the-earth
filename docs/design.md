@@ -260,14 +260,41 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
     holds unless something clearly better comes along, so it doesn't flicker between two trees. E (or tapping the
     prompt; a ✦ stands in for the key on touch screens) does it; with nothing in reach, E squeaks. On a phone the
     prompt sits above ▲▼, under the right thumb. It stays bottom right on a computer too: centred, it covered
-    the creature and collided with the log. Highway glints sit 30 m along each line the way you face, so at a
+    the creature and collided with the log. On a phone the prompt sits 130 px above the log's foot, so the log is capped
+    at 120 px tall (11-18): long wrapped lines lose their oldest rows off the top, faded, instead of running under the
+    prompt (seen on a Pixel 7 on 11-16: "Drink from the Rhine" over the first log line). Highway glints sit 30 m along each line the way you face, so at a
     node they fan out along the roads instead of stacking on the node.
   - **Fireflies answer too (built 11-10, from the "more things to touch" list: fireflies, the sea, ley pillars):**
     at night, in the biomes that have them, a firefly within 14 m glints and gets the prompt "(E) Cup the firefly";
     tapping one (a 20 px target) walks you up first, like a butterfly. The nearest few flare together in
     yellow-green sparks, a soft rising bell plays (WebAudio), and the log says something that varies by hash. The
     drift the vertex shader flies is mirrored on the CPU (`fireflyAt`, tested), so a touch finds the firefly where
-    you see it. No new data, nothing stored. Still on the list: the sea, ley pillars.
+    you see it. No new data, nothing stored. Still on the list: ley pillars (the sea came 11-15, below).
+  - **Water answers (built 11-15, overnight, from the same list; `tides.js`, `waterHere` and `touchWater` in
+    `main.js`):** afloat within 6 m of the surface (a swimmer who dropped in rests a few metres under), or on a beach with the sea within 30 m, the prompt is "(E) Splash the sea";
+    wading in a river or a lake, "Drink from the Loire" / "Drink from Lago Titicaca". A splash of white and pale-blue
+    drops, a slap-and-patter sound (WebAudio), and a line that says something true:
+    - **The sea tells you its tide,** from where the Moon and the Sun really are (the astrological clock's own
+      positions): "By the Moon's pull the tide is rising here: high water in about 3 hours. Spring tides: the Sun and
+      the Moon pull in line." This is the *equilibrium* tide, the height the pull itself would raise on an all-ocean
+      Earth ((3cos²ψ − 1)/2 for each body, ψ its angle from straight up; the Sun's share 0.46 of the Moon's; the Moon's
+      scaled by 1/distance³), so high water falls under the Moon and opposite it. Real coasts lag it by hours as their
+      basins slosh, so it's the sky's tide, not a tide table, and the words say "by the Moon's pull". Springs within
+      25° of new or full moon, neaps within 25° of the quarters. Away from the equator, with the Moon far north or
+      south, one of the day's two tides nearly vanishes ("low water in about 8 hours"): that's real too (the diurnal
+      inequality). **The sea itself doesn't rise or fall:** the computed world stays as it is; this is only said.
+    - **A river or a lake tells you where its water goes,** from the basin you stand in (`basins.js`) and how far its
+      mouth is: "You drink from the Loire. This water is bound for the sea, 216 km west of here."; on a tributary,
+      "…joins the Loire River, and meets the sea…"; in a closed basin, "You drink from Lago Titicaca. It lies 3,819 m
+      above the sea. This water never reaches the sea: it ends in Lago Poopó, 370 km south-east of here." A lake's
+      height is the level the game drew it at (from the terrain round its shore), so it can be a few metres off the
+      surveyed one. Distances are straight lines to the basin's mouth, not along the river.
+    - **It waits its turn:** water asks for the prompt only when no find, shrine, stones, waymark, spring, door,
+      cairn, small creature, firefly or mutual is in reach; a tree close ahead still outbids it. Nothing is kept, sent
+      or changed; no new data, records or scopes.
+    - Tests: 6 (high water under the Moon, two highs a day about 12 h 25 min apart, turns are real turns, springs
+      swing wider than neaps, the words, the prompt's place). Headless, desktop and Pixel 7: the sea off Virginia
+      Beach afloat and from the beach, the Loire, Lago Titicaca.
 
 ## The camera: a director (built 11-08, Jason: "let's make the camera a little more semantic and cinematic")
 `web/js/director.js`, with the maths in `web/js/camerawork.js` (tested).
@@ -485,6 +512,30 @@ Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
 - **Sounds:** sniffs, croaks (bigger frogs lower) and songs, synthesized like the rest. Now and then a frog croaks
   nearby at dusk and through the night, and a bird sings by day.
 - **Next, maybe:** frogs by inland water once rivers and lakes exist; ducks; birds that follow you a little way.
+
+### Under the sea: shoals and kelp (built 11-19, overnight)
+On the list since the first nights ("maybe kelp and fish underwater"): a sea-born creature dives into an empty sea, with
+nothing under the surface but the seabed. (`fishlife.js`, pure and tested; `fish.js` draws them; hooks in `main.js`.)
+- **Shoals** of 5 to 10 little fish (dream-sized, 1.1 to 1.8 m, a third of you), on the global cell grid like the small
+  creatures on land (80 m cells, up to 22 within 340 m), wherever the sea is 4 m deep or more. Each swims a slow figure
+  of eight round its home, 16 to 32 m across, at its own depth (under the surface, over the seabed, no deeper than 30 m,
+  so a creature that can only duck under still meets some), on the shared clock: everyone sees the same shoal in the
+  same water. Each fish keeps its own place in the shoal and wags its tail. 14 triangles a fish, one instanced mesh.
+- **Who lives where,** by the sea's warmth from latitude: within 28° of the equator, little blue, yellow, orange and violet
+  reef fish; to 52°, little silver, blue-backed and bronze fish; beyond, little ice fish and grey fish. Latitude is
+  crude (a cold current makes a warm latitude cold), but there's no sea temperature in the game's data yet.
+- **Kelp** in forests (patches about 160 m across, half of them) on cool seabeds 3 to 26 m down, 30° to 66° from the
+  equator, each stalk reaching most of the way to the surface, up to 22 m. It sways in the shader, a wave running up the
+  stalk, and leans out of your way as you swim through. 24 triangles a stalk, up to 420.
+- **What they do about you is local,** as with the small creatures: rush through a shoal faster than 7 m/s and it bursts
+  apart and gathers again over 4.5 s ("The little silver fish scatter from you in a flash. Swim up slowly, or tap the
+  shoal."). In reach (22 m, in three dimensions, so not from the beach above), "(E) Greet the shoal of little blue reef
+  fish": it swirls once round you and goes back to its way, with bubbles and a run of bubbly notes. A shoal outbids
+  "Splash the sea" for the prompt.
+- Nothing stored or sent; no new data, records, lexicons or scopes. Tests: 6. Checked headless (desktop and Pixel 7) in
+  the kelp off Cape Point and on a Red Sea reef by Sharm el-Sheikh, with no page errors.
+- **Next, maybe:** coral heads on tropical seabeds; a sea-temperature source instead of latitude (it would need a
+  licence check); fish that follow a sea-born creature a little way.
 
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
@@ -1044,8 +1095,8 @@ hooks in `main.js`.)
   you face toward the next waymark (or the spring) of the river whose basin you're in. On you, a bronze disc with a
   swimming blue needle.
 - **Your atlas record** gains `ways` (`seine-river:2`) and `springs` (`seine-river`), a lexicon change.
-- **Next:** riding a river (the "enter" stage) instead of being carried, seeing basins, and the other compasses (sky,
-  ley, kin).
+- **Next:** riding a river (the "enter" stage) instead of being carried, seeing basins (the map's divides came 11-17,
+  below), and the other compasses (sky, ley, kin).
 
 ### The atlas as a map, clouded where you haven't been (built 11-10)
 Jason: "For the atlas, let's offer it as a map only - but anything not visited is fogged/clouded over." (`fog.js`,
@@ -1070,6 +1121,90 @@ Jason: "For the atlas, let's offer it as a map only - but anything not visited i
 - **What went:** the lists. The landmarks you hadn't been to were listed as "Still to find"; now they're under cloud
   with everything else. A line under the map keeps the tally (shrines, ley nodes, landmarks of 22, river basins of 321).
   "Show on the globe" stays.
+
+### Seeing the basins you know (built 11-17, overnight)
+The watersheds' second stage. Jason, 11-10, asked how the regions should open: "All 3, in stages" (know, see, enter).
+Knowing came first (11-10); this is seeing. (`basinmap.js`, the `basins` hook in `atlas.js`, `basinsSeen` in `main.js`.)
+- **On the atlas's map,** every basin you know is outlined along its divides: the lines where rain on one side runs to
+  its river and rain on the other runs somewhere else. The one you're in is drawn brighter and a little thicker (cyan);
+  the others are a softer blue, each over a dark edge so they read on cloud and on land alike. Inside, a faint
+  water-blue tint, stronger for the basin you're in.
+- **The outlines show through the cloud; the tint doesn't.** You've stood in the basin, so you know how far it reaches,
+  but the land itself stays clouded until you go. That makes the map a guide for the river quests: you can see where
+  your river's country ends.
+- **Where it comes from:** the same 0.1° basin tiles the game already reads (`web/data/basins/`; all 72, about 100 KB,
+  load the first time the map opens with a basin known). An edge runs between two pixels that drain to different
+  places, when either is a basin you know; runs along a line are merged, and only each basin's own box is scanned
+  (`basinBoxes`), so the Loire takes about 20 ms. Drawn as vector lines, so they stay crisp at every zoom; the divides
+  are as blocky as the 0.1° grid (about 11 km), like the rest of the map's pixel art. Worked out again only when what
+  you know or the basin you're in changes.
+- No new data, records, lexicons or scopes; nothing stored or sent. Tests: 6 (an outline closes all round and only
+  round known basins; shared divides; the basin you're in marked; the dateline and poles; the tint; boxes scan the same
+  as the whole grid; the real Loire round Tours, closed, in France). Headless, desktop and Pixel 7, with the Loire,
+  Seine, Rhône and Garonne known, from Tours.
+- **The water's way (built 11-18, overnight; `stemRuns`, `chevronsAlong` in `basinmap.js`, `stemsSeen` in `main.js`):**
+  inside every basin you know, its main stem (the same line the river quests climb, `quests.json`'s `line`) is drawn on
+  the map in water blue over a dark edge, with small white chevrons every 46 px pointing downstream, toward the mouth.
+  Only where you've cleared the cloud: the stem is walked every 0.1° and cut where the cloud starts, so the quest still
+  draws the river as you follow it, and the spring's reward (the whole river shining, source to sea) stays a reward. The
+  shining rivers carry the chevrons too. Kept until what you know, where you've been or the cell you're in changes. Only
+  the main stem: tributaries would need flow directions shipped as data, and the stem is what the quests are about.
+  No new data, records, lexicons or scopes. Tests: 4 (a stem runs source to mouth and is cut by the cloud; the dateline;
+  the real Loire flows west at Tours, and only the clear part shows; chevrons spaced, pointing along, broken where a
+  copy of the Earth jumps). Headless, desktop and Pixel 7, from Tours with the Loire, Seine, Rhône and Garonne known
+  and the Rhône's spring drunk from: the Loire's chevrons point west, the Rhône's south.
+- **Still to come for "see":** maybe the divides in the world itself; then "enter" (riding a river).
+
+### Rivers and lakes, drawn as water (built 11-14, overnight)
+Inland water was on the list since the first night ("inland water (rivers and lakes are drawn as land today, sand where
+under 12 m)"), and the river quests made it stranger: a quest up the Amazon, past waymarks on a river you couldn't see.
+(`scripts/water/`, `inland.js`, `inlandwater.js`, the hooks in `main.js`, `plants.js` and `critters.js`.)
+- **The data:** Natural Earth's 1:10m rivers and lakes (public domain, the same downloads as the basins), simplified to
+  about 200 m (Douglas-Peucker) and cut into 10° tiles: `web/data/water/`, 226 tiles and an index, 2.6 MB in all, the
+  largest 64 KB. A world fetches the few under it while its terrain loads. The lines Natural Earth runs through lakes and
+  its two canals are left out; Natural Earth's "Sane" is put right as the Saône. Lake rings under about 2 km² are dropped.
+- **Rivers** are ribbons laid on the land, as wide as their rank says (the Amazon, the Nile and the Yangtze about a
+  kilometre, the Danube 600 m, the Rhine 240 m, the Loire 150 m, the Thames 90 m, the least 30 m: dream widths, not
+  measured ones); every river within 32 km of a world's middle, and the great ones (rank 4 or lower) out to 120 km. Where
+  the ground reaches the sea the ribbon stops.
+- **Lakes** are flat water at their shore's height: the land under the outline is sampled every 400 m round the shore
+  and the level is the 15th percentile (low, but not a gully). Lakes at the sea's height are left to the sea (the Caspian,
+  the Dead Sea). Big ones are split into triangles no wider than 6 km so the Earth's curve stays true across them, and
+  only the part within 120 km is built. Islands stay dry.
+- **One shader** for both: the sea's palette in hard bands, two small ripple trains, a glint, a pale band of shallows
+  along a river's banks, the sky at grazing angles (less than the sea's, or a thin river all sky reads as a road). The
+  water is lifted 1.2 m off the land plus 0.4 m per kilometre away, so the facets don't show through.
+- **Nothing grows in the water:** trees, grass and the small creatures keep out of rivers and lakes (a quick test,
+  rivers bucketed by kilometre square). Shrines, finds, doors and waymarks are left where they were: they're the same for
+  everyone and keyed in atlases, so moving them would move what people have found.
+- **Wading:** walk into one and you're told which, once (until you've been out of it a minute): "You wade into the Loire.
+  It tugs at your feet on its way downhill." / "You wade into Lago Titicaca. Its water is still, and cold round your
+  feet." Lakes go by Natural Earth's own name for them; rivers by their English name.
+- **Rivers run downhill (built 11-16, overnight; `flowSign`, `flowSpeed` in `inland.js`, the streaks in `inlandwater.js`):**
+  - **Which way:** Natural Earth draws its river lines either way round (the twelve pieces of the Mekong in one tile
+    point every which way, end to end), so the drawing can't be trusted. Each river line is sampled along its length every 500 m or more (at most
+    ~600 heights, only where the terrain's rings reach) and turned so it runs from its higher end to its lower: the mean
+    of the last quarter against the first, so one facet in a gully doesn't decide it, and any height at or below the sea
+    counts as the sea's 0, so a bay's seabed doesn't. The terrain itself, not the basins, decides: it's what the river
+    is drawn on, and it's there for every river in view. The basins' flow directions were the other idea; they're only
+    loaded for the tile you stand in.
+  - **Too flat to tell is left still:** a drop under 2 m along the whole line (on ground drawn in coarse facets) gets no
+    current rather than a guessed one, and the wading line says "on its way downhill" as before.
+  - **You see it:** pale flecks in nine meandering lanes drift downstream, each lane at its own pace and spacing (spaced
+    by the river's width, so a great river reads like a small one; the great rivers slow, about 1.5 m/s, the small ones
+    quicker, up to 4 m/s: dream speeds). They fade out by 6 km, like the ripples. A first version with brighter, regular
+    dashes made the Loire look like a road; these are fainter and wander.
+  - **You feel which way:** wading in, "You wade into the Loire. It tugs at your feet on its way west." (the way the
+    river runs where you stand, in eight compass words).
+  - Checked in headless Chromium against the way eight rivers really run: the Loire at Tours (west), the Rhine at Cologne
+    (north), the Danube at Budapest (south), the Mississippi at Memphis (south), the Amazon below Manaus (north-east,
+    a bend), the Nile at Aswan (north), the Thames at Richmond (north-east, a bend) and the Volga at Volgograd
+    (south-west): all eight right. Nothing stored or sent; no new data, records or scopes.
+  - **The current doesn't push you** (yet): a gentle drift while wading would make it felt, but it would also fight the
+    river quests, which walk you upstream. That's Jason's call.
+- **Not yet (questions for Jason):** swimming in lakes (the lake beds in the terrain are flat at the surface, so there's
+  no depth to dive; a lake could be "water" mode at a fixed depth, or stay wading); frogs and ducks by the water; should
+  a river's current carry a wader downstream?
 
 ### Highways from the stones only (fixed 11-10)
 Jason: "we shouldn't be able to board a highway from the ground, only from the ley node." Touching a highway (its glint,
@@ -1662,8 +1797,8 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
      particular effects (volumetric clouds, sky-being glow, light under water) on top of the raster scene
      could fit later.
    - **Later:** CHELSA for continuous temperature and precipitation, SoilGrids, canopy height; braided
-     interchange rings where networks cross; inland water (rivers and lakes are drawn as land today, sand
-     where under 12 m).
+     interchange rings where networks cross. Inland water: rivers and lakes drawn as water (11-14, "Rivers and
+     lakes, drawn as water").
 3. **Avatars:** the editor (randomize, mutate, edit) and stats are in (11-08, "Your creature, customized"); Operator Field voices next.
 
 **Multiplayer:**
@@ -1681,7 +1816,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 | SoilGrids 2.0 (ISRIC) | soil | CC BY 4.0 (JRC catalogue) |
 | ETH Global Canopy Height 2020 (Lang et al. 2023) | canopy height | CC BY 4.0 (ETH record) |
 | Köppen-Geiger (Beck et al. 2023, Scientific Data 10:724), 1991–2020 at 0.1°, from figshare 10.6084/m9.figshare.21937571 | climate class (biomes) | CC0 on the figshare record (its API, checked 11-08); an earlier session's search found the maps' page saying CC BY 4.0 **(not rechecked)**, so credit them either way |
-| Natural Earth 1:10m rivers and lake centerlines, lakes, physical regions and populated places (5.0.0, per each download's VERSION.txt) | the river basins: the rivers cut into the terrain, the lakes with no outlet, the names (`scripts/basins`); the basin tiles and names ship, and the river quests' waymarks (set on its river lines) with its rivers' and towns' names (`quests.json`) | Public domain (as below) |
+| Natural Earth 1:10m rivers and lake centerlines, lakes, physical regions and populated places (5.0.0, per each download's VERSION.txt) | the rivers and lakes drawn in the world (`scripts/water`, simplified tiles in `web/data/water/` ship); the river basins: the rivers cut into the terrain, the lakes with no outlet, the names (`scripts/basins`); the basin tiles and names ship, and the river quests' waymarks (set on its river lines) with its rivers' and towns' names (`quests.json`) | Public domain (as below) |
 | Natural Earth 1:10m populated places, marine areas and physical regions, and 1:50m countries (naturalearthdata.com, v5) | the ley nodes' names (`nodenames.js`), worked out once offline; no data ships | Public domain: "All versions of Natural Earth raster + vector map data found on this website are in the public domain… No permission is needed" (its Terms of Use page, read 11-10). Credited anyway: Made with Natural Earth |
 | leylines-solids (Joerg Roth) | ley geometry | Apache-2.0 (package.json) |
 | Becker & Hagens; Leland (judsyn.weebly.com); McCooey's Visual Polyhedra | grid origins | credit |
