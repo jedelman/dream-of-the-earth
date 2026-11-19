@@ -1153,7 +1153,32 @@ Knowing came first (11-10); this is seeing. (`basinmap.js`, the `basins` hook in
   the real Loire flows west at Tours, and only the clear part shows; chevrons spaced, pointing along, broken where a
   copy of the Earth jumps). Headless, desktop and Pixel 7, from Tours with the Loire, Seine, Rhône and Garonne known
   and the Rhône's spring drunk from: the Loire's chevrons point west, the Rhône's south.
-- **Still to come for "see":** maybe the divides in the world itself; then "enter" (riding a river).
+- **Still to come for "see":** maybe the divides in the world itself.
+
+### Riding a river: the watersheds' third stage, "enter" (built 11-19)
+Jason, 11-10: "All 3, in stages" (know, see, enter); 11-19: "Riding a river should have speed based on depth and flow
+volume." (`riverride.js`, pure and tested; `startFloat`/`floatStep`/`endFloat` in `main.js`; a `river` travel state in
+`modes.js`; `rideFrom`/`riverOnFrom` in `inlandwater.js`.)
+- **Getting on:** wade into a flowing river and face downstream (within about 50°): the prompt is "(E) Ride the Loire
+  downstream" (facing any other way, it's still "Drink from the Loire"). The offer stands even with ducks and trees about,
+  unless one is right under your nose.
+- **How fast is how much water:** the land draining to where you are, by Hack's law on your basin's main stem (length ∝
+  area^0.6, so area grows as distance from the source to the 1.67, up to the basin's whole area at the mouth); off the main
+  stem, from the river's Natural Earth rank. Discharge is 0.01 m³/s per km² (about 300 mm of rain a year reaching the
+  river); depth ∝ discharge^0.4 (Leopold and Maddock's hydraulic geometry, with a typical coefficient); the ride goes 15
+  m/s for each metre of depth, from 6 m/s to 320. So: "The Loire takes you, about 4 m deep and 1,000 m³ a second: 229
+  km/h downstream." (the real Loire averages about 900 m³/s); the Thames by London about 100 m³/s (really about 65) and
+  96 km/h; the Amazon near its mouth about 21 m deep and the full 1,150 km/h (its 55,000 m³/s is low against the real
+  209,000: one runoff for the whole Earth). A brook: 22 km/h.
+- **On the river:** you're carried along the river's own line, the way it flows, picking up its pace over a few seconds;
+  steer across it (A/D, the stick, a drag), up to its banks. At the end of a piece of line it flows on to the next one
+  that starts within 400 m (the same name first); the world regrows round you every 15 km and the ride finds its river
+  again. A new name is said as you reach it. Nothing else glints while the river has you.
+- **Getting off:** "(E) Step out onto the bank", or Shift / S / ▼ / B as off a highway: you're set on the nearer bank.
+  At the sea, "The Loire gives you to the sea." and you swim; where the line runs out inland, it slows and sets you down.
+- No new data, records or scopes; nothing stored or sent. Tests: 3 (the stem area and the depth and speed rules, the line
+  walking, the words, prompts and travel state). Checked headless on the Loire at Tours (desktop and Pixel 7): the prompt,
+  54 m/s at 3.6 m deep, steering, stepping ashore, flowing on to the next piece, the regrow and finding the river again.
 
 ### Rivers and lakes, drawn as water (built 11-14, overnight)
 Inland water was on the list since the first night ("inland water (rivers and lakes are drawn as land today, sand where
