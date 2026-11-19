@@ -521,11 +521,15 @@ nothing under the surface but the seabed. (`fishlife.js`, pure and tested; `fish
   of eight round its home, 16 to 32 m across, at its own depth (under the surface, over the seabed, no deeper than 30 m,
   so a creature that can only duck under still meets some), on the shared clock: everyone sees the same shoal in the
   same water. Each fish keeps its own place in the shoal and wags its tail. 14 triangles a fish, one instanced mesh.
-- **Who lives where,** by the sea's warmth from latitude: within 28° of the equator, little blue, yellow, orange and violet
-  reef fish; to 52°, little silver, blue-backed and bronze fish; beyond, little ice fish and grey fish. Latitude is
-  crude (a cold current makes a warm latitude cold), but there's no sea temperature in the game's data yet.
-- **Kelp** in forests (patches about 160 m across, half of them) on cool seabeds 3 to 26 m down, 30° to 66° from the
-  equator, each stalk reaching most of the way to the surface, up to 22 m. It sways in the shader, a wave running up the
+- **Who lives where,** by the sea's real warmth (since 11-19; Jason: "There are really good sea temp datasets out there!
+  Doesn't have to be realtime"): NOAA's ERSSTv5, each 2° cell's coldest and warmest month, 1991–2020 (`sst.js`, built by
+  `scripts/sst/sst.mjs`; land cells take their nearest sea's). Where the coldest month stays at 18 °C or more (about
+  where coral grows: the Red Sea, Bermuda, the Keys), little blue, yellow, orange and violet reef fish; where even the
+  warmest month stays under 10 °C (Svalbard), little ice fish and grey fish; between, little silver, blue-backed and
+  bronze fish. Until the 43 KB grid has loaded, latitude stands in (reef fish within 28°, cold beyond 52°).
+- **Kelp** in forests (patches about 160 m across, half of them) on cool seabeds 3 to 26 m down, where the warmest month
+  stays at 22 °C or under (Cape Point, Monterey, the North Sea, not the Mediterranean; by latitude, before the grid
+  loads, 30° to 66°), each stalk reaching most of the way to the surface, up to 22 m. It sways in the shader, a wave running up the
   stalk, and leans out of your way as you swim through. 24 triangles a stalk, up to 420.
 - **What they do about you is local,** as with the small creatures: rush through a shoal faster than 7 m/s and it bursts
   apart and gathers again over 4.5 s ("The little silver fish scatter from you in a flash. Swim up slowly, or tap the
@@ -536,7 +540,7 @@ nothing under the surface but the seabed. (`fishlife.js`, pure and tested; `fish
   the kelp off Cape Point and on a Red Sea reef by Sharm el-Sheikh, with no page errors.
 - **Reefs (built 11-19; `coralHomes` in `fishlife.js`, the coral meshes in `fish.js`).** Jason: "Then let's do reefs!"
   Coral grows in reefs (patches about 110 m across, a little over half of them) on seabeds 1.5 to 30 m down where the sea
-  is reef water (`seaBand` "tropical": within 28° of the equator, or by the sea's real warmth once that's in). Four forms,
+  is reef water (`seaBand` "tropical": the coldest month at 18 °C or more, by NOAA ERSSTv5; within 28° of the equator until that loads). Four forms,
   each a single instanced mesh of 15 to 21 triangles, dream-sized (1.4 to 4.4 m, smaller in the shallows): **brain
   coral** (a lumpy dome), **staghorn** (a thicket of forking spikes), **table coral** (a plate on a stalk) and **sea
   fans** (a flat lace that rocks in the swell). Colours from a reef's range (rose, orange, gold, teal, violet, green, red,
@@ -1888,6 +1892,7 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 | Köppen-Geiger (Beck et al. 2023, Scientific Data 10:724), 1991–2020 at 0.1°, from figshare 10.6084/m9.figshare.21937571 | climate class (biomes) | CC0 on the figshare record (its API, checked 11-08); an earlier session's search found the maps' page saying CC BY 4.0 **(not rechecked)**, so credit them either way |
 | Natural Earth 1:10m rivers and lake centerlines, lakes, physical regions and populated places (5.0.0, per each download's VERSION.txt) | the rivers and lakes drawn in the world (`scripts/water`, simplified tiles in `web/data/water/` ship); the river basins: the rivers cut into the terrain, the lakes with no outlet, the names (`scripts/basins`); the basin tiles and names ship, and the river quests' waymarks (set on its river lines) with its rivers' and towns' names (`quests.json`) | Public domain (as below) |
 | Natural Earth 1:10m populated places, marine areas and physical regions, and 1:50m countries (naturalearthdata.com, v5) | the ley nodes' names (`nodenames.js`), worked out once offline; no data ships | Public domain: "All versions of Natural Earth raster + vector map data found on this website are in the public domain… No permission is needed" (its Terms of Use page, read 11-10). Credited anyway: Made with Natural Earth |
+| NOAA ERSSTv5 (Huang et al. 2017, NOAA NCEI, doi:10.7289/V5T72FNM), 1991–2020 monthly means on its 2° grid, fetched 11-19 from NOAA CoastWatch ERDDAP (`nceiErsstv5_LonPM180`) by `scripts/sst/sst.mjs` | the sea's coldest and warmest month per cell (`web/data/sst.json`, 43 KB, ships): reef, temperate or cold-water fish, and where kelp grows (`sst.js`, `fishlife.js`) | The ERDDAP record's licence field (NOAA CoastWatch, read 11-19): "No constraints on data access or use. The data may be used and redistributed for free but is not intended for legal use". **NCEI's own pages state no licence** (the product page has none; its metadata record returned "Unable to retrieve NCEI metadata XML", 11-19); a US Government work. **Waiting on Jason's OK before merging.** Citation per NCEI's product page, in the game's Credits |
 | leylines-solids (Joerg Roth) | ley geometry | Apache-2.0 (package.json) |
 | Becker & Hagens; Leland (judsyn.weebly.com); McCooey's Visual Polyhedra | grid origins | credit |
 | three.js | renderer | MIT |

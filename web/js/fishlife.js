@@ -10,14 +10,22 @@ import { cellsAround, unit, hash2 } from "./plantforms.js";
 // Dream-sized, like everything small: a fish about a third of you. cell/radius in metres; chance: of a sea cell deep
 // enough holding a shoal; max: how many at once.
 export const SHOAL = { cell: 80, radius: 340, salt: 853, max: 22, chance: 0.45, minDepth: 4, fish: [5, 10], size: [1.1, 1.8] };
-export const KELP = { cell: 14, radius: 160, salt: 871, max: 420, depth: [3, 26], lat: [30, 66], forest: 0.5, chance: 0.6 };
+export const KELP = { cell: 14, radius: 160, salt: 871, max: 420, depth: [3, 26], lat: [30, 66], warmest: 22, forest: 0.5, chance: 0.6 };
 export const FISH_TRIANGLES = 14, KELP_TRIANGLES = 24;
 
-/** The sea's warmth by latitude, which is what decides who lives in it: "tropical", "temperate" or "cold". */
-export function seaBand(lat) {
+/**
+ * Who lives in the sea, by how warm it is: "tropical", "temperate" or "cold". warmth: { cold, warm } (°C, the coldest
+ * and warmest monthly means, sst.js), from NOAA's ERSSTv5 since 11-19: reef fish where the coldest month stays at 18 °C
+ * or more (about where coral grows), cold-water fish where even the warmest month stays under 10 °C. Before the grid
+ * has loaded (or without it), latitude stands in.
+ */
+export function seaBand(lat, warmth = null) {
+  if (warmth) return warmth.cold >= 18 ? "tropical" : warmth.warm < 10 ? "cold" : "temperate";
   const a = Math.abs(lat);
   return a < 28 ? "tropical" : a < 52 ? "temperate" : "cold";
 }
+/** Kelp needs cool water all year: the warmest month at 22 °C or under (by latitude, before the grid loads: 30° to 66°). */
+export const kelpWater = (lat, warmth = null) => (warmth ? warmth.warm <= KELP.warmest : Math.abs(lat) >= KELP.lat[0] && Math.abs(lat) <= KELP.lat[1]);
 
 // Looks, by band: [name, body hsl, accent (belly, fins) hsl].
 const LOOKS = {
@@ -30,13 +38,13 @@ const LOOKS = {
  * Shoals near a point: [{ key, x, z, y (its swimming depth, < 0), floor, n, size, seed, name, body, accent, band }].
  * at(cell) -> { p: { x, z }, floor (the seabed's height, m; < 0 under the sea) } or null.
  */
-export function shoalHomes(lat, lon, at) {
+export function shoalHomes(lat, lon, at, warmth = () => null) {
   const out = [];
   for (const c of cellsAround(lat, lon, SHOAL.radius, SHOAL.cell, SHOAL.salt)) {
     if (unit(c.h) >= SHOAL.chance) continue;
     const s = at(c);
     if (!s || -s.floor < SHOAL.minDepth) continue;
-    const g = hash2(c.h, 7), band = seaBand(c.lat), set = LOOKS[band];
+    const g = hash2(c.h, 7), band = seaBand(c.lat, warmth(c.lat, c.lon)), set = LOOKS[band];
     const [name, body, accent] = set[Math.floor(unit(g, 3) * set.length)];
     const size = SHOAL.size[0] + (SHOAL.size[1] - SHOAL.size[0]) * unit(g, 17);
     const top = 1.5 + size * 0.6, bottom = Math.max(top, Math.min(-s.floor - 1.2 - size * 0.5, 30)); // under the surface, over the seabed, not too deep to meet
@@ -110,15 +118,13 @@ export const swirlAt = (age) => (age < 0 || age >= SWIRL_S ? null : age / SWIRL_
 
 /**
  * Kelp near a point: [{ key, x, z, floor, height, seed }]. It grows in forests (patches some 160 m across) on cool,
- * shallow seabeds, 3 to 26 m down, reaching most of the way to the surface. at(cell) as for shoals.
+ * shallow seabeds, 3 to 26 m down, reaching most of the way to the surface. at(cell) as for shoals; warmth(lat, lon)
+ * as for seaBand, or null.
  */
-export function kelpHomes(lat, lon, at) {
+export function kelpHomes(lat, lon, at, warmth = () => null) {
   const out = [];
-  const a = Math.abs(lat);
-  if (a < KELP.lat[0] - 0.5 || a > KELP.lat[1] + 0.5) return out;
+  if (!kelpWater(lat, warmth(lat, lon))) return out; // the sea here is one warmth for 160 m round (the grid is 2°)
   for (const c of cellsAround(lat, lon, KELP.radius, KELP.cell, KELP.salt)) {
-    const al = Math.abs(c.lat);
-    if (al < KELP.lat[0] || al > KELP.lat[1]) continue;
     if (unit(hash2(Math.floor(c.lat * 700), Math.floor(c.lon * 700), KELP.salt + 5)) >= KELP.forest) continue; // not a forest here
     if (unit(c.h) >= KELP.chance) continue;
     const s = at(c);
