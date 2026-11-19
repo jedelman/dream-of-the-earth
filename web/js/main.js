@@ -730,7 +730,7 @@ async function buildWorld(lat, lon) {
   const beings = buildSkyBeings(frame, terrain.heightAt);
   const plants = buildPlants(frame, terrain);
   const insects = buildInsects(frame, terrain);
-  const critters = buildCritters(frame, terrain, plants);
+  const critters = buildCritters(frame, terrain, plants, (x, z) => { const l = inland.lakeAt(x, z); return l ? lakeTop(l) : inland.wet(x, z) ? terrain.heightAt(x, z) + 1.2 : null; });
   const fish = buildFish(frame, terrain);
   const shrines = buildShrines(frame, terrain);
   const finds = buildFinds(frame, terrain);
@@ -1932,14 +1932,16 @@ function touchWater(c) {
 let fledAt = -10, fledEver = false, chorusAt = 0;
 function critterNews(events, t, sunAltitude) {
   for (const ev of events) {
-    if (ev.c.kind === "bird") sound.flutter();
+    if (ev.c.kind === "bird" || ev.c.kind === "duck") sound.flutter();
+    if (ev.c.kind === "duck") sound.quack(2 / ev.c.size);
     if (t - fledAt > 6) { logLine(fledLine(ev.c.kind, ev.c.name, !fledEver), "creature"); fledAt = t; fledEver = true; }
   }
   if (t < chorusAt) return;
   chorusAt = t + 2.5 + ((hashString(String(Math.floor(t))) % 100) / 100) * 4; // every few seconds, irregularly
   const p = state.pos, near = world.critters.near(p.x, p.z, 70);
-  const frogs = near.filter((c) => c.kind === "frog"), birds = near.filter((c) => c.kind === "bird");
+  const frogs = near.filter((c) => c.kind === "frog"), birds = near.filter((c) => c.kind === "bird"), ducks = near.filter((c) => c.kind === "duck");
   if (sunAltitude < 3 && frogs.length) sound.croak(1.2 / frogs[0].size, true); // frogs sing at dusk and through the night
+  else if (ducks.length && Math.floor(t) % 3 === 0) sound.quack(2 / ducks[0].size, true);
   else if (sunAltitude > 0 && birds.length) sound.song(Math.floor(t), true);
 }
 /** A small creature, touched gently: it answers, and trusts you for a while. */
@@ -1949,6 +1951,7 @@ function touchCritter(key) {
   if (!c) return squeak();
   if (c.kind === "bunny") sound.sniff();
   else if (c.kind === "frog") sound.croak(1.2 / c.size);
+  else if (c.kind === "duck") sound.quack(2 / c.size);
   else sound.song(critterTouches);
   const at = new THREE.Vector3(c.x, c.y + c.size, c.z);
   director.play("butterfly", simT, butterflyShot(state.pos.clone(), at), { dur: 2.6, blendIn: 0.5, blendOut: 0.9 });

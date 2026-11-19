@@ -45,12 +45,13 @@ const hueName = (hue) => HUES.find(([h]) => hue < h)[1];
 const CRITTER_LINES = {
   bunny: (n, me) => [`The ${n} sniffs ${me}'s nose and decides you're all right.`, `The ${n} does a little twisting jump. That's a binky: it's happy.`, `The ${n} flicks its ears at you and goes back to nibbling.`, `The ${n} leans into the pat, eyes half shut.`],
   frog: (n) => [`The ${n} puffs out its throat: ribbit.`, `The ${n} blinks at you, very slowly.`, `Boop. The ${n} croaks, unbothered.`, `The ${n} sits up a little taller, pleased.`],
+  duck: (n, me) => [`The ${n} quacks back at ${me}, twice, very firmly.`, `The ${n} rises up on the water and flaps its wings at you: a stretch, or a hello.`, `The ${n} paddles over to see if you've brought anything.`, `The ${n} dabbles, tail up, then comes up quacking.`],
   bird: (n) => [`The ${n} sings three notes back.`, `The ${n} tilts its head, then answers.`, `The ${n} hops closer to listen, and trills.`, `The ${n} fluffs up and sings a little louder.`],
 };
 export function critterLine(kind, name, me, seed, n = 0) {
   return pickOf(CRITTER_LINES[kind](name, me), hash2(seed, n, 47));
 }
-const FLED = { bunny: (n) => `Too fast for the ${n}: it bolts.`, frog: (n) => `The ${n} leaps away from you.`, bird: (n) => `The ${n} takes off in a flurry.` };
+const FLED = { duck: (n) => `The ${n} runs along the water and takes off, quacking.`, bunny: (n) => `Too fast for the ${n}: it bolts.`, frog: (n) => `The ${n} leaps away from you.`, bird: (n) => `The ${n} takes off in a flurry.` };
 /** Running from you. The first time, a hint: tap one, and you'll walk up gently. */
 export const fledLine = (kind, name, first) => FLED[kind](name) + (first ? " Tap one to walk up gently." : "");
 export function butterflyLine(hue, seed, n = 0) {
@@ -127,7 +128,7 @@ export function promptFor(c) {
   if (c.kind === "shrine" && c.dream) return `Enter the dream of ${c.name}`;
   if (c.kind === "shrine" && c.wake) return `Wake ${c.name}`;
   if (c.kind === "shrine") return c.state === "asleep" ? `${c.name[0].toUpperCase()}${c.name.slice(1)} sleeps` : c.state === "resting" ? `${c.name[0].toUpperCase()}${c.name.slice(1)} rests` : `Touch ${c.name}`;
-  if (c.kind === "critter") return c.species === "bunny" ? `Pet the ${c.name}` : c.species === "frog" ? `Boop the ${c.name}` : `Whistle to the ${c.name}`;
+  if (c.kind === "critter") return c.species === "bunny" ? `Pet the ${c.name}` : c.species === "frog" ? `Boop the ${c.name}` : c.species === "duck" ? `Quack at the ${c.name}` : `Whistle to the ${c.name}`;
   if (c.kind === "shoal") return `Greet the shoal of ${c.name}`;
   if (c.kind === "being") return "Hum to the sky being";
   if (c.kind === "stones") return "Step into the stones";

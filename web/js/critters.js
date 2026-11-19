@@ -13,7 +13,7 @@ const CALM_S = 20; // touched gently, it trusts you for a while
 const TOUCH_S = 1.1;
 const BODY = 0, ACCENT = 1, FIXED = 2;
 const DARK = [0.06, 0.05, 0.08], PINK = [1, 0.62, 0.7], BEAK = [1, 0.62, 0.15];
-const BREATH_RATE = { bunny: 5.5, frog: 2.6, bird: 7 }, BREATH_AMP = { bunny: 0.06, frog: 0.09, bird: 0.06 }; // radians a second; fraction
+const BREATH_RATE = { bunny: 5.5, frog: 2.6, bird: 7, duck: 4 }, BREATH_AMP = { bunny: 0.06, frog: 0.09, bird: 0.06, duck: 0.05 }; // radians a second; fraction
 
 // ---- Shapes: forward is -z, feet at y = 0, about a metre long (scaled by each one's size) ----
 function shape(kind) {
@@ -49,6 +49,17 @@ function shape(kind) {
     tri([0.3, 0.12, 0.08], [0.22, 0.03, 0.34], [0.48, 0.03, 0.32], BODY);
     tri([-0.24, 0.12, -0.2], [-0.36, 0.01, -0.34], [-0.2, 0.01, -0.3], BODY); // front legs
     tri([0.24, 0.12, -0.2], [0.2, 0.01, -0.3], [0.36, 0.01, -0.34], BODY);
+  } else if (kind === "duck") {
+    // A boat of a body riding low, a round head on a short neck (the accent), a flat bill, a tail tipped up, wings folded.
+    octa([0, 0.16, -0.42], [0, 0.2, 0.44], [0, 0.42, 0.02], [0, -0.04, 0], [-0.24, 0.16, 0], [0.24, 0.16, 0]);
+    octa([0, 0.6, -0.5], [0, 0.62, -0.26], [0, 0.76, -0.38], [0, 0.42, -0.34], [-0.1, 0.6, -0.38], [0.1, 0.6, -0.38], ACCENT, ACCENT);
+    tri([0, 0.6, -0.5], [-0.06, 0.56, -0.5], [0, 0.55, -0.68], FIXED, BEAK); // bill
+    tri([0, 0.6, -0.5], [0, 0.55, -0.68], [0.06, 0.56, -0.5], FIXED, BEAK);
+    tri([-0.095, 0.65, -0.44], [-0.1, 0.68, -0.4], [-0.1, 0.63, -0.38], FIXED, DARK); // eyes
+    tri([0.095, 0.65, -0.44], [0.1, 0.63, -0.38], [0.1, 0.68, -0.4], FIXED, DARK);
+    tri([0, 0.24, 0.36], [-0.08, 0.36, 0.56], [0.08, 0.36, 0.56], ACCENT); // tail, tipped up
+    tri([-0.2, 0.3, -0.12], [-0.2, 0.3, 0.26], [-0.6, 0.34, 0.12], ACCENT, [1, 1, 1], 1); // wings (fold along its back)
+    tri([0.2, 0.3, -0.12], [0.6, 0.34, 0.12], [0.2, 0.3, 0.26], ACCENT, [1, 1, 1], 1);
   } else {
     octa([0, 0.36, -0.26], [0, 0.4, 0.22], [0, 0.52, -0.04], [0, 0.18, 0], [-0.14, 0.36, -0.02], [0.14, 0.36, -0.02], ACCENT);
     tri([0, 0.39, -0.25], [-0.03, 0.36, -0.25], [0, 0.35, -0.38], FIXED, BEAK); // beak
@@ -94,7 +105,7 @@ function mesh(kind) {
 }
 
 /** plants: for perches (a bird may fly up into a tree); terrain: heights and relief. */
-export function buildCritters(frame, terrain, plants) {
+export function buildCritters(frame, terrain, plants, waterAt = () => null) {
   const group = new THREE.Group();
   const meshes = Object.fromEntries(Object.keys(KINDS).map((k) => [k, mesh(k)]));
   for (const k of Object.keys(meshes)) group.add(meshes[k].m);
@@ -102,10 +113,13 @@ export function buildCritters(frame, terrain, plants) {
   let centre = null, all = [], frameT = 0;
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, "YXZ"), sc = new THREE.Vector3(), p3 = new THREE.Vector3(), col = new THREE.Color();
 
+  // waterAt(x, z): a river's or lake's surface there, or null. Near water: any of four points 30 m round is wet.
   const at = (c) => {
     const p = frame.toLocal(c.lat, c.lon), h = terrain.heightAt(p.x, p.z);
-    if (h < 3 || terrain.wet?.(p.x, p.z)) return null;
-    return { p: { x: p.x, z: p.z }, h, biomeId: biomeFor(koppenAt(c.lat, c.lon), terrain.reliefAt(p.x, p.z), c.lat, h) };
+    if (h < 3) return null;
+    const wet = !!terrain.wet?.(p.x, p.z);
+    const byWater = !wet && !!terrain.wet && [[30, 0], [-30, 0], [0, 30], [0, -30]].some(([dx, dz]) => terrain.wet(p.x + dx, p.z + dz));
+    return { p: { x: p.x, z: p.z }, h, wet, byWater, waterY: wet ? waterAt(p.x, p.z) ?? h + 1.2 : null, biomeId: biomeFor(koppenAt(c.lat, c.lon), terrain.reliefAt(p.x, p.z), c.lat, h) };
   };
   function settle(x, z) {
     const ll = frame.toLatLon(x, z);
@@ -176,7 +190,7 @@ export function buildCritters(frame, terrain, plants) {
         let s = local.get(c.key);
         // Rushed at, it runs (unless it's what you're walking up to, or it trusts you now).
         const now = placeOf(c, clock);
-        const ground = Math.max(0, terrain.heightAt(now.x, now.z));
+        const ground = c.kind === "duck" ? waterAt(now.x, now.z) ?? c.h : Math.max(0, terrain.heightAt(now.x, now.z));
         const y = ground + now.lift;
         const dx = now.x - me.x, dz = now.z - me.z, flat = Math.hypot(dx, dz);
         const close = c.kind === "bird" ? Math.hypot(flat, y - me.y) < KINDS.bird.startle : flat < KINDS[c.kind].startle && me.y - me.ground < 30;
@@ -195,6 +209,7 @@ export function buildCritters(frame, terrain, plants) {
           const u = age / TOUCH_S, arc = Math.sin(Math.PI * u);
           if (c.kind === "bunny") { lift = arc * 1.6 * c.size; twist = Math.PI * 2 * u * u * (3 - 2 * u); }
           else if (c.kind === "frog") { puff = 1 + 0.35 * Math.sin(Math.PI * Math.min(1, u * 2)); lift = Math.max(0, Math.sin(Math.PI * (u - 0.5) * 2)) * 0.6 * c.size; }
+          else if (c.kind === "duck") { flap = Math.sin(t * 30) * 0.8; lift = arc * 0.5 * c.size; } // rises up and flaps: a stretch
           else { flap = Math.sin(t * 50) * 0.9; lift = arc * 0.8 * c.size; }
         }
         e.set(-(now.pitch || 0), now.yaw + twist, 0);
@@ -205,7 +220,7 @@ export function buildCritters(frame, terrain, plants) {
         sc.set(c.size / Math.sqrt(sq), c.size * sq, c.size / Math.sqrt(sq));
         p3.set(now.x, y + lift, now.z);
         M.m.setMatrixAt(c.i, m4.compose(p3, q, sc));
-        M.flap.setX(c.i, c.kind === "bird" ? (now.flying || age < TOUCH_S ? flap : -1) : 0); // -1: wings folded
+        M.flap.setX(c.i, c.kind === "bird" || c.kind === "duck" ? (now.flying || age < TOUCH_S ? flap : -1) : 0); // -1: wings folded
         c.now = { x: now.x, y: y + lift, z: now.z, moving: now.moving, flying: now.flying, startled: !!(s && s.startle) };
       }
       for (const k of Object.keys(meshes)) { meshes[k].m.instanceMatrix.needsUpdate = true; meshes[k].flap.needsUpdate = true; }
