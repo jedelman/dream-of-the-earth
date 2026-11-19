@@ -37,6 +37,10 @@ where they belong, the same on every phone: kapok and banyan over the rainforest
 the savanna, saguaro in the desert, spreading oaks, cypress flames, giant sequoias and spruce spires. Butterflies of four triangles fly by day, and
 fireflies blink at night.
 
+**Under the sea:** shoals of little fish swim slow loops at their own depths (reef fish in the tropics, silver and
+bronze ones in cooler water, ice fish near the poles), and kelp forests sway on cool, shallow seabeds, leaning out of
+your way. Rush through a shoal and it scatters; swim up gently and greet it, and it swirls round you.
+
 **Watersheds:** every bit of land drains somewhere. The first time you're in one of 321 river basins (worked out from
 the terrain and Natural Earth's rivers, `scripts/basins`), you know it: its name, its size, where its rain goes. It goes in
 your atlas. Then the quest: waymarks stand up each river from near the sea, each telling you the next (and the
