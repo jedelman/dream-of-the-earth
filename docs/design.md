@@ -511,7 +511,7 @@ Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
   red bird" (it flutters and sings back). The camera takes the butterfly shot: you and it, from the side.
 - **Sounds:** sniffs, croaks (bigger frogs lower) and songs, synthesized like the rest. Now and then a frog croaks
   nearby at dusk and through the night, and a bird sings by day.
-- **Next, maybe:** frogs by inland water once rivers and lakes exist; ducks; birds that follow you a little way.
+- **Next, maybe:** birds that follow you a little way. (Frogs by the water and ducks came 11-19, under "Rivers and lakes".)
 
 ### Under the sea: shoals and kelp (built 11-19, overnight)
 On the list since the first nights ("maybe kelp and fish underwater"): a sea-born creature dives into an empty sea, with
@@ -1212,7 +1212,17 @@ under 12 m)"), and the river quests made it stranger: a quest up the Amazon, pas
   and you swim ("You swim out into Lake Geneva. It's deep, still and cold, and nobody's waves but yours."); the HUD reads
   "LAKE GENEVA · 8 M DEEP · 4 M DOWN"; dive as deep as your swim lets you (a land-born creature ducks 3 m); the prompt is
   "Drink from Lake Geneva". The sea's rules otherwise. Rivers are still waded. No fish in lakes yet.
-- **Answered 11-19:** frogs and ducks by the water ("OH YELL YES"). Being built.
+- **Frogs and ducks by the water (built 11-19; `critterlife.js`, `critters.js`).** Asked, Jason: "OH YELL YES".
+  - **Ducks** live only on rivers and lakes (a home cell that's wet; up to 32 within 300 m, 40 m cells), floating at the
+    water's surface (a lake's with its tide): they paddle about a patch 8 m across, bob, and now and then dabble, tail up
+    and head under. By biome: mallards, mandarin ducks and little grebes in the green middle latitudes; whistling ducks
+    and teal in the warm ones; eiders and goldeneyes in the taiga and tundra; most where it's green, a few on desert
+    oases, none on the ice. 22 triangles, wings folded along the back.
+  - **Rush them** and they run along the water and take off, quacking, circle and come down near where they were (the
+    little birds' startle). **"(E) Quack at the mallard":** it quacks back, rises up and flaps (a stretch, or a hello), or
+    paddles over to see if you've brought anything. A duck nearby quacks now and then.
+  - **Frogs come to the water:** a home within 30 m of a river or lake is four times likelier to hold one (at least 15%,
+    at most 85%), so the banks croak at dusk. They still keep out of the water itself.
 
 ### The sea rises and falls (built 11-19)
 Jason, asked whether the sea should visibly rise and fall: "Absolutely! And large enough lakes should have tides!"

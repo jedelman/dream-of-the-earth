@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { critterHomes, idleAt, startledAt, KINDS, CHANCE, STARTLE_S } from "../web/js/critterlife.js";
 
 // A flat world of one biome around (lat, lon), 1 m per metre east/north.
-const flat = (biomeId, h = 50) => (c) => ({ p: { x: (c.lon - 10) * 111320 * Math.cos((45 * Math.PI) / 180), z: -(c.lat - 45) * 111320 }, h, biomeId });
+const flat = (biomeId, h = 50, wet = false) => (c) => ({ p: { x: (c.lon - 10) * 111320 * Math.cos((45 * Math.PI) / 180), z: -(c.lat - 45) * 111320 }, h, biomeId, wet, byWater: false, waterY: wet ? h + 1.2 : null });
+const homeOf = (kind) => flat(kind === "frog" ? "rainforest" : "oceanic", 50, kind === "duck");
 
 test("small creatures live where they would: no frogs in the desert, no bunnies in the rainforest, nobody on the ice", () => {
   const count = (kind, biome) => critterHomes(kind, 45, 10, flat(biome)).length;
@@ -30,7 +31,7 @@ test("the same creatures in the same places on every phone, with names and looks
 
 test("their day is continuous: no jumps from one moment to the next, never under the ground", () => {
   for (const kind of Object.keys(KINDS)) {
-    const [c] = critterHomes(kind, 45, 10, flat(kind === "frog" ? "rainforest" : "oceanic"));
+    const [c] = critterHomes(kind, 45, 10, homeOf(kind));
     const perch = kind === "bird" ? { x: c.x + 8, z: c.z - 5, y: 20 } : null;
     let prev = idleAt(c, 1000, perch), far = 0;
     for (let t = 1000.02; t < 1300; t += 0.02) {
@@ -48,7 +49,7 @@ test("their day is continuous: no jumps from one moment to the next, never under
 
 test("startled, each runs away from you and then it's over", () => {
   for (const kind of Object.keys(KINDS)) {
-    const [c] = critterHomes(kind, 45, 10, flat(kind === "frog" ? "rainforest" : "oceanic"));
+    const [c] = critterHomes(kind, 45, 10, homeOf(kind));
     const from = { x: c.x, z: c.z, lift: 0 }, away = { x: 1, z: 0 };
     const mid = startledAt(c, from, away, STARTLE_S[kind] * 0.3, 0);
     assert.ok(mid.x > from.x + 1, `${kind} goes away`);
@@ -69,4 +70,16 @@ test("each small creature has its own way of being greeted, and words for runnin
     assert.ok(fledLine(k, "x", true).endsWith("Tap one to walk up gently."));
     assert.ok(!fledLine(k, "x", false).includes("Tap"));
   }
+});
+
+test("ducks live only on rivers and lakes, floating at the water's surface; frogs come to the water's edge", () => {
+  assert.equal(critterHomes("duck", 45, 10, flat("oceanic")).length, 0, "no ducks on dry land");
+  const ducks = critterHomes("duck", 45, 10, flat("oceanic", 50, true));
+  assert.ok(ducks.length > 5 && ducks.length <= KINDS.duck.max);
+  assert.ok(ducks.every((d) => d.h === 51.2 && d.name), "at the water's surface");
+  assert.equal(critterHomes("duck", 45, 10, flat("ice", 50, true)).length, 0);
+  for (const k of ["bunny", "frog", "bird"]) assert.equal(critterHomes(k, 45, 10, flat("oceanic", 50, true)).length, 0, `no ${k} in the water`);
+  const dry = critterHomes("frog", 45, 10, flat("steppe")).length;
+  const bank = critterHomes("frog", 45, 10, (c) => ({ ...flat("steppe")(c), byWater: true })).length;
+  assert.ok(bank > dry * 3, `${dry} → ${bank}`);
 });

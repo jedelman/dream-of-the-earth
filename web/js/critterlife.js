@@ -15,24 +15,28 @@ export const KINDS = {
   bunny: { cell: 55, radius: 260, salt: 811, max: 48, size: [2.1, 3], range: 12, startle: 24 },
   frog: { cell: 45, radius: 200, salt: 823, max: 40, size: [1.4, 2], range: 7, startle: 14 },
   bird: { cell: 50, radius: 260, salt: 837, max: 60, size: [1.3, 1.8], range: 14, startle: 26 },
+  // Ducks (Jason, 11-19: "OH YELL YES"): on rivers and lakes, paddling about a small patch of water.
+  duck: { cell: 40, radius: 300, salt: 851, max: 32, size: [1.7, 2.3], range: 8, startle: 24 },
 };
-export const CRITTER_TRIANGLES = { bunny: 26, frog: 20, bird: 13 };
-/** How likely a home cell is to hold each, by biome (0 = never). Frogs like it wet, bunnies open, birds everywhere with plants. */
+export const CRITTER_TRIANGLES = { bunny: 26, frog: 20, bird: 13, duck: 22 };
+/** Frogs come to the water: a home within a few tens of metres of a river or lake is this much likelier to hold one. */
+export const FROG_BY_WATER = 4;
+/** How likely a home cell is to hold each, by biome (0 = never). Frogs like it wet, bunnies open, birds everywhere with plants; ducks, only on water, most where it's green. */
 export const CHANCE = {
-  rainforest: { bunny: 0, frog: 0.6, bird: 0.7 },
-  savanna: { bunny: 0.3, frog: 0.08, bird: 0.45 },
-  desert: { bunny: 0.15, frog: 0, bird: 0.12 },
-  colddesert: { bunny: 0.2, frog: 0, bird: 0.1 },
-  steppe: { bunny: 0.5, frog: 0.03, bird: 0.25 },
-  coldsteppe: { bunny: 0.45, frog: 0.03, bird: 0.2 },
-  mediterranean: { bunny: 0.45, frog: 0.15, bird: 0.5 },
-  subtropical: { bunny: 0.2, frog: 0.4, bird: 0.6 },
-  highland: { bunny: 0.35, frog: 0.15, bird: 0.45 },
-  oceanic: { bunny: 0.45, frog: 0.25, bird: 0.55 },
-  continental: { bunny: 0.4, frog: 0.25, bird: 0.55 },
-  taiga: { bunny: 0.25, frog: 0.1, bird: 0.45 },
-  tundra: { bunny: 0.3, frog: 0, bird: 0.2 },
-  ice: { bunny: 0, frog: 0, bird: 0 },
+  rainforest: { bunny: 0, frog: 0.6, bird: 0.7, duck: 0.5 },
+  savanna: { bunny: 0.3, frog: 0.08, bird: 0.45, duck: 0.35 },
+  desert: { bunny: 0.15, frog: 0, bird: 0.12, duck: 0.1 },
+  colddesert: { bunny: 0.2, frog: 0, bird: 0.1, duck: 0.1 },
+  steppe: { bunny: 0.5, frog: 0.03, bird: 0.25, duck: 0.4 },
+  coldsteppe: { bunny: 0.45, frog: 0.03, bird: 0.2, duck: 0.4 },
+  mediterranean: { bunny: 0.45, frog: 0.15, bird: 0.5, duck: 0.5 },
+  subtropical: { bunny: 0.2, frog: 0.4, bird: 0.6, duck: 0.6 },
+  highland: { bunny: 0.35, frog: 0.15, bird: 0.45, duck: 0.45 },
+  oceanic: { bunny: 0.45, frog: 0.25, bird: 0.55, duck: 0.7 },
+  continental: { bunny: 0.4, frog: 0.25, bird: 0.55, duck: 0.7 },
+  taiga: { bunny: 0.25, frog: 0.1, bird: 0.45, duck: 0.6 },
+  tundra: { bunny: 0.3, frog: 0, bird: 0.2, duck: 0.45 },
+  ice: { bunny: 0, frog: 0, bird: 0, duck: 0 },
 };
 
 // Looks, by biome: [name, body hsl, accent hsl]. Accent: a bunny's tail and belly, a frog's belly, a bird's breast.
@@ -53,22 +57,31 @@ const LOOKS = {
       : [["little brown bird", [0.08, 0.35, 0.4], [0.05, 0.75, 0.55]], ["little grey bird", [0.6, 0.08, 0.55], [0.15, 0.8, 0.6]], ["little blue bird", [0.6, 0.6, 0.5], [0.1, 0.25, 0.9]], ["little black bird", [0.7, 0.1, 0.15], [0.1, 0.9, 0.55]]];
     return set[Math.floor(u * set.length)];
   },
+  // [name, body hsl, accent (head and wings) hsl]
+  duck: (biome, u) =>
+    biome === "rainforest" || biome === "subtropical" || biome === "savanna"
+      ? [["whistling duck", [0.06, 0.6, 0.45], [0.05, 0.2, 0.2]], ["teal duck", [0.1, 0.3, 0.55], [0.45, 0.7, 0.35]]][Math.floor(u * 2)]
+      : biome === "tundra" || biome === "taiga" ? [["eider", [0.1, 0.05, 0.9], [0.0, 0.0, 0.12]], ["goldeneye", [0.6, 0.05, 0.92], [0.4, 0.6, 0.18]]][Math.floor(u * 2)]
+      : [["mallard", [0.08, 0.3, 0.5], [0.36, 0.75, 0.3]], ["mallard", [0.08, 0.35, 0.45], [0.08, 0.35, 0.45]], ["mandarin duck", [0.07, 0.8, 0.55], [0.6, 0.5, 0.3]], ["little grebe", [0.05, 0.45, 0.3], [0.02, 0.6, 0.35]]][Math.floor(u * 4)],
 };
 
 /**
  * Small creatures of one kind near a point: [{ kind, x, z, h (ground), seed, size, name, body, accent, key }].
- * at(cell) -> { p: { x, z }, h, biomeId } or null (the sea, say), as for insects.
+ * at(cell) -> { p: { x, z }, h, biomeId, wet (on a river or lake), byWater (near one), waterY (its surface) } or null
+ * (the sea, say), as for insects. Ducks live only on the water; everyone else only off it.
  */
 export function critterHomes(kind, lat, lon, at) {
   const K = KINDS[kind], out = [];
   for (const c of cellsAround(lat, lon, K.radius, K.cell, K.salt)) {
     const s = at(c);
     if (!s || !CHANCE[s.biomeId]) continue;
-    if (unit(c.h) >= CHANCE[s.biomeId][kind]) continue;
+    if (kind === "duck" ? !s.wet : s.wet) continue;
+    const chance = kind === "frog" && s.byWater ? Math.min(0.85, Math.max(0.15, CHANCE[s.biomeId].frog * FROG_BY_WATER)) : CHANCE[s.biomeId][kind];
+    if (unit(c.h) >= chance) continue;
     if (kind === "frog" && s.h > 1200) continue; // not up a mountain
     const g = hash2(c.h, 5);
     const [name, body, accent] = LOOKS[kind](s.biomeId, unit(g, 3));
-    out.push({ kind, x: s.p.x, z: s.p.z, h: s.h, seed: unit(c.h, 12), size: K.size[0] + (K.size[1] - K.size[0]) * unit(g, 17), name, body, accent, key: `${kind}${c.h}` });
+    out.push({ kind, x: s.p.x, z: s.p.z, h: kind === "duck" ? s.waterY : s.h, seed: unit(c.h, 12), size: K.size[0] + (K.size[1] - K.size[0]) * unit(g, 17), name, body, accent, key: `${kind}${c.h}` });
     if (out.length >= K.max) break;
   }
   return out;
@@ -83,8 +96,8 @@ function spot(c, k) {
   const a = unit(g) * Math.PI * 2, r = KINDS[c.kind].range * Math.sqrt(unit(g, 16));
   return { x: c.x + Math.cos(a) * r, z: c.z + Math.sin(a) * r };
 }
-const PERIOD = { bunny: 6, frog: 9, bird: 7 };
-const MOVE = { bunny: 1.1, frog: 0.7, bird: 1.6 };
+const PERIOD = { bunny: 6, frog: 9, bird: 7, duck: 11 };
+const MOVE = { bunny: 1.1, frog: 0.7, bird: 1.6, duck: 4 };
 
 /**
  * Where a small creature is at time t (s, the shared clock): { x, z, lift (m above the ground), yaw (radians, 0 =
@@ -112,6 +125,9 @@ export function idleAt(c, t, perch = null) {
       const xx = from.x + (to.x - from.x) * air, zz = from.z + (to.z - from.z) * air;
       return { x: xx, z: zz, lift: Math.sin(Math.PI * air) * 1.1 * c.size, yaw: yawTo, squash: m < 0.2 ? 1 - 0.3 * crouch : 1.15 - 0.15 * air, flap: 0, pitch: m < 0.2 ? 0.2 * crouch : -0.35 * Math.cos(Math.PI * air), moving: true, flying: false };
     }
+    if (c.kind === "duck") { // paddles, bobbing a little, its head going with each stroke
+      return { x, z, lift: 0.05 * (1 + Math.sin(t * 6 + phase)), yaw: yawTo, squash: 1, flap: 0, pitch: 0.04 * Math.sin(t * 6 + phase), moving: true, flying: false };
+    }
     // A bird flies: up in an arc, wings beating, then glides down to land.
     const arc = Math.sin(Math.PI * m) * (3 + 3 * c.seed) * c.size;
     return { x, z, lift: fromLift + (toLift - fromLift) * smooth(m) + arc, yaw: yawTo, squash: 1, flap: Math.sin(t * 40 + phase) * (m < 0.8 ? 1 : 0.3), pitch: -0.15, moving: true, flying: true };
@@ -120,12 +136,16 @@ export function idleAt(c, t, perch = null) {
   const s = (f - move) / (1 - move), yaw = yawTo + (c.kind === "frog" ? 0 : 0.6 * Math.sin(k * 2.3 + c.seed * 9) * smooth(Math.min(1, s * 3)));
   if (c.kind === "bunny") return { ...to, lift: 0, yaw, squash: 1 + 0.03 * Math.sin(t * 9 + phase), flap: 0, pitch: 0.18 * Math.max(0, Math.sin(t * 2.2 + phase)), moving: false, flying: false };
   if (c.kind === "frog") return { ...to, lift: 0, yaw, squash: 1 + 0.06 * Math.sin(t * 3 + phase), flap: 0, pitch: 0, moving: false, flying: false };
+  if (c.kind === "duck") { // floats, and now and then dabbles: tail up, head under
+    const dab = Math.max(0, Math.sin(t * 0.9 + phase * 1.3)) ** 10;
+    return { ...to, lift: 0.05 * (1 + Math.sin(t * 1.5 + phase)), yaw, squash: 1, flap: 0, pitch: 1.1 * dab, moving: false, flying: false };
+  }
   const peck = toLift > 0 ? 0 : Math.max(0, Math.sin(t * 5 + phase)) ** 6 * 0.7;
   return { ...to, lift: toLift, yaw, squash: 1, flap: 0, pitch: peck, moving: false, flying: false };
 }
 
 /** How long a startle lasts (s), then how long it takes to come back to its day. */
-export const STARTLE_S = { bunny: 2.2, frog: 1.4, bird: 7 }, RETURN_S = 3;
+export const STARTLE_S = { bunny: 2.2, frog: 1.4, bird: 7, duck: 7 }, RETURN_S = 3;
 
 /**
  * Running from you: from where it was (from: { x, z, lift }), away along `away` (a unit { x, z }), `age` seconds in.

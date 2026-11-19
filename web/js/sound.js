@@ -117,6 +117,15 @@ export const sound = {
     noise(t, 0.07, 0.18, "bandpass", 3200, 2600, 3);
     noise(t + 0.13, 0.06, 0.15, "bandpass", 3400, 2800, 3);
   },
+  /** A duck: two nasal quacks, a little falling. quiet: one off on the water. */
+  quack(pitch = 1, quiet = false) {
+    if (!audio()) return;
+    const t = ctx.currentTime, v = quiet ? 0.05 : 0.18;
+    for (let i = 0; i < 2; i++) {
+      tone("sawtooth", 560 * pitch, 380 * pitch, t + i * 0.2, 0.13, v, 470 * pitch);
+      noise(t + i * 0.2, 0.12, v * 0.3, "bandpass", 1300, 900, 4);
+    }
+  },
   /** A frog: a low, buzzy croak, twice. Bigger frogs croak lower. quiet: one far off, at night. */
   croak(pitch = 1, quiet = false) {
     if (!audio()) return;
