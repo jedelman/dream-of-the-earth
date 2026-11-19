@@ -282,7 +282,7 @@ boreal → tundra → ice. Latitude sets which rung you start on, and elevation 
       basins slosh, so it's the sky's tide, not a tide table, and the words say "by the Moon's pull". Springs within
       25° of new or full moon, neaps within 25° of the quarters. Away from the equator, with the Moon far north or
       south, one of the day's two tides nearly vanishes ("low water in about 8 hours"): that's real too (the diurnal
-      inequality). **The sea itself doesn't rise or fall:** the computed world stays as it is; this is only said.
+      inequality). **The sea itself rises and falls since 11-19** (below, "The sea rises and falls").
     - **A river or a lake tells you where its water goes,** from the basin you stand in (`basins.js`) and how far its
       mouth is: "You drink from the Loire. This water is bound for the sea, 216 km west of here."; on a tributary,
       "…joins the Loire River, and meets the sea…"; in a closed basin, "You drink from Lago Titicaca. It lies 3,819 m
@@ -1200,11 +1200,32 @@ under 12 m)"), and the river quests made it stranger: a quest up the Amazon, pas
     (north), the Danube at Budapest (south), the Mississippi at Memphis (south), the Amazon below Manaus (north-east,
     a bend), the Nile at Aswan (north), the Thames at Richmond (north-east, a bend) and the Volga at Volgograd
     (south-west): all eight right. Nothing stored or sent; no new data, records or scopes.
-  - **The current doesn't push you** (yet): a gentle drift while wading would make it felt, but it would also fight the
-    river quests, which walk you upstream. That's Jason's call.
-- **Not yet (questions for Jason):** swimming in lakes (the lake beds in the terrain are flat at the surface, so there's
-  no depth to dive; a lake could be "water" mode at a fixed depth, or stay wading); frogs and ducks by the water; should
-  a river's current carry a wader downstream?
+  - **The current carries a wader who stands still (built 11-19; `currentOf` in `inland.js`, `riverDrift` in
+    `main.js`).** Asked whether it should, Jason: "Yes, fun!" Only while you stand still in a flowing river (no thrust,
+    no trip under way), so walking, even upstream on a river quest, is never slowed. It builds up over a second and a
+    half to 70% of the river's own pace (the flecks' speed: the great rivers about 1 m/s, the small ones up to 2.8), the
+    way the river runs there. The first time it takes you in a wading: "You stand still, and the Loire carries you
+    along." Rivers too flat to tell which way they run carry nobody.
+- **Answered 11-19:** swimming in lakes ("Definitely!"), frogs and ducks by the water ("OH YELL YES"), tides in large
+  lakes ("large enough lakes should have tides!"). Being built.
+
+### The sea rises and falls (built 11-19)
+Jason, asked whether the sea should visibly rise and fall: "Absolutely! And large enough lakes should have tides!"
+(`seaRise`, `lakeTideShare` in `tides.js`; `tide`/`seaY` in `main.js`; the lakes' `uTide` in `inlandwater.js`.)
+- **The sea** stands at the equilibrium tide where you are (the same Moon-and-Sun sum the sea already told you when
+  splashed), a metre to the Moon's mean pull: from about 0.75 m below its mean to 1.6 m above at a spring tide. Worked out
+  every 5 s for the place you're looking at and eased in, so it creeps up the beach over the hours as the real tide does
+  (real coasts range from nothing to 15 m and lag the sky by hours; this is the sky's tide, the same for everyone).
+- **What follows it:** the water's surface, where a swimmer floats, where swimming starts, and when the camera is under
+  water. The ground doesn't change, and neither does what counts as sea floor (ground below the mean), so a beach under a
+  high tide is waded, not swum. Inside a dream there's no tide.
+- **Lakes** rise and fall by the same pull, as much of it as their size: all of it at 20,000 km² (the Great Lakes,
+  Victoria, Baikal), Titicaca about 40%, Geneva a few centimetres. (Real lake tides are centimetres even on Superior:
+  these are dream tides.)
+- **Fixed on the way:** a world on Lake Victoria never finished loading (on production too): its water, split into
+  60,000 triangles, was appended with `push(...spread)`, past the browser's limit on arguments. Appended a value at a
+  time now.
+- Nothing stored or sent; no new data, records or scopes. Tests: the range over a month, the lake shares.
 
 ### Highways from the stones only (fixed 11-10)
 Jason: "we shouldn't be able to board a highway from the ground, only from the ley node." Touching a highway (its glint,
@@ -1827,8 +1848,15 @@ Jason, 11-07: "Can we push this to 200 peers max? We don't have to sync animatio
 
 ## Questions for Jason
 Answered 11-07: depth (keep it real; swim decides), ley networks (both, interacting, rarer = faster and larger),
-spawn (near nodes), calls (online moots only), the Worker (its own subdomain). Still open:
+spawn (near nodes), calls (online moots only), the Worker (its own subdomain).
+
+Answered 11-19 (Jason, to the list of open calls): the current carrying a wader ("Yes, fun!"); the sea rising and
+falling ("Absolutely! And large enough lakes should have tides!"); swimming in lakes ("Definitely!"); frogs and ducks
+by the water ("OH YELL YES"); sea warmth ("There are really good sea temp datasets out there! Doesn't have to be
+realtime"); **the stat budget: 12 points, 0–6 each, official** ("Yep, make it official."); **ley speed: doubling per
+rank, kept** ("Yep, keep doubling per rank."); riding a river ("Riding a river should have speed based on depth and
+flow volume. Then let's do reefs!").
+
+Still open:
 1. **Relays at 200:** run our own `iroh-relay` on a small always-on machine, allow direct connections between
-   mutuals (each sees the other's IP), or both?
-2. **The stat budget:** 12 points, 0–6 each?
-3. **Ley speed:** double per rank (proposed) or strictly 1/line-count?
+   mutuals (each sees the other's IP), or both? (Jason, 11-19: "Oooh this is a toothy one. Let me think about it.")

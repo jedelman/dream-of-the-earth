@@ -4,7 +4,8 @@
 // each is turned to flow the way its ground falls, and pale streaks drift down it.
 import * as THREE from "three";
 import { CURVE_GLSL, curveUniform } from "./curvature.js";
-import { NEAR_M, FAR_M, BIG_RANK, waterTilesNear, parseWaterTile, riverWidth, flowSign, flowSpeed, bearingOf, densify, ribbon, lakeLevel, lakePolygons, subdivide, distToLine, inRing } from "./inland.js";
+import { lakeTideShare } from "./tides.js";
+import { NEAR_M, FAR_M, BIG_RANK, waterTilesNear, parseWaterTile, riverWidth, flowSign, flowSpeed, bearingOf, densify, ribbon, lakeLevel, lakePolygons, subdivide, distToLine, inRing, signedArea } from "./inland.js";
 
 let listed = null, listing = null;
 const tiles = new Map(); // key -> parsed tile (or an empty one if it failed)
@@ -31,7 +32,8 @@ const vertexShader = /* glsl */ `
   #include <fog_pars_vertex>
   #include <logdepthbuf_pars_vertex>
   ${CURVE_GLSL}
-  attribute vec2 flow; // a river's streak speed (m/s, 0 still) and width (m)
+  attribute vec2 flow; // a river's streak speed (m/s, 0 still) and width (m); a lake's (0, how much of the tide it feels)
+  uniform float uTide; // the sea's rise above its mean here, m
   varying vec3 vWorld;
   varying vec2 vUv;
   varying vec2 vFlow;
@@ -41,6 +43,7 @@ const vertexShader = /* glsl */ `
     vec4 w = modelMatrix * vec4(position, 1.0);
     // Lifted a little off the land, more with distance, so the facets don't show through.
     w.y += 1.2 + 0.0004 * length(w.xz - cameraPosition.xz);
+    if (flow.x <= 0.0) w.y += uTide * flow.y; // a lake's tide
     vWorld = w.xyz;
     vec4 mvPosition = viewMatrix * curveWorld(w);
     gl_Position = projectionMatrix * mvPosition;
@@ -92,7 +95,7 @@ const fragmentShader = /* glsl */ `
 const uniforms = THREE.UniformsUtils.merge([
   THREE.UniformsLib.fog,
   {
-    uTime: { value: 0 }, uDay: { value: 1 },
+    uTime: { value: 0 }, uDay: { value: 1 }, uTide: { value: 0 },
     uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunColor: { value: new THREE.Color(0xfff1c8) },
     uSky: { value: new THREE.Color(0xff9ec7) }, uDeep: { value: new THREE.Color(0x184f96) }, uShallow: { value: new THREE.Color(0x52e2ff) },
   },
@@ -101,7 +104,8 @@ uniforms.uCurve = curveUniform; // shared, not cloned
 const material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, fog: true, side: THREE.DoubleSide });
 
 /** Each frame, with the sea's: t seconds, sunDir a local unit vector, day 0..1, sky the horizon colour. */
-export function updateInland(t, sunDir, day, sky) {
+export function updateInland(t, sunDir, day, sky, tide = 0) {
+  uniforms.uTide.value = tide;
   uniforms.uTime.value = t;
   uniforms.uSunDir.value.set(sunDir.x, Math.max(-0.2, sunDir.y), sunDir.z).normalize();
   uniforms.uDay.value = day;
@@ -134,7 +138,9 @@ export function buildInland(frame, terrain) {
   const center = frame.toLatLon(0, 0);
   const keys = listed ? waterTilesNear(center.lat, center.lon, FAR_M + 20000, listed) : [];
   const pos = [], uv = [], idx = [], flow = [];
-  const add = (m) => { const base = pos.length / 3; pos.push(...m.pos); uv.push(...m.uv); flow.push(...(m.flow ?? m.uv.map(() => 0))); for (const i of m.idx) idx.push(base + i); };
+  // Appended a value at a time: a great lake (Victoria) has more vertices than push(...spread) can take as arguments.
+  const append = (to, from) => { for (let k = 0; k < from.length; k++) to.push(from[k]); };
+  const add = (m) => { const base = pos.length / 3; append(pos, m.pos); append(uv, m.uv); if (m.flow) append(flow, m.flow); else for (let k = 0; k < m.uv.length; k++) flow.push(0); for (const i of m.idx) idx.push(base + i); };
   const rivers = [], lakes = [], seen = new Set();
   const cover = boxOf(FAR_M + 300000); // inside the terrain's rings (±470 km), where heightAt knows the ground
   let riverCount = 0, flowing = 0, still = 0;
@@ -162,7 +168,7 @@ export function buildInland(frame, terrain) {
         add(m);
         riverCount++;
         if (speed) flowing++; else still++;
-        if (run.some((p) => inBox(p, near))) rivers.push({ name: r.name, width, line, flows: !!sign });
+        if (run.some((p) => inBox(p, near))) rivers.push({ name: r.name, width, line, flows: !!sign, speed });
       }
     }
     for (const l of t.lakes) {
@@ -180,11 +186,12 @@ export function buildInland(frame, terrain) {
         const all = [outer, ...holes].flat();
         const parts = subdivide(tri.map(([a, b, c]) => [all[a], all[b], all[c]]), 6000, far);
         if (!parts.length) continue;
-        const m = { pos: [], uv: [], idx: [] };
-        for (const t3 of parts) for (const p of t3) { m.idx.push(m.pos.length / 3); m.pos.push(p[0], level, p[1]); m.uv.push(0, 0.5); }
+        const share = lakeTideShare(Math.abs(signedArea(outer)) / 1e6 - holes.reduce((s, h) => s + Math.abs(signedArea(h)) / 1e6, 0));
+        const m = { pos: [], uv: [], idx: [], flow: [] };
+        for (const t3 of parts) for (const p of t3) { m.idx.push(m.pos.length / 3); m.pos.push(p[0], level, p[1]); m.uv.push(0, 0.5); m.flow.push(0, share); }
         add(m);
         const xs2 = outer.map((p) => p[0]), zs2 = outer.map((p) => p[1]);
-        lakes.push({ name: l.name, reservoir: l.kind === 1, level, outer, holes, box: { minX: Math.min(...xs2), maxX: Math.max(...xs2), minZ: Math.min(...zs2), maxZ: Math.max(...zs2) } });
+        lakes.push({ name: l.name, reservoir: l.kind === 1, level, share, outer, holes, box: { minX: Math.min(...xs2), maxX: Math.max(...xs2), minZ: Math.min(...zs2), maxZ: Math.max(...zs2) } });
       }
     }
   }
@@ -220,11 +227,12 @@ export function buildInland(frame, terrain) {
 
   function wadingAt(x, z, y) {
     const l = lakeAt(x, z);
-    if (l && y < l.level + 4) return { kind: "lake", name: l.name, reservoir: l.reservoir, level: l.level };
+    if (l && y < l.level + 4) return { kind: "lake", name: l.name, reservoir: l.reservoir, level: l.level, share: l.share };
     const s = segAt(x, z, 3);
     if (!s) return null;
     const [a, b] = s.pts; // downstream, a to b, where the river flows
-    return { kind: "river", name: s.r.name, toward: s.r.flows ? Math.round(bearingOf(b[0] - a[0], b[1] - a[1])) : null };
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return { kind: "river", name: s.r.name, toward: s.r.flows ? Math.round(bearingOf(b[0] - a[0], b[1] - a[1])) : null, flow: s.r.flows ? { x: (b[0] - a[0]) / L, z: (b[1] - a[1]) / L, speed: s.r.speed } : null };
   }
   /** Whether the ground at (x, z) is under a river or a lake (so nothing grows there). */
   function wet(x, z) {

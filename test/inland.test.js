@@ -152,3 +152,16 @@ test("a ribbon carries its speed and width to the shader, and a wader is told wh
   assert.equal(wadeLine({ kind: "river", name: "Rhine", toward: 350 }), "You wade into the Rhine. It tugs at your feet on its way north.");
   assert.equal(wadeLine({ kind: "river", name: "", toward: null }), "You wade into a river. It tugs at your feet on its way downhill.");
 });
+
+test("the current carries a wader who stands still, building up, and never one who isn't in a flowing river", async () => {
+  const { currentOf: driftOf, currentLine: driftLine } = await import("../web/js/inland.js");
+  const flow = { x: 1, z: 0, speed: 3 };
+  assert.equal(driftOf(null, 5), null);
+  assert.equal(driftOf({ x: 1, z: 0, speed: 0 }, 5), null);
+  assert.equal(driftOf(flow, 0), null);
+  const half = driftOf(flow, 0.75), full = driftOf(flow, 10);
+  assert.ok(half.x > 0 && half.x < full.x);
+  assert.ok(Math.abs(full.x - 2.1) < 1e-9 && full.z === 0);
+  assert.equal(driftLine("Loire"), "You stand still, and the Loire carries you along.");
+  assert.equal(driftLine(null), "You stand still, and the river carries you along.");
+});
