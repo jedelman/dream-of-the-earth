@@ -184,3 +184,114 @@ export function coralHomes(lat, lon, at, warmth = () => null) {
 const CORAL_LINES = (n) => [`You brush the ${n}. It glows, very softly, from somewhere inside.`, `The ${n} lights up where you touch it, and the light spreads slowly out to its edges.`, `Tiny things living in the ${n} pull back in, then peek out again.`, `The ${n} is rough and warm, and full of small lives.`];
 /** The log line for coral brushed gently. */
 export const coralLine = (name, seed, n = 0) => pickOf(CORAL_LINES(name), hash2(seed | 0, n, 97));
+
+// ---- Reef fish that keep to the coral, and anemones (11-21, overnight; on the list since the reefs: "reef fish that keep
+// to the coral; anemones") ----
+// Some coral heads have a few little fish of their own, hovering over it in a small loop. Come close and they duck into
+// it; keep still a while and they come out again. Anemones grow among the coral, each with two anemonefish living in its
+// tentacles; visit one and they come out round you, then go home. Where they are is shared (computed from the coral, the
+// cell grid and the clock); hiding and visiting are this phone's alone.
+export const REEF_FISH = { share: 0.45, n: [1, 4], size: [0.45, 0.8], max: 600, hideR: 4, settleS: 3 };
+export const ANEMONE = { cell: 24, radius: 150, salt: 907, max: 60, depth: [1.5, 20], chance: 0.35, size: [1.6, 3], fish: 2, fishSize: 0.7 };
+export const ANEMONE_TRIANGLES = 18;
+// [name (plural-ready), body hsl, accent hsl]
+const REEF_FISH_LOOKS = [
+  ["little blue damselfish", [0.6, 0.9, 0.55], [0.6, 0.9, 0.7]],
+  ["little green chromis", [0.45, 0.7, 0.55], [0.5, 0.6, 0.75]],
+  ["little butterflyfish", [0.14, 0.95, 0.6], [0.0, 0.0, 0.95]],
+  ["little red cardinalfish", [0.0, 0.75, 0.5], [0.05, 0.6, 0.75]],
+  ["little rainbow wrasse", [0.8, 0.6, 0.55], [0.35, 0.8, 0.55]],
+];
+const ANEMONE_HUES = [[0.92, 0.6, 0.7], [0.3, 0.45, 0.6], [0.75, 0.45, 0.62], [0.12, 0.4, 0.8], [0.5, 0.45, 0.65]];
+export const ANEMONEFISH = { name: "anemonefish", body: [0.07, 0.95, 0.55], accent: [0, 0, 0.97] };
+
+/** The little fish living on a coral head, or null: { n, size, name, body, accent, seed }. The same for everyone. */
+export function reefFishOf(c) {
+  const g = hash2(Math.floor(c.seed * 1e6), 41);
+  if (unit(g) >= REEF_FISH.share) return null;
+  const [name, body, accent] = REEF_FISH_LOOKS[Math.floor(unit(g, 3) * REEF_FISH_LOOKS.length)];
+  const n = REEF_FISH.n[0] + Math.floor(unit(g, 5) * (REEF_FISH.n[1] - REEF_FISH.n[0] + 1));
+  return { n: Math.min(n, REEF_FISH.n[1]), size: REEF_FISH.size[0] + (REEF_FISH.size[1] - REEF_FISH.size[0]) * unit(g, 7), name, body, accent, seed: unit(g, 9) };
+}
+
+/**
+ * One reef fish of coral c at time t: { x, y, z, yaw, wag, scale }. It hovers over its coral head in a small loop of its
+ * own, now and then darting a little way out and back. hide: 0..1, how far it has ducked into the coral (scale shrinks
+ * with it, so a hidden fish is out of sight inside).
+ */
+export function reefFishAt(c, rf, i, t, hide = 0) {
+  const g = hash2(Math.floor(rf.seed * 1e6), i, 43), ph = unit(g) * Math.PI * 2, w = 0.35 + 0.3 * unit(g, 2);
+  const r = c.size * 0.45 + 0.4 + 0.5 * unit(g, 4), top = c.floor + c.size * (c.form === "table" ? 0.55 : 0.75) + 0.3 + 0.6 * unit(g, 6);
+  // A dart: a quick run out and back, once every 6 to 10 s, each fish on its own beat.
+  const beat = 6 + 4 * unit(g, 8), u = ((t + unit(g, 10) * beat) % beat) / beat, dart = u < 0.12 ? Math.sin((Math.PI * u) / 0.12) : 0;
+  const a = w * t + ph, rr = r * (1 + 1.2 * dart);
+  let x = c.x + Math.cos(a) * rr, z = c.z + Math.sin(a) * rr, y = top + 0.25 * Math.sin(t * 0.8 + ph * 3);
+  const yaw = Math.atan2(Math.sin(a), -Math.cos(a)); // along its loop
+  const k = smooth(Math.max(0, Math.min(1, hide))), hx = c.x + Math.cos(ph) * c.size * 0.12, hy = c.floor + c.size * 0.3, hz = c.z + Math.sin(ph) * c.size * 0.12;
+  x += (hx - x) * k; y += (hy - y) * k; z += (hz - z) * k;
+  return { x, y, z, yaw, wag: t * (8 + 3 * unit(g, 12) + 14 * dart + 10 * k) + i, scale: 1 - 0.85 * k };
+}
+
+/**
+ * How hidden a coral's fish are after dt more seconds: h (0..1) now; d: how far you are from the coral (m); still: how
+ * long you've kept still (s). They duck in fast when you come within reach, and come out slowly once you've kept still
+ * for a while or gone.
+ */
+export function hideStep(h, dt, d, size, still) {
+  const want = d < REEF_FISH.hideR + size && still < REEF_FISH.settleS ? 1 : 0;
+  return want ? Math.min(1, h + dt / 0.3) : Math.max(0, h - dt / 1.6);
+}
+
+/**
+ * Anemones near a point, on reefs (the same patches as the coral): [{ key, x, z, floor, size, hsl, seed }]. at(cell) and
+ * warmth as for coral.
+ */
+export function anemoneHomes(lat, lon, at, warmth = () => null) {
+  const out = [];
+  if (seaBand(lat, warmth(lat, lon)) !== "tropical") return out;
+  for (const c of cellsAround(lat, lon, ANEMONE.radius, ANEMONE.cell, ANEMONE.salt)) {
+    if (unit(hash2(Math.floor(c.lat * 900), Math.floor(c.lon * 900), REEF.salt + 3)) >= REEF.patch) continue; // only on a reef
+    if (unit(c.h) >= ANEMONE.chance) continue;
+    const s = at(c);
+    if (!s) continue;
+    const depth = -s.floor;
+    if (depth < ANEMONE.depth[0] || depth > ANEMONE.depth[1]) continue;
+    const size = Math.min(ANEMONE.size[0] + (ANEMONE.size[1] - ANEMONE.size[0]) * unit(c.h, 3), depth * 0.5);
+    const hsl = ANEMONE_HUES[Math.floor(unit(c.h, 5) * ANEMONE_HUES.length)];
+    out.push({ key: `anemone${c.h}`, x: s.p.x, z: s.p.z, floor: s.floor, size, hsl, seed: unit(c.h, 12) });
+    if (out.length >= ANEMONE.max) break;
+  }
+  return out;
+}
+
+/**
+ * One of an anemone's two fish at time t: { x, y, z, yaw, wag }. At home it weaves through the tentacles; visited
+ * (visit: 0..1 of the way through, me: where you are) it comes out, circles your nose once and goes home.
+ */
+export function anemoneFishAt(a, i, t, visit = 0, me = null) {
+  const ph = a.seed * 40 + i * Math.PI, w = 0.9 + 0.25 * i;
+  const ang = w * t + ph, r = a.size * (0.25 + 0.12 * Math.sin(t * 0.6 + i));
+  let x = a.x + Math.cos(ang) * r, z = a.z + Math.sin(ang) * r, y = a.floor + a.size * (0.55 + 0.15 * Math.sin(t * 1.1 + i * 2));
+  let yaw = Math.atan2(Math.sin(ang), -Math.cos(ang)), rate = 10;
+  if (visit > 0 && me) {
+    const k = Math.sin(Math.PI * visit), va = Math.PI * 2 * smooth(visit) + i * Math.PI, ring = 1.8;
+    const sx = me.x + Math.cos(va) * ring, sz = me.z + Math.sin(va) * ring, sy = me.y + 0.3 * (i ? 1 : -1);
+    x += (sx - x) * k; y += (sy - y) * k; z += (sz - z) * k;
+    yaw += wrapAngle(Math.atan2(Math.sin(va), -Math.cos(va)) - yaw) * k;
+    rate += 10 * k;
+  }
+  return { x, y, z, yaw, wag: t * rate + i * 2 };
+}
+export const VISIT_S = 3.5;
+export const visitAt = (age) => (age < 0 || age >= VISIT_S ? null : age / VISIT_S);
+
+const ANEMONE_LINES = (me) => [
+  `The two anemonefish come out to look at ${me}, then dive back into their anemone.`,
+  `The anemone pulls its tentacles in at your touch. Its two fish circle you, very bold for their size.`,
+  `Two anemonefish dart out, nip at ${me}'s whiskers, and go home to their anemone.`,
+  `The anemone's tentacles sting a little, the way a good joke does. Its fish don't mind ${me} at all.`,
+];
+/** The log line for an anemone visited. */
+export const anemoneLine = (me, seed, n = 0) => pickOf(ANEMONE_LINES(me), hash2(seed | 0, n, 101));
+/** Said when a coral's fish first hide from you. */
+export const HIDE_LINE = (name, coral, first) => `The ${name} duck into the ${coral}.` + (first ? " Keep still a while and they'll come out again." : "");

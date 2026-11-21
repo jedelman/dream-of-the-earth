@@ -2,11 +2,12 @@
 // mesh, swaying in the shader and leaning out of your way). Where they are comes from fishlife.js; what they do about
 // you is decided here, on this phone only: rush through a shoal and it scatters, touch it gently and it swirls round you.
 import * as THREE from "three";
-import { SHOAL, KELP, REEF, CORAL_FORMS, shoalHomes, kelpHomes, coralHomes, fishAt, shoalAt, burstAt, swirlAt, BURST_S } from "./fishlife.js";
+import { SHOAL, KELP, REEF, CORAL_FORMS, shoalHomes, kelpHomes, coralHomes, fishAt, shoalAt, burstAt, swirlAt, BURST_S, REEF_FISH, ANEMONE, reefFishOf, reefFishAt, hideStep, anemoneHomes, anemoneFishAt, visitAt, ANEMONEFISH } from "./fishlife.js";
 import { curved } from "./curvature.js";
 
 const REGROW_M = 100;
 const MAX_FISH = SHOAL.max * SHOAL.fish[1];
+const MAX_REEF_FISH = REEF_FISH.max + ANEMONE.max * ANEMONE.fish;
 const BODY = 0, ACCENT = 1, FIXED = 2;
 const DARK = [0.04, 0.04, 0.07];
 const RUSH = 7; // m/s: faster than this through a shoal and it bursts
@@ -128,9 +129,56 @@ function coralMesh(form) {
   return { m, colA, glow, ph };
 }
 
-function fishMesh() {
+// An anemone: a short column (y = 0 to 0.35) and a crown of twelve tentacles, each a thin blade reaching up and out from
+// its rim. aTip: 0 at a tentacle's root, 1 at its tip; the tips sway and, when it's touched (aClose), curl in.
+function anemoneShape() {
+  const pos = [], tip = [], col = [];
+  const tri = (a, b, c, w = [0, 0, 0], shade = [0.9, 0.9, 0.9]) => { pos.push(...a, ...b, ...c); tip.push(...w); for (let k = 0; k < 3; k++) col.push(...shade); };
+  const foot = [], rim = [];
+  for (let k = 0; k < 3; k++) { const a = (k / 3) * Math.PI * 2; foot.push([Math.cos(a) * 0.22, 0, Math.sin(a) * 0.22]); rim.push([Math.cos(a + 0.5) * 0.3, 0.35, Math.sin(a + 0.5) * 0.3]); }
+  for (let k = 0; k < 3; k++) { const n = (k + 1) % 3; tri(foot[k], foot[n], rim[k]); tri(foot[n], rim[n], rim[k]); }
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2, out = 0.28 + 0.06 * (k % 2), up = 0.75 + 0.15 * ((k * 5) % 3) / 2;
+    const b0 = [Math.cos(a - 0.22) * 0.26, 0.35, Math.sin(a - 0.22) * 0.26], b1 = [Math.cos(a + 0.22) * 0.26, 0.35, Math.sin(a + 0.22) * 0.26];
+    const t = [Math.cos(a) * (0.26 + out), up, Math.sin(a) * (0.26 + out)];
+    tri(b0, b1, t, [0, 0, 1], [1, 1, 1]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("aTip", new THREE.Float32BufferAttribute(tip, 1));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}
+function anemoneMesh() {
+  const geo = anemoneShape(), max = ANEMONE.max;
+  const colA = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3), close = new THREE.InstancedBufferAttribute(new Float32Array(max), 1), ph = new THREE.InstancedBufferAttribute(new Float32Array(max), 1);
+  geo.setAttribute("aCol", colA);
+  geo.setAttribute("aClose", close);
+  geo.setAttribute("aPh", ph);
+  const mat = new THREE.MeshLambertMaterial({ flatShading: true, side: THREE.DoubleSide, vertexColors: true });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uCoralT = coralUniforms.uCoralT;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute vec3 aCol; attribute float aClose; attribute float aPh; attribute float aTip; uniform float uCoralT;")
+      .replace("#include <begin_vertex>", `#include <begin_vertex>
+        // The tips wave in the swell and, touched, curl in towards the middle.
+        transformed.x += aTip * 0.1 * sin(uCoralT * 1.1 + aPh + position.z * 6.0);
+        transformed.z += aTip * 0.1 * cos(uCoralT * 0.9 + aPh + position.x * 6.0);
+        transformed.xz *= 1.0 - 0.75 * aTip * aClose;
+        transformed.y -= 0.3 * aTip * aClose;`)
+      .replace("#include <color_vertex>", `#include <color_vertex>
+        vColor.rgb *= aCol;`);
+  };
+  curved(mat, "-anemone");
+  const m = new THREE.InstancedMesh(geo, mat, max);
+  m.count = 0;
+  m.frustumCulled = false;
+  return { m, colA, close, ph };
+}
+
+function fishMesh(MAX = MAX_FISH, tag = "-fish") {
   const geo = fishShape();
-  const colA = new THREE.InstancedBufferAttribute(new Float32Array(MAX_FISH * 3), 3), colB = new THREE.InstancedBufferAttribute(new Float32Array(MAX_FISH * 3), 3), wag = new THREE.InstancedBufferAttribute(new Float32Array(MAX_FISH), 1);
+  const colA = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3), 3), colB = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3), 3), wag = new THREE.InstancedBufferAttribute(new Float32Array(MAX), 1);
   geo.setAttribute("aColA", colA);
   geo.setAttribute("aColB", colB);
   geo.setAttribute("aWag", wag);
@@ -144,8 +192,8 @@ function fishMesh() {
       .replace("#include <color_vertex>", `#include <color_vertex>
         if (aPart < 0.5) vColor.rgb = aColA; else if (aPart < 1.5) vColor.rgb = aColB;`);
   };
-  curved(mat, "-fish");
-  const m = new THREE.InstancedMesh(geo, mat, MAX_FISH);
+  curved(mat, tag);
+  const m = new THREE.InstancedMesh(geo, mat, MAX);
   m.count = 0;
   m.frustumCulled = false;
   return { m, colA, colB, wag };
@@ -190,8 +238,12 @@ function kelpMesh() {
 export function buildFish(frame, terrain, warmth = () => null) {
   const group = new THREE.Group();
   const F = fishMesh(), K = kelpMesh(), C = Object.fromEntries(CORAL_FORMS.map((f) => [f, coralMesh(f)]));
-  group.add(F.m, K.m, ...Object.values(C).map((c) => c.m));
-  let corals = [];
+  const R = fishMesh(MAX_REEF_FISH, "-reeffish"), A = anemoneMesh();
+  group.add(F.m, K.m, R.m, A.m, ...Object.values(C).map((c) => c.m));
+  let corals = [], homes = [], anemones = []; // homes: coral heads with fish of their own
+  const hidden = new Map(); // coral key -> how hidden its fish are (0..1), this phone only
+  const visited = new Map(); // anemone key -> when it was visited (this phone's clock)
+  let lastMe = null, still = 0, hidLogged = new Set();
   const glowing = new Map(); // coral key -> when it was touched (this phone's clock)
   const local = new Map(); // shoal key -> { burstAt, swirlAt }
   let centre = null, shoals = [], kelp = [];
@@ -236,6 +288,31 @@ export function buildFish(frame, terrain, warmth = () => null) {
       M.ph.setX(i, c.seed * 40);
     }
     for (const f of CORAL_FORMS) { const M = C[f]; M.m.count = n[f]; M.m.instanceMatrix.needsUpdate = M.colA.needsUpdate = M.glow.needsUpdate = M.ph.needsUpdate = true; }
+    // The coral heads' own fish, then each anemone's two.
+    let r = 0;
+    homes = [];
+    for (const c of corals) {
+      const rf = reefFishOf(c);
+      if (!rf || r + rf.n > REEF_FISH.max) continue;
+      homes.push({ c, rf, i0: r });
+      for (let k = 0; k < rf.n; k++, r++) { R.colA.setXYZ(r, ...col.setHSL(...rf.body).toArray()); R.colB.setXYZ(r, ...col.setHSL(...rf.accent).toArray()); }
+    }
+    anemones = anemoneHomes(ll.lat, ll.lon, at, warmth);
+    anemones.forEach((a, j) => {
+      e.set(0, a.seed * Math.PI * 2, 0);
+      q.setFromEuler(e);
+      A.m.setMatrixAt(j, m4.compose(p3.set(a.x, a.floor - 0.05, a.z), q, sc.setScalar(a.size)));
+      A.colA.setXYZ(j, ...col.setHSL(...a.hsl).toArray());
+      A.close.setX(j, 0);
+      A.ph.setX(j, a.seed * 40);
+      a.j = j;
+      a.i0 = r;
+      for (let k = 0; k < ANEMONE.fish; k++, r++) { R.colA.setXYZ(r, ...col.setHSL(...ANEMONEFISH.body).toArray()); R.colB.setXYZ(r, ...col.setHSL(...ANEMONEFISH.accent).toArray()); }
+    });
+    A.m.count = anemones.length;
+    A.m.instanceMatrix.needsUpdate = A.colA.needsUpdate = A.close.needsUpdate = A.ph.needsUpdate = true;
+    R.m.count = r;
+    R.colA.needsUpdate = R.colB.needsUpdate = true;
     centre = { x, z };
   }
 
@@ -258,6 +335,38 @@ export function buildFish(frame, terrain, warmth = () => null) {
         C[c.form].glow.needsUpdate = true;
       }
       const events = [];
+      // Reef fish over their coral heads, ducking in when you come close, out again when you keep still.
+      const dt = lastMe ? Math.min(0.25, Math.max(0, t - lastMe.t)) : 0;
+      still = me.speed < 0.6 ? still + dt : 0;
+      lastMe = { t };
+      for (const h of homes) {
+        const { c, rf, i0 } = h, d = Math.hypot(c.x - me.x, c.floor + c.size * 0.6 - me.y, c.z - me.z);
+        const was = hidden.get(c.key) ?? 0, now = d > 60 && was === 0 ? 0 : hideStep(was, dt, d, c.size, still);
+        if (now > 0) hidden.set(c.key, now); else hidden.delete(c.key);
+        if (was === 0 && now > 0 && !hidLogged.has(c.key)) { hidLogged.add(c.key); events.push({ coral: c, rf, what: "hid" }); }
+        for (let k = 0; k < rf.n; k++) {
+          const f = reefFishAt(c, rf, k, clock, now);
+          e.set(0, f.yaw, 0);
+          q.setFromEuler(e);
+          R.m.setMatrixAt(i0 + k, m4.compose(p3.set(f.x, f.y, f.z), q, sc.setScalar(rf.size * f.scale)));
+          R.wag.setX(i0 + k, f.wag);
+        }
+      }
+      // Anemones: their fish at home, or out round you when visited; the tentacles curl in and open again.
+      for (const a of anemones) {
+        const v0 = visited.get(a.key), visit = v0 === undefined ? null : visitAt(t - v0);
+        if (v0 !== undefined && visit === null) visited.delete(a.key);
+        const close = visit === null ? 0 : Math.sin(Math.PI * Math.min(1, visit * 1.3));
+        if (A.close.getX(a.j) !== close) { A.close.setX(a.j, close); A.close.needsUpdate = true; }
+        for (let k = 0; k < ANEMONE.fish; k++) {
+          const f = anemoneFishAt(a, k, clock, visit ?? 0, me);
+          e.set(0, f.yaw, 0);
+          q.setFromEuler(e);
+          R.m.setMatrixAt(a.i0 + k, m4.compose(p3.set(f.x, f.y, f.z), q, sc.setScalar(ANEMONE.fishSize)));
+          R.wag.setX(a.i0 + k, f.wag);
+        }
+      }
+      R.m.instanceMatrix.needsUpdate = R.wag.needsUpdate = true;
       for (const s of shoals) {
         let st = local.get(s.key);
         const mid = shoalAt(s, clock);
@@ -313,6 +422,21 @@ export function buildFish(frame, terrain, warmth = () => null) {
       glowing.set(key, t);
       return { key, name: c.name, x: c.x, y: c.floor + c.size * 0.4, z: c.z, seed: c.seed };
     },
-    get counts() { return { shoals: shoals.length, fish: F.m.count, kelp: kelp.length, coral: corals.length }; },
+    /** Anemones within r of (x, y, z): [{ key, name, x, y, z, size, seed }]. */
+    anemones(x, y, z, r) {
+      const out = [];
+      for (const a of anemones) { const ay = a.floor + a.size * 0.5; if (Math.hypot(a.x - x, ay - y, a.z - z) < r) out.push({ key: a.key, name: "anemone", x: a.x, y: ay, z: a.z, size: a.size, seed: a.seed }); }
+      return out;
+    },
+    /** Visited: its fish come out round you. Returns it, or null. */
+    visitAnemone(key, t) {
+      const a = anemones.find((x) => x.key === key);
+      if (!a) return null;
+      visited.set(key, t);
+      return { key, x: a.x, y: a.floor + a.size * 0.5, z: a.z, seed: a.seed };
+    },
+    /** How hidden a coral head's fish are (0..1), for checks. */
+    hiddenAt(key) { return hidden.get(key) ?? 0; },
+    get counts() { return { shoals: shoals.length, fish: F.m.count, kelp: kelp.length, coral: corals.length, reefFish: R.m.count - anemones.length * ANEMONE.fish, anemones: anemones.length, hiding: hidden.size }; },
   };
 }
