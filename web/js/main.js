@@ -77,7 +77,7 @@ import { buildPlants } from "./plants.js";
 import { buildInsects } from "./insects.js";
 import { buildCritters } from "./critters.js";
 import { buildFish } from "./fish.js";
-import { shoalLine, SCATTER_LINE, coralLine } from "./fishlife.js";
+import { shoalLine, SCATTER_LINE, coralLine, anemoneLine, HIDE_LINE } from "./fishlife.js";
 import { riverAt, nearestOnStem, advance as alongRiver, pointAt, rideLine } from "./riverride.js";
 import { LANDMARKS, landmarkQuery } from "./landmarks.js";
 import { governDetail, median, DETAIL_MIN, DETAIL_MAX } from "./detail.js";
@@ -2031,9 +2031,14 @@ function touchCritter(key) {
   logLine(critterLine(c.kind, c.name, myName, hashString(key), critterTouches++), "creature");
 }
 /** Under the sea: a shoal scattered by a rush now and then says so; touched gently, it swirls round you. */
-let scatteredAt = -10, scatteredEver = false, shoalTouches = 0;
+let scatteredAt = -10, scatteredEver = false, shoalTouches = 0, hidAt = -30, hidEver = false;
 function fishNews(events, t) {
   for (const ev of events) {
+    if (ev.what === "hid") {
+      // A coral head's own fish ducking in: said now and then, not for every head on the reef.
+      if (t - hidAt > 25) { logLine(HIDE_LINE(ev.rf.name, ev.coral.name, !hidEver), "creature"); hidAt = t; hidEver = true; }
+      continue;
+    }
     sound.bubble(3);
     if (t - scatteredAt > 8) { logLine(SCATTER_LINE(ev.s.name, !scatteredEver), "creature"); scatteredAt = t; scatteredEver = true; }
   }
@@ -2045,6 +2050,14 @@ function touchCoral(key) {
   sound.glow();
   bursts.emit({ at: new THREE.Vector3(c.x, c.y + 0.5, c.z), colors: [new THREE.Color(0xfff2c0), new THREE.Color(0xcff6ff)], n: 8, spread: 1, up: 1.4, fall: -0.3, life: 1.6 });
   logLine(coralLine(c.name, hashString(key), coralTouches++), "creature");
+}
+let anemoneVisits = 0;
+function visitAnemone(key) {
+  const a = world.fish.visitAnemone(key, simT);
+  if (!a) return squeak();
+  sound.bubble(2);
+  bursts.emit({ at: new THREE.Vector3(a.x, a.y + 0.6, a.z), colors: [new THREE.Color(0xffa04a), new THREE.Color(0xffffff)], n: 8, spread: 0.8, up: 1.4, fall: -0.3, life: 1.4 });
+  logLine(anemoneLine(myName, hashString(key), anemoneVisits++), "creature");
 }
 function touchShoal(key) {
   const s = world.fish.touch(key, simT);
@@ -2138,6 +2151,9 @@ function inReach() {
   if (state.mode === "water") for (const c of world.fish.corals(p.x, p.y, p.z, RANGE.coral)) {
     add({ kind: "coral", key: c.key, name: c.name, d: Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z), range: RANGE.coral, c }, c.x, c.z);
   }
+  if (state.mode === "water") for (const a of world.fish.anemones(p.x, p.y, p.z, RANGE.anemone)) {
+    add({ kind: "anemone", key: a.key, name: a.name, d: Math.hypot(a.x - p.x, a.y - p.y, a.z - p.z), range: RANGE.anemone, a }, a.x, a.z);
+  }
   for (const s of world.fish.near(p.x, p.y, p.z, RANGE.shoal)) {
     add({ kind: "shoal", key: s.key, name: s.name, d: Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z), range: RANGE.shoal, s }, s.x, s.z);
   }
@@ -2180,6 +2196,7 @@ function glintSpot(c, v, bs) {
   if (c.kind === "waymark" || c.kind === "spring") return v.set(c.w.x, c.w.y + (c.kind === "spring" ? 3 : 5), c.w.z);
   if (c.kind === "critter") { const q = world.critters.near(c.c.x, c.c.z, 40).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 1.3, q.z) : null; }
   if (c.kind === "coral") return v.set(c.c.x, c.c.y + c.c.size * 0.6, c.c.z);
+  if (c.kind === "anemone") return v.set(c.a.x, c.a.y + c.a.size * 0.7, c.a.z);
   if (c.kind === "shoal") { const q = world.fish.near(c.s.x, c.s.y, c.s.z, 60).find((x) => x.key === c.key); return q ? v.set(q.x, q.y + q.size * 2, q.z) : null; }
   if (c.kind === "being") return c.obj.getWorldPosition(v);
   if (c.kind === "artifact") return v.set(c.entry.x, c.entry.root.position.y + c.entry.top + 0.6, c.entry.z);
@@ -2239,6 +2256,7 @@ function interact() {
   if (c.kind === "critter") return touchCritter(c.key);
   if (c.kind === "shoal") return touchShoal(c.key);
   if (c.kind === "coral") return touchCoral(c.key);
+  if (c.kind === "anemone") return visitAnemone(c.key);
   if (c.kind === "being") return hum(c.being, c.obj);
   if (c.kind === "stones") return enterStones(c.c);
   if (c.kind === "door") return openDoor(c.door);

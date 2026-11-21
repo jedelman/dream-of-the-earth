@@ -544,7 +544,23 @@ nothing under the surface but the seabed. (`fishlife.js`, pure and tested; `fish
   coral": it glows from inside and fades over three seconds ("You brush the brain coral. It glows, very softly, from
   somewhere inside."). Nothing stored or sent. Tests: 1 (warm and shallow only, patches, the four forms, the same reef for
   everyone, the words). Headless at a Red Sea reef by Sharm el-Sheikh (359 corals, desktop and Pixel 7, no page errors).
-- **Next, maybe:** reef fish that keep to the coral; anemones; fish that follow a sea-born creature a little way.
+- **Reef fish that keep to the coral, and anemones (built 11-21, overnight; `reefFishOf`, `reefFishAt`, `hideStep`,
+  `anemoneHomes`, `anemoneFishAt` in `fishlife.js`).** The next step the reefs left open ("reef fish that keep to the coral;
+  anemones"). A little under half the coral heads have one to four little fish of their own (blue damselfish, green
+  chromis, butterflyfish, red cardinalfish, rainbow wrasse; dream-sized, 0.45 to 0.8 m), each hovering over its head in a
+  small loop and darting out and back every 6 to 10 s, on the shared clock, so everyone sees the same fish on the same
+  coral. **They hide:** swim within about 4 m (plus the coral's size) and they duck into the coral, fast; keep still for
+  3 s, or swim off, and they come out again, slowly ("The little rainbow wrasse duck into the table coral. Keep still a
+  while and they'll come out again.", said now and then, not for every head). Drift up slowly and they never hide. The
+  hiding is this phone's alone. **Anemones** grow on the same reef patches, 1.5 to 20 m down (up to 60 within 150 m;
+  1.6 to 3 m across, 18 triangles: a short column and a crown of twelve tentacles that wave in the swell), each with two
+  anemonefish weaving through its tentacles. "(E) Visit the anemone": its tentacles curl in, and the two come out, circle
+  your nose once and go home ("The two anemonefish come out to look at …, then dive back into their anemone."). Reef fish
+  and anemonefish share one instanced mesh (the shoal fish's shape, up to 720). Nothing stored or sent; no new data,
+  records, lexicons or scopes. Tests: 2. Headless (desktop and Pixel 7) on a Red Sea reef off Sharm el-Sheikh (27.912,
+  34.330): 42 corals, 55 reef fish, 6 anemones; hiding, coming out and visiting all exercised, no page errors.
+- **Next, maybe:** fish that follow a sea-born creature a little way; lake fish; a cleaner station (little fish that pick
+  at a creature that waits by the coral).
 
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,

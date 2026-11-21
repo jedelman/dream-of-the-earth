@@ -112,3 +112,56 @@ test("reefs grow on warm, shallow seabeds, in patches, four forms in a reef's co
   assert.match(coralLine("sea fan", 3, 0), /sea fan/);
   assert.equal(waterAsks([{ kind: "coral" }]), false);
 });
+
+test("some coral heads have little fish of their own, hovering over them; they hide when you come close and come out when you keep still", async () => {
+  const { coralHomes, reefFishOf, reefFishAt, hideStep, REEF_FISH, HIDE_LINE } = await import("../web/js/fishlife.js");
+  const reef = coralHomes(-16.5, 146, sea(-16.5, 146, -10));
+  const homes = reef.map((c) => [c, reefFishOf(c)]).filter(([, rf]) => rf);
+  const share = homes.length / reef.length;
+  assert.ok(share > 0.25 && share < 0.65, `${share}`);
+  assert.deepEqual(homes.map(([, rf]) => rf), reef.map(reefFishOf).filter(Boolean), "the same fish on every phone");
+  for (const [c, rf] of homes.slice(0, 40)) {
+    assert.ok(rf.n >= REEF_FISH.n[0] && rf.n <= REEF_FISH.n[1] && rf.size >= REEF_FISH.size[0] && rf.size <= REEF_FISH.size[1]);
+    for (let t = 0; t < 30; t += 0.7) for (let i = 0; i < rf.n; i++) {
+      const f = reefFishAt(c, rf, i, t);
+      assert.ok(Math.hypot(f.x - c.x, f.z - c.z) < c.size * 2 + 3, "keeps to its coral");
+      assert.ok(f.y > c.floor + c.size * 0.4 && f.y < 0, "over the coral, under the surface");
+      assert.equal(f.scale, 1);
+      const hid = reefFishAt(c, rf, i, t, 1);
+      assert.ok(Math.hypot(hid.x - c.x, hid.z - c.z) < c.size * 0.2 + 1e-9 && hid.y < f.y && hid.scale < 0.2, "hidden inside");
+    }
+  }
+  // Coming close: in, fast. Still a while: out again, slowly. Gone: out again.
+  let h = 0;
+  for (let k = 0; k < 4; k++) h = hideStep(h, 0.1, 3, 2, 0);
+  assert.equal(h, 1);
+  assert.equal(hideStep(1, 0.1, 3, 2, 5) < 1, true, "kept still: coming out");
+  let out = 1;
+  for (let k = 0; k < 20; k++) out = hideStep(out, 0.1, 30, 2, 0);
+  assert.equal(out, 0, "gone off: all out");
+  assert.equal(hideStep(0, 0.1, 30, 2, 0), 0, "far off: never hide");
+  assert.match(HIDE_LINE("little blue damselfish", "brain coral", true), /duck into the brain coral\. Keep still/);
+  assert.ok(!HIDE_LINE("x", "y", false).includes("Keep still"));
+});
+
+test("anemones grow on reefs, each with two anemonefish that come out round you when you visit", async () => {
+  const { anemoneHomes, anemoneFishAt, visitAt, anemoneLine, ANEMONE, VISIT_S } = await import("../web/js/fishlife.js");
+  assert.equal(anemoneHomes(50, -5, sea(50, -5, -10)).length, 0, "not in cool water");
+  assert.equal(anemoneHomes(-16.5, 146, sea(-16.5, 146, -40)).length, 0, "not too deep");
+  const list = anemoneHomes(-16.5, 146, sea(-16.5, 146, -8));
+  assert.ok(list.length > 3 && list.length <= ANEMONE.max, `${list.length}`);
+  assert.deepEqual(list, anemoneHomes(-16.5, 146, sea(-16.5, 146, -8)));
+  const a = list[0], me = { x: a.x + 6, y: a.floor + 3, z: a.z };
+  for (let t = 0; t < 20; t += 0.5) for (let i = 0; i < ANEMONE.fish; i++) {
+    const f = anemoneFishAt(a, i, t);
+    assert.ok(Math.hypot(f.x - a.x, f.z - a.z) <= a.size * 0.4, "at home in its tentacles");
+    const v = anemoneFishAt(a, i, t, 0.5, me);
+    assert.ok(Math.hypot(v.x - me.x, v.z - me.z) < 2.5, "half-way through a visit, round you");
+  }
+  assert.equal(visitAt(VISIT_S + 0.1), null);
+  assert.equal(visitAt(0), 0);
+  assert.equal(promptFor({ kind: "anemone", name: "anemone" }), "Visit the anemone");
+  assert.equal(waterAsks([{ kind: "anemone" }]), false);
+  assert.ok(RANGE.anemone > 0);
+  assert.match(anemoneLine("Nyo", 4, 0), /anemone/);
+});
