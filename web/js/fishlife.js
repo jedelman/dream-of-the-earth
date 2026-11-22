@@ -25,24 +25,33 @@ const LOOKS = {
   temperate: [["little silver fish", [0.58, 0.12, 0.72], [0.58, 0.05, 0.95]], ["little blue-backed fish", [0.56, 0.55, 0.38], [0.55, 0.1, 0.9]], ["little bronze fish", [0.09, 0.5, 0.45], [0.1, 0.25, 0.85]]],
   cold: [["little ice fish", [0.52, 0.18, 0.85], [0.52, 0.1, 0.97]], ["little grey fish", [0.6, 0.08, 0.5], [0.1, 0.15, 0.85]]],
 };
+// Lake fish (the reefs' "Next, maybe": "lake fish"), by the same crude warmth: cichlids and tilapia in warm lakes,
+// perch, roach and minnows in the middle latitudes, char and grayling in cold ones. Duller than the sea's reef fish.
+const LAKE_LOOKS = {
+  tropical: [["little blue cichlids", [0.58, 0.75, 0.52], [0.13, 0.85, 0.6]], ["little yellow cichlids", [0.13, 0.9, 0.55], [0.6, 0.5, 0.4]], ["little tilapia", [0.3, 0.2, 0.45], [0.02, 0.55, 0.6]]],
+  temperate: [["little perch", [0.2, 0.45, 0.42], [0.06, 0.8, 0.55]], ["little roach", [0.58, 0.1, 0.7], [0.02, 0.75, 0.55]], ["little minnows", [0.28, 0.25, 0.4], [0.1, 0.3, 0.8]]],
+  cold: [["little char", [0.55, 0.3, 0.35], [0.03, 0.8, 0.55]], ["little grayling", [0.62, 0.12, 0.5], [0.8, 0.35, 0.55]]],
+};
 
 /**
- * Shoals near a point: [{ key, x, z, y (its swimming depth, < 0), floor, n, size, seed, name, body, accent, band }].
- * at(cell) -> { p: { x, z }, floor (the seabed's height, m; < 0 under the sea) } or null.
+ * Shoals near a point: [{ key, x, z, y (its swimming height), floor, top, lake, n, size, seed, name, body, accent, band }].
+ * at(cell) -> { p: { x, z }, floor (the bed's height, m; < 0 under the sea), top (the surface, default 0: the sea),
+ * lake (its name, if it's a lake: then lake fish) } or null.
  */
 export function shoalHomes(lat, lon, at) {
   const out = [];
   for (const c of cellsAround(lat, lon, SHOAL.radius, SHOAL.cell, SHOAL.salt)) {
     if (unit(c.h) >= SHOAL.chance) continue;
     const s = at(c);
-    if (!s || -s.floor < SHOAL.minDepth) continue;
-    const g = hash2(c.h, 7), band = seaBand(c.lat), set = LOOKS[band];
+    const top = s ? s.top ?? 0 : 0;
+    if (!s || top - s.floor < SHOAL.minDepth) continue;
+    const g = hash2(c.h, 7), band = seaBand(c.lat), set = (s.lake ? LAKE_LOOKS : LOOKS)[band];
     const [name, body, accent] = set[Math.floor(unit(g, 3) * set.length)];
     const size = SHOAL.size[0] + (SHOAL.size[1] - SHOAL.size[0]) * unit(g, 17);
-    const top = 1.5 + size * 0.6, bottom = Math.max(top, Math.min(-s.floor - 1.2 - size * 0.5, 30)); // under the surface, over the seabed, not too deep to meet
-    const y = -(top + (bottom - top) * unit(c.h, 9));
+    const high = 1.5 + size * 0.6, low = Math.max(high, Math.min(top - s.floor - 1.2 - size * 0.5, 30)); // under the surface, over the bed, not too deep to meet
+    const y = top - (high + (low - high) * unit(c.h, 9));
     const n = SHOAL.fish[0] + Math.floor(unit(g, 11) * (SHOAL.fish[1] - SHOAL.fish[0] + 1));
-    out.push({ key: `shoal${c.h}`, x: s.p.x, z: s.p.z, y, floor: s.floor, n: Math.min(n, SHOAL.fish[1]), size, seed: unit(c.h, 12), name, body, accent, band });
+    out.push({ key: `shoal${c.h}`, x: s.p.x, z: s.p.z, y, floor: s.floor, top, lake: s.lake ?? null, n: Math.min(n, SHOAL.fish[1]), size, seed: unit(c.h, 12), name, body, accent, band });
     if (out.length >= SHOAL.max) break;
   }
   return out;
@@ -95,7 +104,7 @@ export function fishAt(s, i, t, burst = 0, swirl = 0, me = null) {
     pitch = (unit(g, 6) - 0.5) * 0.6 * burst;
     wagRate += 18 * burst;
   }
-  return { x: cx + ox, y: Math.min(-0.6, cy + oy), z: cz + oz, yaw, pitch, wag: t * wagRate + i * 1.3 };
+  return { x: cx + ox, y: Math.min((s.top ?? 0) - 0.6, cy + oy), z: cz + oz, yaw, pitch, wag: t * wagRate + i * 1.3 };
 }
 
 /** A rush through a shoal: how scattered it is `age` seconds on (0..1); quick out, slow back. 0 once over. */

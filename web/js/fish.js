@@ -11,6 +11,7 @@ const MAX_REEF_FISH = REEF_FISH.max + ANEMONE.max * ANEMONE.fish;
 const BODY = 0, ACCENT = 1, FIXED = 2;
 const DARK = [0.04, 0.04, 0.07];
 const RUSH = 7; // m/s: faster than this through a shoal and it bursts
+const LAKE_CLEAR = 45; // m: a lake shoal's home has open water this far all round (its loop reaches 32, its fish 4 more)
 
 // ---- Shapes ----
 // A fish: forward is -z, about a metre long, a lozenge body, a forked tail that wags (aTail), a fin on top, two eyes.
@@ -234,8 +235,11 @@ function kelpMesh() {
   return { m, ph, hh };
 }
 
-/** terrain: heights. Returns { group, update(t, clock, me), near, all, touch, counts }. */
-export function buildFish(frame, terrain, warmth = () => null) {
+/**
+ * terrain: heights. lake(x, z) -> { name, top (its surface), floor (its dream bed) } or null: lake fish live there.
+ * Returns { group, update(t, clock, me), near, all, touch, counts }.
+ */
+export function buildFish(frame, terrain, warmth = () => null, lake = () => null) {
   const group = new THREE.Group();
   const F = fishMesh(), K = kelpMesh(), C = Object.fromEntries(CORAL_FORMS.map((f) => [f, coralMesh(f)]));
   const R = fishMesh(MAX_REEF_FISH, "-reeffish"), A = anemoneMesh();
@@ -250,7 +254,13 @@ export function buildFish(frame, terrain, warmth = () => null) {
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, "YXZ"), sc = new THREE.Vector3(), p3 = new THREE.Vector3(), col = new THREE.Color();
 
   const at = (c) => {
-    const p = frame.toLocal(c.lat, c.lon), floor = terrain.heightAt(p.x, p.z);
+    const p = frame.toLocal(c.lat, c.lon), L = lake(p.x, p.z);
+    if (L) {
+      // A lake shoal's loop must stay in the lake: open water all round its home.
+      for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; if (!lake(p.x + Math.cos(a) * LAKE_CLEAR, p.z + Math.sin(a) * LAKE_CLEAR)) return null; }
+      return { p: { x: p.x, z: p.z }, floor: L.floor, top: L.top, lake: L.name };
+    }
+    const floor = terrain.heightAt(p.x, p.z);
     return floor < 0 ? { p: { x: p.x, z: p.z }, floor } : null;
   };
   function settle(x, z) {
@@ -379,7 +389,7 @@ export function buildFish(frame, terrain, warmth = () => null) {
         const burst = st ? burstAt(t - st.burstAt) : 0, swirl = st ? swirlAt(t - st.swirlAt) ?? 0 : 0;
         for (let k = 0; k < s.n; k++) {
           const f = fishAt(s, k, clock, burst, swirl, me);
-          const floor = terrain.heightAt(f.x, f.z);
+          const floor = s.lake ? s.floor : terrain.heightAt(f.x, f.z);
           e.set(-f.pitch, f.yaw, 0);
           q.setFromEuler(e);
           p3.set(f.x, Math.max(f.y, floor + s.size * 0.4), f.z);
@@ -394,7 +404,7 @@ export function buildFish(frame, terrain, warmth = () => null) {
     /** Shoals whose middle is within r of (x, y, z): [{ key, name, x, y, z, size }]. */
     near(x, y, z, r) {
       const out = [];
-      for (const s of shoals) if (s.now && Math.hypot(s.now.x - x, s.now.y - y, s.now.z - z) < r) out.push({ key: s.key, name: s.name, x: s.now.x, y: s.now.y, z: s.now.z, size: s.size });
+      for (const s of shoals) if (s.now && Math.hypot(s.now.x - x, s.now.y - y, s.now.z - z) < r) out.push({ key: s.key, name: s.name, x: s.now.x, y: s.now.y, z: s.now.z, size: s.size, lake: s.lake, top: s.top });
       return out;
     },
     /** All of them, for a tap to find one. */
@@ -437,6 +447,6 @@ export function buildFish(frame, terrain, warmth = () => null) {
     },
     /** How hidden a coral head's fish are (0..1), for checks. */
     hiddenAt(key) { return hidden.get(key) ?? 0; },
-    get counts() { return { shoals: shoals.length, fish: F.m.count, kelp: kelp.length, coral: corals.length, reefFish: R.m.count - anemones.length * ANEMONE.fish, anemones: anemones.length, hiding: hidden.size }; },
+    get counts() { return { shoals: shoals.length, lakeShoals: shoals.filter((s) => s.lake).length, fish: F.m.count, kelp: kelp.length, coral: corals.length, reefFish: R.m.count - anemones.length * ANEMONE.fish, anemones: anemones.length, hiding: hidden.size }; },
   };
 }

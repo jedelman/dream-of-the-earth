@@ -559,8 +559,20 @@ nothing under the surface but the seabed. (`fishlife.js`, pure and tested; `fish
   and anemonefish share one instanced mesh (the shoal fish's shape, up to 720). Nothing stored or sent; no new data,
   records, lexicons or scopes. Tests: 2. Headless (desktop and Pixel 7) on a Red Sea reef off Sharm el-Sheikh (27.912,
   34.330): 42 corals, 55 reef fish, 6 anemones; hiding, coming out and visiting all exercised, no page errors.
-- **Next, maybe:** fish that follow a sea-born creature a little way; lake fish; a cleaner station (little fish that pick
-  at a creature that waits by the coral).
+- **Lake fish (built 11-22, overnight; `shoalHomes` in `fishlife.js`, the lake hook in `fish.js`).** The reefs' "Next,
+  maybe" listed "lake fish", and swimming in lakes had none. Shoals now live in lakes too, on the same cells and clock as
+  the sea's, under the lake's own surface and over its 8 m dream bed. Each home has open water 45 m all round, so a loop
+  (32 m at most) never swims over the shore. Who lives there goes by the same crude warmth from latitude: **little blue
+  and yellow cichlids and little tilapia** in warm lakes (within 28°), **little perch, roach and minnows** in the middle
+  latitudes, **little char and grayling** beyond 52°. They're duller than the sea's reef fish. They behave as the sea's
+  do (rush and they scatter; "(E) Greet the shoal of little perch" and they swirl round you). Since the lake's ground is
+  drawn at its surface, you see them once your eye is under, so a lake shoal can't be tapped from above, and only a
+  swimmer gets the prompt. Nothing stored or sent; no new data, records, lexicons or scopes. Tests: 1 (lake fish under
+  their surface and over their bed, never out of the water, by warmth; a too-shallow lake has none; the sea's shoals
+  unchanged). Headless (desktop and Pixel 7) in Lake Geneva (perch, roach, minnows; 22 shoals, 157 fish; a greet) and
+  Lake Victoria (cichlids, tilapia), with no page errors.
+- **Next, maybe:** fish that follow a sea-born creature a little way; a cleaner station (little fish that pick at a
+  creature that waits by the coral); fish in the bigger rivers.
 
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
@@ -1261,7 +1273,14 @@ under 12 m)"), and the river quests made it stranger: a quest up the Amazon, pas
   8 m deep, a dream depth, and its surface is where it's drawn, rising and falling with its share of the tide. Walk in
   and you swim ("You swim out into Lake Geneva. It's deep, still and cold, and nobody's waves but yours."); the HUD reads
   "LAKE GENEVA · 8 M DEEP · 4 M DOWN"; dive as deep as your swim lets you (a land-born creature ducks 3 m); the prompt is
-  "Drink from Lake Geneva". The sea's rules otherwise. Rivers are still waded. No fish in lakes yet.
+  "Drink from Lake Geneva". The sea's rules otherwise. Rivers are still waded. Lake fish came 11-22 (under the sea's
+  shoals, below).
+  - **The camera follows you down (fixed 11-22).** The ground under a lake is drawn at the lake's level, so the camera,
+    kept above the ground, stayed up in the air while you dived, and your creature dropped out of sight. Now, swimming
+    more than half a metre under a lake's surface, the camera may go below that ground (no lower than a metre over the
+    dream bed) and stays under it: you see yourself in murky lake water, as at sea. Where a great lake's terrain lies
+    below its level (Lake Victoria's is 4.7 m below), the camera keeps under the terrain instead. Butterflies and
+    fireflies no longer live under such a lake (they kept to ground over 3 m, and Lake Victoria's ground is 1,134 m).
 - **Frogs and ducks by the water (built 11-19; `critterlife.js`, `critters.js`).** Asked, Jason: "OH YELL YES".
   - **Ducks** live only on rivers and lakes (a home cell that's wet; up to 32 within 300 m, 40 m cells), floating at the
     water's surface (a lake's with its tide): they paddle about a patch 8 m across, bob, and now and then dabble, tail up
