@@ -165,3 +165,26 @@ test("anemones grow on reefs, each with two anemonefish that come out round you 
   assert.ok(RANGE.anemone > 0);
   assert.match(anemoneLine("Nyo", 4, 0), /anemone/);
 });
+
+test("lake fish: shoals in a lake swim under its own surface, over its bed, and are freshwater fish", () => {
+  // A lake 371 m up (its surface 372.2, its dream bed 363), all round the point.
+  const lake = (lat, lon) => (c) => ({ p: { x: (c.lon - lon) * 111320 * Math.cos((lat * Math.PI) / 180), z: -(c.lat - lat) * 111320 }, floor: 363, top: 372.2, lake: "Lake Geneva" });
+  const list = shoalHomes(46.4, 6.5, lake(46.4, 6.5));
+  assert.ok(list.length > 3 && list.length <= SHOAL.max, `${list.length}`);
+  const sea = new Set(shoalHomes(46.4, 6.5, (c) => ({ ...lake(46.4, 6.5)(c), floor: -9.2, top: undefined, lake: undefined })).map((s) => s.name));
+  for (const s of list) {
+    assert.equal(s.lake, "Lake Geneva");
+    assert.equal(s.top, 372.2);
+    assert.ok(s.y < 372.2 - 1.5 && s.y > 363, `between surface and bed: ${s.y}`);
+    assert.ok(!sea.has(s.name), `not a sea fish: ${s.name}`);
+    for (let t = 0; t < 200; t += 7.3) for (let i = 0; i < s.n; i++) assert.ok(fishAt(s, i, t).y <= 372.2 - 0.6, "never out of the water");
+  }
+  assert.ok(list.every((s) => /perch|roach|minnows/.test(s.name)), "middle-latitude lake fish");
+  assert.ok(shoalHomes(-1, 33, lake(-1, 33)).every((s) => /cichlids|tilapia/.test(s.name)), "warm lakes: cichlids and tilapia");
+  assert.ok(shoalHomes(62, 30, lake(62, 30)).every((s) => /char|grayling/.test(s.name)), "cold lakes: char and grayling");
+  // A lake too shallow (less than 4 m from surface to bed) has none, and the sea's shoals are as they were.
+  assert.equal(shoalHomes(46.4, 6.5, (c) => ({ ...lake(46.4, 6.5)(c), floor: 369 })).length, 0);
+  const s0 = shoalHomes(40, -70, (c) => ({ p: { x: 0, z: 0 }, floor: -25 }))[0];
+  assert.equal(s0.top, 0);
+  assert.equal(s0.lake, null);
+});

@@ -796,13 +796,14 @@ async function buildWorld(lat, lon) {
   await water;
   const inland = buildInland(frame, terrain);
   terrain.wet = inland.wet; // plants, critters and insects keep out of the water
+  terrain.lakeAt = inland.lakeAt;
   const highways = buildHighways(frame, terrain.heightAt);
   const stones = buildStones(highways.pillars, terrain.heightAt);
   const beings = buildSkyBeings(frame, terrain.heightAt);
   const plants = buildPlants(frame, terrain);
   const insects = buildInsects(frame, terrain);
   const critters = buildCritters(frame, terrain, plants, (x, z) => { const l = inland.lakeAt(x, z); return l ? lakeTop(l) : inland.wet(x, z) ? terrain.heightAt(x, z) + 1.2 : null; });
-  const fish = buildFish(frame, terrain);
+  const fish = buildFish(frame, terrain, undefined, (x, z) => { const l = inland.lakeAt(x, z); return l ? { name: l.name || "lake", top: lakeTop(l), floor: l.level - LAKE_DEPTH } : null; });
   const shrines = buildShrines(frame, terrain);
   const finds = buildFinds(frame, terrain);
   finds.setTaken((f) => tookHere(inv, f.key, realNow())); // one you've had this moon isn't there for you
@@ -1305,6 +1306,14 @@ function waterTop(x, z) {
   const l = !state.realm && world ? world.inland.lakeAt(x, z) : null;
   return l ? { top: lakeTop(l), lake: l } : { top: seaY(), lake: null };
 }
+/** Swimming under a lake's surface: the camera follows you down, under the ground drawn there at the lake's level. */
+const underLake = () => !state.realm && state.mode === "water" && !!world?.inland.lakeAt(state.pos.x, state.pos.z) && state.pos.y < waterTop(state.pos.x, state.pos.z).top - 0.5;
+/** How high the camera may go under a lake: under the ground drawn there (the lake's level, or lower where the
+ *  terrain under a great lake lies below it), but over its dream bed. */
+function lakeCeil(x, z) {
+  const l = world.inland.lakeAt(x, z), h = world.terrain.heightAt(x, z);
+  return Math.max(floorUnder(x, z) + 1, Math.min(l.level, h) - 1);
+}
 /** The fastest a crouch goes (m/s): slow enough that small creatures don't start (they start at 10). */
 const CROUCH_PACE = 5;
 /** The fastest anything runs in a dream (m/s): the islands are small, and dreams are slow. */
@@ -1758,6 +1767,7 @@ function pick(clientX, clientY) {
     v.set(s.x, s.y, s.z);
     const d = v.distanceTo(camera.position);
     if (d > 400) continue; // the sea hides them past that
+    if (s.lake && camera.position.y > s.top) continue; // a lake's fish show only once your eye is under
     v.project(camera);
     if (v.z > 1) continue;
     if (Math.hypot(((v.x + 1) / 2) * r.width - (clientX - r.left), ((1 - v.y) / 2) * r.height - (clientY - r.top)) < 36) found.push({ kind: "shoal", d, s });
@@ -2155,6 +2165,7 @@ function inReach() {
     add({ kind: "anemone", key: a.key, name: a.name, d: Math.hypot(a.x - p.x, a.y - p.y, a.z - p.z), range: RANGE.anemone, a }, a.x, a.z);
   }
   for (const s of world.fish.near(p.x, p.y, p.z, RANGE.shoal)) {
+    if (s.lake && state.mode !== "water") continue; // a lake's fish meet only a swimmer
     add({ kind: "shoal", key: s.key, name: s.name, d: Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z), range: RANGE.shoal, s }, s.x, s.z);
   }
   for (const o of seesBeings() ? world.beings.group.children : []) {
@@ -3487,7 +3498,8 @@ function worldView(dt, t) {
   const eyes = editing ? 0 : THREE.MathUtils.smoothstep(14 - zoom, 0, 7); // in the editor you look at it, not through it
   fadeCreature(1 - 0.85 * eyes);
   const eye = eyeLocal.clone().multiplyScalar(creature.size).multiply(sh).applyAxisAngle(UP_AXIS, state.heading);
-  director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: world.terrain.heightAt, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: creature.size * sh.y, eyes, eye });
+  const lakeDive = underLake();
+  director.update({ t, dt, subject: creature.group.position, heading: state.heading, mode: state.mode, speed01: Math.min(1, Math.abs(state.speed) / sp.fly), riding: false, rig: cameraRig(), heightAt: lakeDive ? floorUnder : world.terrain.heightAt, ceil: lakeDive ? lakeCeil(state.pos.x, state.pos.z) : null, goal, sunDir: sunInfo.dir, gold: sunInfo.gold, scale: creature.size * sh.y, eyes, eye });
   cameraSpell();
   const underwater = camera.position.y < waterTop(camera.position.x, camera.position.z).top && floorUnder(camera.position.x, camera.position.z) < camera.position.y;
   return { ll: world.frame.toLatLon(p.x, p.z), pos: p, underwater };

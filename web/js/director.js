@@ -42,7 +42,7 @@ export function buildDirector(camera) {
 
     /**
      * ctx: { t, dt, subject (Vector3), heading, mode ("air" | "ground" | "water"), speed01, riding,
-     *        rig ({ back, up, near }), heightAt(x, z) | null, goal (Vector3 | null), sunDir, gold, scale,
+     *        rig ({ back, up, near }), heightAt(x, z) | null, ceil (the highest it may go, or null), goal (Vector3 | null), sunDir, gold, scale,
      *        eyes (0..1: how far into the creature's own eyes), eye (Vector3: from the subject to its eyes) }
      */
     update(ctx) {
@@ -147,6 +147,8 @@ export function buildDirector(camera) {
         }
         if (lift > 0) { abs.y += lift; off.y += lift * 0.5; } // and remember some of it, so it doesn't bob
       }
+      // Under a lake the ground is drawn at its surface, so the camera stays under too, to see you (and the fish).
+      if (ctx.ceil != null && rig.near && abs.y > ctx.ceil) abs.y = ctx.ceil;
       camera.position.copy(abs);
       camera.lookAt(abs.copy(subject).add(look));
       camera.rotateZ(roll);

@@ -98,11 +98,13 @@ export function buildInsects(frame, terrain) {
   fireflies.frustumCulled = false;
   group.add(fireflies);
 
-  // A cell's ground and biome, or null over the sea.
+  // A cell's ground and biome, or null over the sea or a lake.
   const at = (c) => {
     const p = frame.toLocal(c.lat, c.lon);
     const h = terrain.heightAt(p.x, p.z);
     if (h < 3) return null;
+    const l = terrain.lakeAt?.(p.x, p.z);
+    if (l && h < l.level + 2) return null; // not under a lake (a great lake's terrain can lie metres below its surface)
     return { p: { x: p.x, z: p.z }, h, biome: BIOMES[biomeFor(koppenAt(c.lat, c.lon), terrain.reliefAt(p.x, p.z), c.lat, h)] };
   };
   const m4 = new THREE.Matrix4(), col = new THREE.Color();
