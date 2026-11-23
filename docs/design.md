@@ -511,7 +511,21 @@ Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
   red bird" (it flutters and sings back). The camera takes the butterfly shot: you and it, from the side.
 - **Sounds:** sniffs, croaks (bigger frogs lower) and songs, synthesized like the rest. Now and then a frog croaks
   nearby at dusk and through the night, and a bird sings by day.
-- **Next, maybe:** birds that follow you a little way. (Frogs by the water and ducks came 11-19, under "Rivers and lakes".)
+- **A little bird that follows you a little way (built 11-23, overnight; `followStart`, `followStep` in
+  `critterlife.js`).** This section's own "Next, maybe". Whistle to a little bird and it comes along ("It hops after
+  you: it'll come along a little way."): it lands 3.5 to 7 m from you on its own side, so it trails behind as you go,
+  and pecks about; when you move off it flies after you (12 m/s on top of keeping up with you) and lands again. Over
+  water it hovers instead of landing, and when you fly it flies beside you, up to 60 m over the ground. It sings now and
+  then. It turns for home after 75 s ("has come far enough"), 220 m from its home ("won't go any further from home"),
+  or when you leave it 70 m behind ("You've left … behind"), and flies back to its day. One at a time: whistling to
+  another sends the first home. At dusk it goes to roost with the rest. While it follows it can't be startled and isn't
+  offered as something to touch, so the prompt stays free for everything else. All of it is this phone's alone, like a
+  startle: nothing stored or sent; no new data, records, lexicons or scopes. Tests: 1 (settles beside you, keeps up with
+  no jumps, sings, hovers over water, flies with you, and each of the three ways home). Headless (desktop and Pixel 7) in
+  Oxfordshire fields (51.75, -1.6): 49 birds, a whistle, a 60 m walk with it landing 4 to 11 m off, then a run it
+  couldn't follow; no page errors.
+- **Next, maybe:** a bunny that follows too, or a frog that hops along by the water. (Frogs by the water and ducks came
+  11-19, under "Rivers and lakes".)
 
 ### Under the sea: shoals and kelp (built 11-19, overnight)
 On the list since the first nights ("maybe kelp and fish underwater"): a sea-born creature dives into an empty sea, with

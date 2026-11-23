@@ -174,3 +174,65 @@ export function startledAt(c, from, away, age, t) {
   const lift = (from.lift || 0) + (22 + 10 * c.seed) * Math.sin(Math.PI * Math.min(1, m * 1.1));
   return { x, z, lift, yaw: up < 1 ? yaw : yaw + a + Math.PI / 2, squash: 1, flap: Math.sin(t * 46) * (circle > 0.85 ? 0.35 : 1), pitch: -0.25, moving: true, flying: true };
 }
+
+// ---- A little bird that follows you a little way (11-23, overnight) ----
+// design.md's "Next, maybe" for the small creatures: "birds that follow you a little way". Whistle to a little bird and
+// it comes along: it flies to a spot beside you and pecks about there; when you move off, it flies after you and lands
+// again. It turns back after a while, or when it's come as far from home as it'll go, or when you leave it behind.
+// What it does is this phone's alone, like a startle: nothing stored or sent.
+
+/** s: how long it comes along; leash: how far from home it'll go (m); lag: left this far behind, it gives up (m);
+ * near: how far from you it lands (m); fly: its own flying speed (m/s), on top of keeping up with you; top: the
+ * highest it flies (m over the ground under it); song: seconds between its songs. */
+export const FOLLOW = { s: 75, leash: 220, lag: 70, near: [3.5, 7], fly: 12, top: 60, song: [6, 11] };
+
+/** It starts following from where it is (from: { x, z, lift }), t on this phone's clock. */
+export function followStart(c, from, t) {
+  return { t0: t, x: from.x, z: from.z, lift: from.lift || 0, flying: (from.lift || 0) > 0.3, songAt: t + FOLLOW.song[0], leg: 0, legAt: null, bearing: 0 };
+}
+
+/**
+ * One step of following. f: the follow (from followStart, changed in place); me: { x, z, air (m above the ground
+ * under you), speed }; canSit(x, z): whether it can land there (not on water); dt, t: seconds, this phone's clock.
+ * Returns { pose (idleAt's shape), done: null | "tired" | "home" | "lost", song (true now and then) }.
+ */
+export function followStep(c, f, me, canSit, dt, t) {
+  const seed = Math.floor(c.seed * 1e6);
+  const leg = Math.floor((t - f.t0) / 9); // every 9 s it picks another spot round you
+  const g = hash2(seed, leg, 131);
+  const toMe = { x: f.x - me.x, z: f.z - me.z };
+  // Its spot: on its own side of you (so it trails behind as you go), turned a little, near[0..1] away. The side is
+  // chosen when a leg begins and kept through it, so it doesn't chase its own bearing round you.
+  if (f.legAt !== leg) { f.legAt = leg; f.bearing = Math.atan2(toMe.z, toMe.x) + (unit(g) - 0.5) * 1.6; }
+  const r = FOLLOW.near[0] + (FOLLOW.near[1] - FOLLOW.near[0]) * unit(g, 9);
+  const goal = { x: me.x + Math.cos(f.bearing) * r, z: me.z + Math.sin(f.bearing) * r };
+  const youFly = me.air > 4;
+  const sit = !youFly && canSit(goal.x, goal.z);
+  const goalLift = youFly ? Math.min(FOLLOW.top, me.air) : sit ? 0 : 1.6 + 0.4 * Math.sin(t * 2.1 + c.seed * 9); // over water it hovers
+  const d = Math.hypot(goal.x - f.x, goal.z - f.z);
+
+  if (!f.flying && (d > 6 || Math.abs(goalLift - f.lift) > 1)) f.flying = true; // you've moved off: it takes wing
+  let moved = 0, hop = 0;
+  if (f.flying) {
+    const v = Math.min(45, FOLLOW.fly + 1.25 * me.speed) * Math.min(1, 0.35 + d / 8); // slows as it comes in to land
+    moved = Math.min(d, v * dt);
+    const want = d > 2 ? Math.max(goalLift, Math.min(6, 1.5 + d * 0.25)) : goalLift; // up over the ground, then down
+    f.lift += Math.max(-7 * dt, Math.min(9 * dt, want - f.lift));
+    if (d < 0.8 && sit && f.lift < 0.08) { f.flying = false; f.lift = 0; } // landed
+  } else if (d > 1) { // a few hops to its spot
+    moved = Math.min(d, 2.4 * dt);
+    hop = Math.abs(Math.sin(t * 9 + c.seed * 9)) * 0.25 * c.size;
+  }
+  if (d > 1e-6) { f.x += ((goal.x - f.x) / d) * moved; f.z += ((goal.z - f.z) / d) * moved; }
+  f.lift = Math.max(0, f.lift);
+
+  const yaw = moved > 0.01 ? Math.atan2(-(goal.x - f.x + 1e-9), -(goal.z - f.z)) : Math.atan2(toMe.x, toMe.z); // faces where it goes, or you
+  const peck = !f.flying && moved < 0.01 ? Math.max(0, Math.sin(t * 5 + c.seed * 97)) ** 6 * 0.7 : 0;
+  const pose = { x: f.x, z: f.z, lift: f.lift + hop, yaw, squash: 1, flap: f.flying ? Math.sin(t * 40 + c.seed * 97) * (d > 2 ? 1 : 0.4) : 0, pitch: f.flying ? -0.15 : peck, moving: moved > 0.01, flying: f.flying };
+
+  const behind = Math.hypot(f.x - me.x, f.z - me.z, f.lift - Math.max(0, me.air));
+  const done = behind > FOLLOW.lag ? "lost" : Math.hypot(f.x - c.x, f.z - c.z) > FOLLOW.leash ? "home" : t - f.t0 > FOLLOW.s ? "tired" : null;
+  let song = false;
+  if (t >= f.songAt) { song = true; f.songAt = t + FOLLOW.song[0] + (FOLLOW.song[1] - FOLLOW.song[0]) * unit(hash2(seed, ++f.leg, 137)); }
+  return { pose, done, song };
+}

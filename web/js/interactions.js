@@ -52,6 +52,15 @@ export function critterLine(kind, name, me, seed, n = 0) {
   return pickOf(CRITTER_LINES[kind](name, me), hash2(seed, n, 47));
 }
 const FLED = { duck: (n) => `The ${n} runs along the water and takes off, quacking.`, bunny: (n) => `Too fast for the ${n}: it bolts.`, frog: (n) => `The ${n} leaps away from you.`, bird: (n) => `The ${n} takes off in a flurry.` };
+// A little bird you whistle to comes along a little way (11-23), and says when it turns for home.
+const FOLLOW_LINES = {
+  start: () => "It hops after you: it'll come along a little way.",
+  tired: (n) => `The ${n} has come far enough. It sings once more and flies home.`,
+  home: (n) => `The ${n} won't go any further from home. It flies back.`,
+  lost: (n) => `You've left the ${n} behind. It flies home.`,
+};
+/** A follower's news: "start", or why it went home ("tired", "home", "lost"). */
+export const followLine = (what, name) => FOLLOW_LINES[what](name);
 /** Running from you. The first time, a hint: tap one, and you'll walk up gently. */
 export const fledLine = (kind, name, first) => FLED[kind](name) + (first ? " Tap one to walk up gently." : "");
 export function butterflyLine(hue, seed, n = 0) {
