@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { critterHomes, idleAt, startledAt, KINDS, CHANCE, STARTLE_S } from "../web/js/critterlife.js";
+import { critterHomes, idleAt, startledAt, KINDS, CHANCE, STARTLE_S, FOLLOW, followStart, followStep } from "../web/js/critterlife.js";
 
 // A flat world of one biome around (lat, lon), 1 m per metre east/north.
 const flat = (biomeId, h = 50, wet = false) => (c) => ({ p: { x: (c.lon - 10) * 111320 * Math.cos((45 * Math.PI) / 180), z: -(c.lat - 45) * 111320 }, h, biomeId, wet, byWater: false, waterY: wet ? h + 1.2 : null });
@@ -82,4 +82,48 @@ test("ducks live only on rivers and lakes, floating at the water's surface; frog
   const dry = critterHomes("frog", 45, 10, flat("steppe")).length;
   const bank = critterHomes("frog", 45, 10, (c) => ({ ...flat("steppe")(c), byWater: true })).length;
   assert.ok(bank > dry * 3, `${dry} → ${bank}`);
+});
+
+test("a little bird you whistle to follows you a little way, then flies home", () => {
+  const [c] = critterHomes("bird", 45, 10, homeOf("bird"));
+  const ground = () => true, dt = 1 / 30;
+  // You stand still: it hops over and settles beside you, a few metres off, pecking about.
+  let me = { x: c.x + 10, z: c.z, air: 0, speed: 0 }, f = followStart(c, { x: c.x, z: c.z, lift: 0 }, 0), t = 0, r;
+  for (; t < 8; t += dt) r = followStep(c, f, me, ground, dt, t);
+  let d = Math.hypot(r.pose.x - me.x, r.pose.z - me.z);
+  assert.ok(d >= FOLLOW.near[0] - 0.5 && d <= FOLLOW.near[1] + 1, `settles beside you (${d.toFixed(1)} m)`);
+  assert.equal(r.pose.flying, false);
+  assert.equal(r.done, null);
+  // You walk off at 4 m/s: it flies after you and keeps close, never jumping, never under the ground; and sings now and then.
+  let prev = r.pose, songs = 0, far = 0;
+  for (; t < 40; t += dt) {
+    me = { ...me, x: me.x + 4 * dt, speed: 4 };
+    r = followStep(c, f, me, ground, dt, t);
+    assert.ok(r.pose.lift >= 0, "never under the ground");
+    assert.ok(Math.hypot(r.pose.x - prev.x, r.pose.z - prev.z) < 1.5, "no jumps");
+    if (t > 12) far = Math.max(far, Math.hypot(r.pose.x - me.x, r.pose.z - me.z));
+    songs += r.song;
+    prev = r.pose;
+    assert.equal(r.done, null, `still with you at ${t.toFixed(1)} s`);
+  }
+  assert.ok(far < 20, `keeps up (${far.toFixed(1)} m behind at most)`);
+  assert.ok(songs >= 2, "sings now and then");
+  // Over water it hovers rather than landing; flying, it flies with you.
+  for (let k = 0; k < 150; k++, t += dt) r = followStep(c, f, me, () => false, dt, t);
+  assert.ok(r.pose.lift > 1, "hovers over water");
+  for (let k = 0; k < 300; k++, t += dt) r = followStep(c, f, { ...me, air: 25 }, ground, dt, t);
+  assert.ok(Math.abs(r.pose.lift - 25) < 3 && r.pose.flying, "flies beside you");
+  // Walk off from its home: past its leash it turns back.
+  const w = followStart(c, { x: c.x, z: c.z, lift: 0 }, 0);
+  me = { x: c.x + 5, z: c.z, air: 0, speed: 6 };
+  for (t = 0, r = { done: null }; t < FOLLOW.s && !r.done; t += dt) { me = { ...me, x: me.x + 6 * dt }; r = followStep(c, w, me, ground, dt, t); }
+  assert.equal(r.done, "home");
+  assert.ok(Math.hypot(w.x - c.x, w.z - c.z) < FOLLOW.leash + 5);
+  // It tires after a while even if you stay; and a fast creature leaves it behind.
+  const g = followStart(c, { x: c.x, z: c.z, lift: 0 }, 0);
+  r = followStep(c, g, { x: c.x + 5, z: c.z, air: 0, speed: 0 }, ground, dt, FOLLOW.s + 1);
+  assert.equal(r.done, "tired");
+  const h = followStart(c, { x: c.x, z: c.z, lift: 0 }, 0);
+  r = followStep(c, h, { x: c.x + FOLLOW.lag + 30, z: c.z, air: 0, speed: 60 }, ground, dt, 1);
+  assert.equal(r.done, "lost");
 });

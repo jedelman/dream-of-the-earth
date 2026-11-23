@@ -28,7 +28,7 @@ import { screenTilt, tiltSteer, shakeDetector } from "./tilt.js";
 import { buildSkyShader, skyColors, layerTransparent, TRANSPARENT_LAYER } from "./skyshader.js";
 import { curveUniform, curved, TWO_R } from "./curvature.js";
 import { planPath } from "./pathfind.js";
-import { RANGE, critterLine, fledLine, treeLine, butterflyLine, fireflyLine, seaLine, drinkLine, waterAsks, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
+import { RANGE, critterLine, fledLine, followLine, treeLine, butterflyLine, fireflyLine, seaLine, drinkLine, waterAsks, beingLine, selfLine, highwayLine, creatureName, promptFor, chooseFocus, glinting, cairnLine, ago } from "./interactions.js";
 import { buildGlints } from "./glints.js";
 import { buildCairns } from "./cairns.js";
 import { discover, discoverWorld, didOf, handlesOf, getRecord, currentIntents, visibleAmong, setMuted, isBot, pigeonsFor } from "./atproto.js";
@@ -2014,6 +2014,8 @@ function touchWater(c) {
 let fledAt = -10, fledEver = false, chorusAt = 0;
 function critterNews(events, t, sunAltitude) {
   for (const ev of events) {
+    if (ev.what === "song") { sound.song(Math.floor(t), true); continue; } // a little bird following you sings now and then
+    if (ev.what !== "startled") { sound.flutter(); logLine(followLine(ev.what, ev.c.name), "creature"); continue; } // it flies home
     if (ev.c.kind === "bird" || ev.c.kind === "duck") sound.flutter();
     if (ev.c.kind === "duck") sound.quack(2 / ev.c.size);
     if (t - fledAt > 6) { logLine(fledLine(ev.c.kind, ev.c.name, !fledEver), "creature"); fledAt = t; fledEver = true; }
@@ -2038,7 +2040,7 @@ function touchCritter(key) {
   const at = new THREE.Vector3(c.x, c.y + c.size, c.z);
   director.play("butterfly", simT, butterflyShot(state.pos.clone(), at), { dur: 2.6, blendIn: 0.5, blendOut: 0.9 });
   bursts.emit({ at, colors: [new THREE.Color(0xffb8de), new THREE.Color(0xffffff)], n: 8, spread: 0.8, up: 1.6, fall: 0.6, life: 1.2 });
-  logLine(critterLine(c.kind, c.name, myName, hashString(key), critterTouches++), "creature");
+  logLine(critterLine(c.kind, c.name, myName, hashString(key), critterTouches++) + (c.following ? ` ${followLine("start", c.name)}` : ""), "creature");
 }
 /** Under the sea: a shoal scattered by a rush now and then says so; touched gently, it swirls round you. */
 let scatteredAt = -10, scatteredEver = false, shoalTouches = 0, hidAt = -30, hidEver = false;
@@ -3393,7 +3395,7 @@ function frame() {
       window.__dream.plants = world.plants.update(state.pos.x, state.pos.z, t, camera.position, detail.scale);
       window.__dream.insects = world.insects.update(state.pos.x, state.pos.z, unix % 86400, sunState.altitude);
       const me = { x: state.pos.x, y: state.pos.y, z: state.pos.z, speed: Math.hypot(state.speed, state.vy), ground: Math.max(0, world.terrain.heightAt(state.pos.x, state.pos.z)), target: state.target?.critter ?? null };
-      critterNews(world.critters.update(t, unix, sunState.altitude, me), t, sunState.altitude);
+      critterNews(world.critters.update(t, unix, sunState.altitude, me, (x, z) => world.terrain.heightAt(x, z) > 0.5 && !world.terrain.wet?.(x, z)), t, sunState.altitude);
       window.__dream.critters = world.critters.counts;
       fishNews(world.fish.update(t, unix, { ...me, target: state.target?.critter ?? null }), t);
       window.__dream.fish = world.fish.counts;
