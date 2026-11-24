@@ -2,7 +2,7 @@
 // mesh, swaying in the shader and leaning out of your way). Where they are comes from fishlife.js; what they do about
 // you is decided here, on this phone only: rush through a shoal and it scatters, touch it gently and it swirls round you.
 import * as THREE from "three";
-import { SHOAL, KELP, REEF, CORAL_FORMS, shoalHomes, kelpHomes, coralHomes, fishAt, shoalAt, burstAt, swirlAt, BURST_S, REEF_FISH, ANEMONE, reefFishOf, reefFishAt, hideStep, anemoneHomes, anemoneFishAt, visitAt, ANEMONEFISH } from "./fishlife.js";
+import { SHOAL, KELP, REEF, CORAL_FORMS, shoalHomes, kelpHomes, coralHomes, fishAt, shoalAt, burstAt, swirlAt, BURST_S, REEF_FISH, ANEMONE, reefFishOf, reefFishAt, hideStep, anemoneHomes, anemoneFishAt, visitAt, ANEMONEFISH, shoalFollowStart, shoalFollowStep, shoalHomeS, shoalHomeAt } from "./fishlife.js";
 import { curved } from "./curvature.js";
 
 const REGROW_M = 100;
@@ -249,8 +249,8 @@ export function buildFish(frame, terrain, warmth = () => null, lake = () => null
   const visited = new Map(); // anemone key -> when it was visited (this phone's clock)
   let lastMe = null, still = 0, hidLogged = new Set();
   const glowing = new Map(); // coral key -> when it was touched (this phone's clock)
-  const local = new Map(); // shoal key -> { burstAt, swirlAt }
-  let centre = null, shoals = [], kelp = [];
+  const local = new Map(); // shoal key -> { burstAt, swirlAt, then (follow once the swirl is over), follow, home }
+  let centre = null, shoals = [], kelp = [], followKey = null; // followKey: the shoal following you, if any
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, "YXZ"), sc = new THREE.Vector3(), p3 = new THREE.Vector3(), col = new THREE.Color();
 
   const at = (c) => {
@@ -325,12 +325,30 @@ export function buildFish(frame, terrain, warmth = () => null, lake = () => null
     R.colA.needsUpdate = R.colB.needsUpdate = true;
     centre = { x, z };
   }
+  // Where a shoal can swim: the bed's height, or null where there's no water for it (ashore, or out of its own lake).
+  const floorOf = (s) => (x, z) => {
+    if (s.lake) { const L = lake(x, z); return L && L.name === s.lake ? L.floor : null; }
+    const h = terrain.heightAt(x, z);
+    return h < -1.5 ? h : null;
+  };
+  function sendHome(st, s, from, clock, t) {
+    st.follow = null;
+    st.home = { from: { x: from.x, y: from.y, z: from.z }, at0: t, dur: shoalHomeS(s, from, clock) };
+  }
+  // One at a time: greeting another sends the first home, quietly.
+  function dropFollower(key, clock, t) {
+    if (!followKey || followKey === key) return;
+    const st = local.get(followKey), s = shoals.find((q2) => q2.key === followKey);
+    if (st && st.follow) { if (s) sendHome(st, s, st.follow, clock, t); else st.follow = null; }
+    followKey = null;
+  }
 
   return {
     group,
     /**
      * Each frame. t: this phone's clock (s); clock: the shared clock (s); me: { x, y, z, speed, target (a shoal key a
-     * trip is heading to, or null) }. Returns what happened: [{ s, what: "scattered" }].
+     * trip is heading to, or null), swimming }. Returns what happened: [{ s, what: "scattered" | "following" | "bubble" |
+     * "tired" | "home" | "lost" | "shore" }] (the last four: a follower swims home).
      */
     update(t, clock, me) {
       if (!centre || Math.hypot(me.x - centre.x, me.z - centre.z) > REGROW_M) settle(me.x, me.z);
@@ -377,18 +395,42 @@ export function buildFish(frame, terrain, warmth = () => null, lake = () => null
         }
       }
       R.m.instanceMatrix.needsUpdate = R.wag.needsUpdate = true;
+      if (followKey && !shoals.some((x) => x.key === followKey)) { const st = local.get(followKey); if (st) st.follow = null; followKey = null; } // out of the world's reach
       for (const s of shoals) {
-        let st = local.get(s.key);
-        const mid = shoalAt(s, clock);
+        let st = local.get(s.key), at = null;
+        if (st && st.then && swirlAt(t - st.swirlAt) === null) { // the swirl's over: it falls in behind you
+          st.then = false;
+          if (me.swimming) {
+            dropFollower(s.key, clock, t);
+            st.follow = shoalFollowStart(s, shoalAt(s, clock), t);
+            st.home = null;
+            followKey = s.key;
+            events.push({ s, what: "following" });
+          }
+        }
+        if (st && st.follow) {
+          const step = shoalFollowStep(s, st.follow, me, floorOf(s), dt, t);
+          if (step.bubble) events.push({ s, what: "bubble" });
+          if (step.done) {
+            sendHome(st, s, step.at, clock, t);
+            if (followKey === s.key) followKey = null;
+            events.push({ s, what: step.done });
+          } else at = step.at;
+        }
+        if (!at && st && st.home) {
+          at = shoalHomeAt(s, st.home.from, t - st.home.at0, st.home.dur, clock);
+          if (!at) st.home = null;
+        }
+        const mid = at ?? shoalAt(s, clock);
         const near = Math.hypot(mid.x - me.x, mid.y - me.y, mid.z - me.z) < 8 + s.size * 3;
-        if (near && me.speed > RUSH && me.target !== s.key && !(st && (t - st.burstAt < BURST_S || swirlAt(t - st.swirlAt) !== null))) {
+        if (near && !(st && st.follow) && me.speed > RUSH && me.target !== s.key && !(st && (t - st.burstAt < BURST_S || swirlAt(t - st.swirlAt) !== null))) {
           if (!st) { st = { burstAt: -99, swirlAt: -99 }; local.set(s.key, st); }
           st.burstAt = t;
           events.push({ s, what: "scattered" });
         }
         const burst = st ? burstAt(t - st.burstAt) : 0, swirl = st ? swirlAt(t - st.swirlAt) ?? 0 : 0;
         for (let k = 0; k < s.n; k++) {
-          const f = fishAt(s, k, clock, burst, swirl, me);
+          const f = fishAt(s, k, clock, burst, swirl, me, at);
           const floor = s.lake ? s.floor : terrain.heightAt(f.x, f.z);
           e.set(-f.pitch, f.yaw, 0);
           q.setFromEuler(e);
@@ -396,28 +438,37 @@ export function buildFish(frame, terrain, warmth = () => null, lake = () => null
           F.m.setMatrixAt(s.i0 + k, m4.compose(p3, q, sc.setScalar(s.size)));
           F.wag.setX(s.i0 + k, f.wag);
         }
-        s.now = { x: mid.x, y: mid.y, z: mid.z };
+        s.now = { x: mid.x, y: mid.y, z: mid.z, following: !!(st && st.follow) };
       }
       F.m.instanceMatrix.needsUpdate = F.wag.needsUpdate = true;
       return events;
     },
-    /** Shoals whose middle is within r of (x, y, z): [{ key, name, x, y, z, size }]. */
+    /** Shoals whose middle is within r of (x, y, z): [{ key, name, x, y, z, size }]. Not the one following you: it's beside
+     * you, not something to swim up to. */
     near(x, y, z, r) {
       const out = [];
-      for (const s of shoals) if (s.now && Math.hypot(s.now.x - x, s.now.y - y, s.now.z - z) < r) out.push({ key: s.key, name: s.name, x: s.now.x, y: s.now.y, z: s.now.z, size: s.size, lake: s.lake, top: s.top });
+      for (const s of shoals) if (s.now && !s.now.following && Math.hypot(s.now.x - x, s.now.y - y, s.now.z - z) < r) out.push({ key: s.key, name: s.name, x: s.now.x, y: s.now.y, z: s.now.z, size: s.size, lake: s.lake, top: s.top });
       return out;
     },
     /** All of them, for a tap to find one. */
     all() { return this.near(0, 0, 0, Infinity); },
-    /** Touched gently: it swirls round you. Returns it, or null if it's gone. */
-    touch(key, t) {
+    /** Touched gently: it swirls round you and, if you're swimming, then follows you a little way. Returns it (with
+     * following: whether it will), or null if it's gone. */
+    touch(key, t, swimming = false) {
       const s = shoals.find((q2) => q2.key === key);
       if (!s || !s.now) return null;
       let st = local.get(key);
       if (!st) { st = { burstAt: -99, swirlAt: -99 }; local.set(key, st); }
+      if (st.home) return { key, name: s.name, x: s.now.x, y: s.now.y, z: s.now.z, size: s.size, following: false }; // on its way home: a greeting, no more
       st.swirlAt = t;
       st.burstAt = -99;
-      return { key, name: s.name, x: s.now.x, y: s.now.y, z: s.now.z, size: s.size };
+      st.then = swimming;
+      return { key, name: s.name, x: s.now.x, y: s.now.y, z: s.now.z, size: s.size, following: swimming };
+    },
+    /** The shoal following you now: { key, name, x, y, z, n } or null. */
+    get follower() {
+      const s = followKey && shoals.find((q2) => q2.key === followKey);
+      return s && s.now && s.now.following ? { key: s.key, name: s.name, x: s.now.x, y: s.now.y, z: s.now.z, n: s.n } : null;
     },
     /** Coral within r of (x, y, z): [{ key, name, form, x, y, z, size }]. */
     corals(x, y, z, r) {
@@ -447,6 +498,6 @@ export function buildFish(frame, terrain, warmth = () => null, lake = () => null
     },
     /** How hidden a coral head's fish are (0..1), for checks. */
     hiddenAt(key) { return hidden.get(key) ?? 0; },
-    get counts() { return { shoals: shoals.length, lakeShoals: shoals.filter((s) => s.lake).length, fish: F.m.count, kelp: kelp.length, coral: corals.length, reefFish: R.m.count - anemones.length * ANEMONE.fish, anemones: anemones.length, hiding: hidden.size }; },
+    get counts() { return { shoals: shoals.length, lakeShoals: shoals.filter((s) => s.lake).length, fish: F.m.count, kelp: kelp.length, coral: corals.length, reefFish: R.m.count - anemones.length * ANEMONE.fish, anemones: anemones.length, hiding: hidden.size, following: followKey }; },
   };
 }

@@ -76,10 +76,11 @@ export function shoalAt(s, t) {
 /**
  * One fish of a shoal at time t: { x, y, z, yaw, pitch, wag (tail phase, radians) }. Each keeps its own place in the
  * shoal, drifting about it. burst: 0..1, how far it's been scattered (a rush); swirl: 0..1, how far round you it has
- * swum (a touch); me: where you are, for the swirl.
+ * swum (a touch); me: where you are, for the swirl; at: the shoal's middle ({ x, y, z, yaw }) when it isn't on its
+ * loop (following you, or swimming home), else null.
  */
-export function fishAt(s, i, t, burst = 0, swirl = 0, me = null) {
-  const mid = shoalAt(s, t), g = hash2(Math.floor(s.seed * 1e6), i, 29);
+export function fishAt(s, i, t, burst = 0, swirl = 0, me = null, at = null) {
+  const mid = at ?? shoalAt(s, t), g = hash2(Math.floor(s.seed * 1e6), i, 29);
   const spread = s.size * (1.2 + 0.35 * Math.sqrt(s.n));
   // A place in the shoal: a lens wider than it is tall, slowly wandering.
   const a0 = unit(g) * Math.PI * 2, r0 = Math.sqrt(unit(g, 16)) * spread, h0 = (unit(g, 8) - 0.5) * spread * 0.5;
@@ -304,3 +305,82 @@ const ANEMONE_LINES = (me) => [
 export const anemoneLine = (me, seed, n = 0) => pickOf(ANEMONE_LINES(me), hash2(seed | 0, n, 101));
 /** Said when a coral's fish first hide from you. */
 export const HIDE_LINE = (name, coral, first) => `The ${name} duck into the ${coral}.` + (first ? " Keep still a while and they'll come out again." : "");
+
+// ---- A shoal that follows you a little way (11-24, overnight) ----
+// The sea's and reefs' "Next, maybe": "fish that follow a sea-born creature a little way". Greet a shoal while you're in
+// the water and, once it has swirled round you, it falls in behind you and comes along: it keeps a few metres off on its
+// own side of you, at about your depth (under the surface, over the bed), and catches up when you swim on. It turns back
+// after a while, or when it's as far from home as it'll go, or when you leave it behind or leave the water (it never
+// swims where there's no water), and swims home to its loop. This phone's alone, like a scatter: nothing stored or sent.
+
+/** s: how long it comes along; leash: how far from home it'll go (m); lag: left this far behind, it gives up (m);
+ * near: how far from you its middle keeps (m); swim: its own speed (m/s), on top of keeping up with you; back: its speed
+ * home (m/s); dry: how long you can be out of the water before it turns back (s); bubble: seconds between bubbles. */
+export const SHOAL_FOLLOW = { s: 60, leash: 180, lag: 45, near: [4, 7.5], swim: 6, back: 5, dry: 3, bubble: [7, 13] };
+
+/** It starts following from where its middle is (from: { x, y, z, yaw }), t on this phone's clock. */
+export function shoalFollowStart(s, from, t) {
+  return { t0: t, x: from.x, y: from.y, z: from.z, yaw: from.yaw ?? 0, legAt: null, bearing: 0, rise: 0, dry: 0, n: 0, bubbleAt: t + SHOAL_FOLLOW.bubble[0] };
+}
+
+/**
+ * One step of following. f: the follow (from shoalFollowStart, changed in place); me: { x, y, z, speed, swimming };
+ * floorAt(x, z): the bed's height there, or null where there's no water for it (ashore, or out of its lake); dt, t:
+ * seconds, this phone's clock. Returns { at: { x, y, z, yaw } (its middle, for fishAt), done: null | "tired" | "home" |
+ * "lost" | "shore", bubble (true now and then) }.
+ */
+export function shoalFollowStep(s, f, me, floorAt, dt, t) {
+  const seed = Math.floor(s.seed * 1e6), top = s.top ?? 0;
+  const leg = Math.floor((t - f.t0) / 8); // every 8 s it picks another place round you
+  const g = hash2(seed, leg, 149);
+  // Its place: on its own side of you (so it trails behind as you swim), turned a little. The side is chosen when a leg
+  // begins and kept through it, so it doesn't chase its own bearing round you.
+  if (f.legAt !== leg) { f.legAt = leg; f.bearing = Math.atan2(f.z - me.z, f.x - me.x) + (unit(g) - 0.5) * 1.4; f.rise = (unit(g, 5) - 0.5) * 2.5; }
+  const r = SHOAL_FOLLOW.near[0] + (SHOAL_FOLLOW.near[1] - SHOAL_FOLLOW.near[0]) * unit(g, 9);
+  const gx = me.x + Math.cos(f.bearing) * r, gz = me.z + Math.sin(f.bearing) * r;
+  const bed = floorAt(gx, gz);
+  let moved = 0, d = 0;
+  if (bed !== null && me.swimming) { // never out of the water
+    const hi = top - 1.2 - s.size * 0.5, lo = bed + 1 + s.size * 0.6;
+    const gy = lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, me.y + f.rise));
+    const dx = gx - f.x, dy = gy - f.y, dz = gz - f.z;
+    d = Math.hypot(dx, dy, dz);
+    const v = Math.min(40, SHOAL_FOLLOW.swim + 1.2 * me.speed) * Math.min(1, 0.3 + d / 6); // eases in as it arrives
+    moved = Math.min(d, v * dt);
+    if (d > 1e-6) { f.x += (dx / d) * moved; f.y += (dy / d) * moved; f.z += (dz / d) * moved; }
+    if (moved > 0.02 && Math.hypot(dx, dz) > 0.3) f.yaw += wrapAngle(Math.atan2(-dx, -dz) - f.yaw) * Math.min(1, dt * 4); // turns the way it swims
+  }
+  f.dry = me.swimming ? 0 : f.dry + dt;
+  const behind = Math.hypot(f.x - me.x, f.y - me.y, f.z - me.z);
+  const done = f.dry > SHOAL_FOLLOW.dry ? "shore" : behind > SHOAL_FOLLOW.lag ? (bed === null ? "shore" : "lost") : Math.hypot(f.x - s.x, f.z - s.z) > SHOAL_FOLLOW.leash ? "home" : t - f.t0 > SHOAL_FOLLOW.s ? "tired" : null;
+  let bubble = false;
+  if (t >= f.bubbleAt) { bubble = true; f.bubbleAt = t + SHOAL_FOLLOW.bubble[0] + (SHOAL_FOLLOW.bubble[1] - SHOAL_FOLLOW.bubble[0]) * unit(hash2(seed, ++f.n, 151)); }
+  return { at: { x: f.x, y: f.y, z: f.z, yaw: f.yaw }, done, bubble };
+}
+
+/** How long the swim home takes (s), from where it turned back (from: { x, y, z }) to its loop at time t. */
+export function shoalHomeS(s, from, t) {
+  const h = shoalAt(s, t);
+  return Math.max(2, Math.hypot(h.x - from.x, h.y - from.y, h.z - from.z) / SHOAL_FOLLOW.back);
+}
+/**
+ * Swimming home: its middle `age` seconds after it turned back from `from` ({ x, y, z }), dur from shoalHomeS, at time t
+ * (the shared clock, so it rejoins its loop where everyone sees it). null once it's home.
+ */
+export function shoalHomeAt(s, from, age, dur, t) {
+  if (age >= dur) return null;
+  const h = shoalAt(s, t), k = smooth(Math.max(0, age / dur));
+  const x = from.x + (h.x - from.x) * k, y = from.y + (h.y - from.y) * k, z = from.z + (h.z - from.z) * k;
+  const toward = Math.atan2(-(h.x - from.x), -(h.z - from.z) + 1e-9);
+  return { x, y, z, yaw: k < 0.8 ? toward : toward + wrapAngle(h.yaw - toward) * ((k - 0.8) / 0.2) };
+}
+
+const SHOAL_FOLLOW_LINES = {
+  start: () => "Then they fall in behind you: they'll come along a little way.", // follows the greeting, which names them
+  tired: (n) => `The ${n} have come far enough. They turn, all at once, and swim for home.`,
+  home: (n) => `The ${n} won't go any further from home. They turn back.`,
+  lost: (n) => `You've left the ${n} behind. They go back to their own water.`,
+  shore: (n) => `The ${n} won't leave the water. They turn back for home.`,
+};
+/** A following shoal's news: "start", or why it went home. */
+export const shoalFollowLine = (what, name) => SHOAL_FOLLOW_LINES[what](name);

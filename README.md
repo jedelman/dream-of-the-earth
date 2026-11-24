@@ -40,7 +40,7 @@ fireflies blink at night.
 **Under the sea:** shoals of little fish swim slow loops at their own depths (reef fish in the tropics, silver and
 bronze ones in cooler water, ice fish near the poles), and kelp forests sway on cool, shallow seabeds, leaning out of
 your way. Coral reefs grow on warm ones: brain coral, staghorn, table coral and sea fans, glowing
-when you brush them. Rush through a shoal and it scatters; swim up gently and greet it, and it swirls round you.
+when you brush them. Rush through a shoal and it scatters; swim up gently and greet it, and it swirls round you, then follows you a little way.
 Little fish live on the coral heads and duck inside when you come close; keep still and they come out again.
 Anemones sway among the coral, each with two anemonefish that come out to look at you when you visit.
 Lakes have fish too: dive into one to meet perch, roach and minnows, cichlids and tilapia in warm lakes, char and

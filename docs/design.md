@@ -585,8 +585,24 @@ nothing under the surface but the seabed. (`fishlife.js`, pure and tested; `fish
   their surface and over their bed, never out of the water, by warmth; a too-shallow lake has none; the sea's shoals
   unchanged). Headless (desktop and Pixel 7) in Lake Geneva (perch, roach, minnows; 22 shoals, 157 fish; a greet) and
   Lake Victoria (cichlids, tilapia), with no page errors.
-- **Next, maybe:** fish that follow a sea-born creature a little way; a cleaner station (little fish that pick at a
-  creature that waits by the coral); fish in the bigger rivers.
+- **A shoal that follows you a little way (built 11-24, overnight; `shoalFollowStart`, `shoalFollowStep`, `shoalHomeAt` in
+  `fishlife.js`).** This section's own "Next, maybe" ("fish that follow a sea-born creature a little way"), the sea's
+  twin of the little bird. Greet a shoal while you're in the water and, once it has swirled round you, it falls in behind
+  you ("Then they fall in behind you: they'll come along a little way."): its middle keeps 4 to 7.5 m off on its own side
+  of you, at about your depth (under the surface, over the bed), and catches up when you swim on (6 m/s on top of keeping
+  up with you), with a bubble now and then. It never swims where there's no water for it: a sea shoal keeps to water
+  1.5 m deep or more, a lake shoal to its own lake. It turns back after 60 s ("have come far enough"), 180 m from home
+  ("won't go any further from home"), when you leave it 45 m behind ("You've left … behind"), or when you've been out
+  of the water 3 s or swum where it can't follow ("won't leave the water"), and swims home at 5 m/s, joining its loop
+  where everyone sees it. One at a time: greeting another sends the first home. While it follows it can't be scattered
+  and isn't offered to greet, so the prompt stays free. Greeted from the shore, a shoal only swirls, as before. All of it
+  is this phone's alone: nothing stored or sent; no new data, records, lexicons or scopes. Tests: 1 (settles beside you
+  under the surface, keeps up with no jumps, bubbles, each of the four ways home, never ashore, the swim home ends on its
+  loop). Headless (desktop and Pixel 7) off Nice (43.66, 7.30; little silver fish, 7.4 m off after a 30 m swim, then left
+  behind) and in Lake Geneva (46.43, 6.55; little perch), with no page errors. `__dream.shoalFollower()` gives it with
+  its place on screen, for checks.
+- **Next, maybe:** a cleaner station (little fish that pick at a creature that waits by the coral); fish in the bigger
+  rivers; reef fish that follow you a few metres off their coral and dart back.
 
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,
