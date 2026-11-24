@@ -188,3 +188,66 @@ test("lake fish: shoals in a lake swim under its own surface, over its bed, and 
   assert.equal(s0.top, 0);
   assert.equal(s0.lake, null);
 });
+
+test("a shoal you greet while swimming follows you a little way, never out of the water, then swims home", async () => {
+  const { SHOAL_FOLLOW, shoalFollowStart, shoalFollowStep, shoalHomeS, shoalHomeAt, shoalFollowLine } = await import("../web/js/fishlife.js");
+  const s = { key: "shoal1", x: 0, z: 0, y: -6, floor: -20, top: 0, lake: null, n: 7, size: 1.4, seed: 0.37, name: "little silver fish" };
+  const sea = (x) => (x > 400 ? null : -20); // a shore 400 m east
+  const floorAt = (x) => sea(x);
+  const dt = 0.1, start = shoalAt(s, 100);
+  // It settles a few metres off, at about your depth, under the surface and over the bed.
+  let me = { x: start.x + 12, y: -5, z: start.z, speed: 0, swimming: true }, f = shoalFollowStart(s, start, 0), t = 0, r, bubbles = 0;
+  for (; t < 6; t += dt) { r = shoalFollowStep(s, f, me, floorAt, dt, t); if (r.bubble) bubbles++; }
+  let d = Math.hypot(r.at.x - me.x, r.at.z - me.z);
+  assert.ok(d >= SHOAL_FOLLOW.near[0] - 0.6 && d <= SHOAL_FOLLOW.near[1] + 0.6, `settles beside you (${d.toFixed(2)} m)`);
+  assert.ok(r.at.y < -1.2 && r.at.y > -19, "under the surface, over the bed");
+  assert.equal(r.done, null);
+  // It keeps up when you swim on (6 m/s for 15 s), without a jump.
+  let prev = { ...r.at }, maxStep = 0, maxD = 0;
+  for (const t1 = t + 15; t < t1; t += dt) {
+    me = { ...me, x: me.x + 6 * dt, speed: 6 };
+    r = shoalFollowStep(s, f, me, floorAt, dt, t);
+    maxStep = Math.max(maxStep, Math.hypot(r.at.x - prev.x, r.at.y - prev.y, r.at.z - prev.z)); prev = { ...r.at };
+    maxD = Math.max(maxD, Math.hypot(r.at.x - me.x, r.at.z - me.z));
+    if (r.bubble) bubbles++;
+  }
+  assert.equal(r.done, null, "still with you");
+  assert.ok(maxD < 20, `keeps up (${maxD.toFixed(1)} m behind at most)`);
+  assert.ok(maxStep < 1.5, "no jumps");
+  assert.ok(bubbles >= 1, "bubbles now and then");
+  // Tired: after its time it turns back.
+  let g = shoalFollowStart(s, start, 0), meStill = { x: start.x + 6, y: -6, z: start.z, speed: 0, swimming: true };
+  for (t = 0; t <= SHOAL_FOLLOW.s + 0.5; t += dt) r = shoalFollowStep(s, g, meStill, floorAt, dt, t);
+  assert.equal(r.done, "tired");
+  // Home: past its leash. (Swim on at 8 m/s.)
+  g = shoalFollowStart(s, start, 0); me = { ...meStill };
+  for (t = 0, r = { done: null }; !r.done && t < 50; t += dt) { me = { ...me, z: me.z - 8 * dt, speed: 8 }; r = shoalFollowStep(s, g, me, floorAt, dt, t); }
+  assert.equal(r.done, "home");
+  assert.ok(Math.hypot(g.x - s.x, g.z - s.z) <= SHOAL_FOLLOW.leash + 2);
+  // Lost: you dash off faster than it can follow.
+  g = shoalFollowStart(s, start, 0); me = { ...meStill };
+  for (t = 0, r = { done: null }; !r.done && t < 20; t += dt) { me = { ...me, x: me.x - 80 * dt, speed: 15 }; r = shoalFollowStep(s, g, me, floorAt, dt, t); }
+  assert.equal(r.done, "lost");
+  // Shore: it never swims out of the water, and turns back when you leave it.
+  const near = { ...s, x: 360 }; // a shoal that lives by the shore
+  g = shoalFollowStart(near, { x: 380, y: -6, z: 0, yaw: 0 }, 0); me = { x: 385, y: -3, z: 0, speed: 3, swimming: true };
+  for (t = 0, r = { done: null }; !r.done && t < 30; t += dt) {
+    me = me.x < 430 ? { ...me, x: me.x + 3 * dt } : { ...me, y: 2, swimming: false };
+    r = shoalFollowStep(near, g, me, floorAt, dt, t);
+    assert.ok(g.x <= 400 + 1e-6, "never ashore");
+  }
+  assert.equal(r.done, "shore");
+  // Home it goes, joining its loop where everyone sees it, smoothly.
+  const from = { x: g.x, y: g.y, z: g.z }, dur = shoalHomeS(s, from, 200);
+  assert.ok(dur > 2);
+  const a0 = shoalHomeAt(s, from, 0, dur, 200);
+  assert.ok(Math.hypot(a0.x - from.x, a0.y - from.y, a0.z - from.z) < 1e-6, "starts where it turned back");
+  const end = shoalHomeAt(s, from, dur - 0.01, dur, 200 + dur - 0.01), loop = shoalAt(s, 200 + dur - 0.01);
+  assert.ok(Math.hypot(end.x - loop.x, end.z - loop.z) < 0.5, "ends on its loop");
+  assert.equal(shoalHomeAt(s, from, dur, dur, 200 + dur), null);
+  // The fish follow their middle when it's given.
+  const fish = fishAt(s, 0, 50, 0, 0, null, { x: 1000, y: -5, z: 1000, yaw: 0 });
+  assert.ok(Math.hypot(fish.x - 1000, fish.z - 1000) < 10);
+  assert.match(shoalFollowLine("start", s.name), /fall in behind you/);
+  for (const w of ["tired", "home", "lost", "shore"]) assert.match(shoalFollowLine(w, s.name), /little silver fish/);
+});
