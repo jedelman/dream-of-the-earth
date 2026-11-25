@@ -251,3 +251,68 @@ test("a shoal you greet while swimming follows you a little way, never out of th
   assert.match(shoalFollowLine("start", s.name), /fall in behind you/);
   for (const w of ["tired", "home", "lost", "shore"]) assert.match(shoalFollowLine(w, s.name), /little silver fish/);
 });
+
+test("cleaning stations: cleaner wrasse dance over a few big coral heads, and pick you over if you keep still beside one", async () => {
+  const { coralHomes, reefFishOf, cleanerOf, cleanerAt, cleanStep, cleanerLine, CLEANER } = await import("../web/js/fishlife.js");
+  const reef = coralHomes(-16.5, 146, sea(-16.5, 146, -10));
+  const stations = reef.map((c) => [c, cleanerOf(c)]).filter(([, cl]) => cl);
+  assert.ok(stations.length >= 2 && stations.length < reef.length * 0.2, `${stations.length} of ${reef.length}`);
+  assert.deepEqual(stations.map(([, cl]) => cl), reef.map(cleanerOf).filter(Boolean), "the same stations on every phone");
+  for (const [c, cl] of stations) {
+    assert.ok(c.form === "brain" || c.form === "table", "big heads only");
+    assert.equal(reefFishOf(c), null, "not a head with fish of its own");
+    assert.ok(cl.n >= CLEANER.n[0] && cl.n <= CLEANER.n[1]);
+    for (let t = 0; t < 20; t += 0.37) for (let i = 0; i < cl.n; i++) {
+      const f = cleanerAt(c, cl, i, t);
+      assert.ok(Math.hypot(f.x - c.x, f.z - c.z) < c.size + 1, "dances over its coral");
+      assert.ok(f.y > c.floor + c.size * 0.5 && f.y < 0, "over the coral, under the surface");
+    }
+  }
+  // The dance is a bob: up and down over the coral.
+  const [c, cl] = stations[0], ys = Array.from({ length: 40 }, (_, k) => cleanerAt(c, cl, 0, k * 0.1).y);
+  assert.ok(Math.max(...ys) - Math.min(...ys) > 0.3, "it bobs");
+  // Come out to you: at your skin, facing you, never inside you, and never far.
+  const me = { x: c.x + 3, y: c.floor + c.size + 1, z: c.z, r: 1.4 }, offs = [];
+  for (let t = 0; t < 15; t += 0.23) for (let i = 0; i < cl.n; i++) {
+    const f = cleanerAt(c, cl, i, t, 1, me), d = Math.hypot(f.x - me.x, f.z - me.z);
+    assert.ok(d > me.r * 0.85 && d < me.r * 1.1 + 0.31, `at your skin: ${d}`);
+    assert.ok(Math.abs(f.y - me.y) < me.r, "about your height");
+    const face = Math.atan2(-(me.x - f.x), -(me.z - f.z)), off = Math.abs(Math.atan2(Math.sin(f.yaw - face), Math.cos(f.yaw - face)));
+    offs.push(off);
+  }
+  assert.ok(Math.min(...offs) < 0.1, "turns in to face you to pick");
+  assert.ok(Math.max(...offs) > 1.2, "side-on as it circles you");
+  // Halfway out: between home and you, with no jumps along the way.
+  let prev = cleanerAt(c, cl, 1, 5, 0, me);
+  for (let k = 1; k <= 20; k++) { const f = cleanerAt(c, cl, 1, 5 + k * 0.05, k / 20, me); assert.ok(Math.hypot(f.x - prev.x, f.y - prev.y, f.z - prev.z) < 1.2, "smooth"); prev = f; }
+  // The cleaning, step by step. Moving: they stay home.
+  let s = null;
+  for (let k = 0; k < 50; k++) s = cleanStep(s, 0.1, 3, 2.5, 0, k * 0.1);
+  assert.equal(s.come, 0, "you're moving: they stay home");
+  // Still beside it: they come, say so once, pick you over, and say when they're done.
+  s = null; const said = [];
+  let t = 0;
+  for (; t < 30 && !said.includes("clean"); t += 0.1) { s = cleanStep(s, 0.1, 3, 2.5, 1.5 + t, t); if (s.what) said.push(s.what); }
+  assert.deepEqual(said, ["came", "clean"]);
+  assert.ok(t > CLEANER.come + CLEANER.cleanS - 0.2 && t < CLEANER.come + CLEANER.cleanS + 1, `${t}`);
+  // Then the station rests: keep still as long as you like, they don't come again for a while.
+  for (let k = 0; k < 50; k++) { s = cleanStep(s, 0.1, 3, 2.5, 99, t + k * 0.1); assert.ok(!s.what || s.what === null); }
+  assert.equal(s.come, 0, "resting");
+  let back = s, again = null;
+  for (let k = 0; k < 600 && !again; k++) { back = cleanStep(back, 0.1, 3, 2.5, 99, t + 5 + k * 0.1); if (back.what) again = back.what; }
+  assert.equal(again, "came", "after its rest, it cleans again");
+  // Moving off halfway: they leave, and the cleaning starts over.
+  s = null;
+  for (let k = 0; k < 40; k++) s = cleanStep(s, 0.1, 3, 2.5, 2 + k, k * 0.1);
+  assert.ok(s.picked > 0);
+  s = cleanStep(s, 0.1, 3, 2.5, 0, 4.1);
+  assert.equal(s.what, "left");
+  assert.equal(s.picked, 0);
+  // Too far: never.
+  s = null;
+  for (let k = 0; k < 50; k++) s = cleanStep(s, 0.1, CLEANER.reach + 2.5 + 1, 2.5, 99, k * 0.1);
+  assert.equal(s.come, 0);
+  assert.match(cleanerLine("seen", "Nyo", "brain coral", "two"), /^A cleaning station: two little cleaner wrasse dance over the brain coral\. Keep still/);
+  for (let k = 0; k < 4; k++) { assert.match(cleanerLine("came", "Nyo", "brain coral", "two", k), /Nyo/); assert.match(cleanerLine("clean", "Nyo", "table coral", "two", k), /table coral/); }
+  assert.match(cleanerLine("left", "Nyo", "brain coral"), /dart back to their brain coral/);
+});

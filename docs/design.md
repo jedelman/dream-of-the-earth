@@ -601,8 +601,29 @@ nothing under the surface but the seabed. (`fishlife.js`, pure and tested; `fish
   loop). Headless (desktop and Pixel 7) off Nice (43.66, 7.30; little silver fish, 7.4 m off after a 30 m swim, then left
   behind) and in Lake Geneva (46.43, 6.55; little perch), with no page errors. `__dream.shoalFollower()` gives it with
   its place on screen, for checks.
-- **Next, maybe:** a cleaner station (little fish that pick at a creature that waits by the coral); fish in the bigger
-  rivers; reef fish that follow you a few metres off their coral and dart back.
+- **A cleaner station (built 11-25, overnight; `cleanerOf`, `cleanerAt`, `cleanStep` in `fishlife.js`).** This section's
+  own "Next, maybe" ("a cleaner station (little fish that pick at a creature that waits by the coral)"). Where a reef has
+  big coral heads, about one in seven of the brain and table corals with no fish of their own is a cleaning station
+  (some 6 to 11 within 150 m on a good reef): two or three little cleaner wrasse (pale blue with a dark belly and fins,
+  near enough the bluestreak cleaner wrasse's look; 0.8 m, dream-sized like the other reef fish) circle over it, bobbing
+  up and down over and over, which is how real cleaners show they're open. That dance is on the shared clock, so everyone
+  sees the same station. Swim within 14 m and the log says once what it is ("A cleaning station: three little cleaner
+  wrasse dance over the table coral. Keep still beside it and they'll come to you."). **Keep still** within 5 m (plus
+  your own size) for a second and a half and they come out to you, over a second or so, and pick you over: they circle
+  you slowly at your skin, over your upper half where you can see them, side-on, turning in to face you as they dart in to pick and back out ("…come out and pick Nyo over, nose to tail. It
+  tickles. Keep still."). Hold still for 8 s and you're clean: a soft sparkle, a glow of sound, and they go back to
+  dancing ("…have picked Nyo clean, and go back to dancing over their table coral."); that station then rests 40 s.
+  Move off before they've done and they dart home, and the cleaning starts over the next time you keep still. The point
+  is that the sea rewards stillness, as the hiding reef fish do. "Your size" is your body's own radius (the body part's,
+  primitives being radius 1), so the cleaners pick at the skin of a big creature and a small one alike. Nothing is
+  given or kept: no item, no stat. The cleaning is this phone's alone; nothing stored or sent; no new data, records,
+  lexicons or scopes. Tests: 1 (big heads without fish of their own only, the same for everyone, the dance stays over
+  its coral and bobs, at your skin facing you, smooth on the way out, the whole cleaning step by step, the rest, moving
+  off, too far). Headless (desktop and Pixel 7) on the reef by Sharm el-Sheikh (27.912, 34.330, then 500 m out onto the
+  shelf): 6 stations among 133 corals, the station line, the cleaners coming out and picking, clean after 8 s, the rest;
+  no page errors. `__dream.cleaners()` gives the stations near you, with how the cleaning is going and where the
+  cleaners are on screen, for checks.
+- **Next, maybe:** fish in the bigger rivers; reef fish that follow you a few metres off their coral and dart back.
 
 ## Avatars (completely unhinged, 256 triangles)
 - **An avatar is a body graph:** a tree of low-poly primitives (icosphere, cone, box, prism) joined at sockets,

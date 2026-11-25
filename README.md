@@ -43,6 +43,8 @@ your way. Coral reefs grow on warm ones: brain coral, staghorn, table coral and 
 when you brush them. Rush through a shoal and it scatters; swim up gently and greet it, and it swirls round you, then follows you a little way.
 Little fish live on the coral heads and duck inside when you come close; keep still and they come out again.
 Anemones sway among the coral, each with two anemonefish that come out to look at you when you visit.
+Here and there a big coral head is a cleaning station, with little cleaner wrasse bobbing over it: keep still
+beside one and they come and pick you over, nose to tail.
 Lakes have fish too: dive into one to meet perch, roach and minnows, cichlids and tilapia in warm lakes, char and
 grayling in cold ones.
 
