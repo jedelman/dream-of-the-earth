@@ -2,12 +2,13 @@
 // mesh, swaying in the shader and leaning out of your way). Where they are comes from fishlife.js; what they do about
 // you is decided here, on this phone only: rush through a shoal and it scatters, touch it gently and it swirls round you.
 import * as THREE from "three";
-import { SHOAL, KELP, REEF, CORAL_FORMS, shoalHomes, kelpHomes, coralHomes, fishAt, shoalAt, burstAt, swirlAt, BURST_S, REEF_FISH, ANEMONE, reefFishOf, reefFishAt, hideStep, anemoneHomes, anemoneFishAt, visitAt, ANEMONEFISH, shoalFollowStart, shoalFollowStep, shoalHomeS, shoalHomeAt } from "./fishlife.js";
+import { SHOAL, KELP, REEF, CORAL_FORMS, shoalHomes, kelpHomes, coralHomes, fishAt, shoalAt, burstAt, swirlAt, BURST_S, REEF_FISH, ANEMONE, reefFishOf, reefFishAt, hideStep, anemoneHomes, anemoneFishAt, visitAt, ANEMONEFISH, shoalFollowStart, shoalFollowStep, shoalHomeS, shoalHomeAt, CLEANER, cleanerOf, cleanerAt, cleanStep } from "./fishlife.js";
 import { curved } from "./curvature.js";
 
 const REGROW_M = 100;
 const MAX_FISH = SHOAL.max * SHOAL.fish[1];
-const MAX_REEF_FISH = REEF_FISH.max + ANEMONE.max * ANEMONE.fish;
+const MAX_STATIONS = 40;
+const MAX_REEF_FISH = REEF_FISH.max + ANEMONE.max * ANEMONE.fish + MAX_STATIONS * CLEANER.n[1];
 const BODY = 0, ACCENT = 1, FIXED = 2;
 const DARK = [0.04, 0.04, 0.07];
 const RUSH = 7; // m/s: faster than this through a shoal and it bursts
@@ -244,7 +245,9 @@ export function buildFish(frame, terrain, warmth = () => null, lake = () => null
   const F = fishMesh(), K = kelpMesh(), C = Object.fromEntries(CORAL_FORMS.map((f) => [f, coralMesh(f)]));
   const R = fishMesh(MAX_REEF_FISH, "-reeffish"), A = anemoneMesh();
   group.add(F.m, K.m, R.m, A.m, ...Object.values(C).map((c) => c.m));
-  let corals = [], homes = [], anemones = []; // homes: coral heads with fish of their own
+  let corals = [], homes = [], anemones = [], stations = []; // homes: coral heads with fish of their own; stations: cleaning stations
+  const cleaning = new Map(); // station key -> { come, picked, rest }, this phone only
+  const stationSeen = new Set();
   const hidden = new Map(); // coral key -> how hidden its fish are (0..1), this phone only
   const visited = new Map(); // anemone key -> when it was visited (this phone's clock)
   let lastMe = null, still = 0, hidLogged = new Set();
@@ -306,6 +309,14 @@ export function buildFish(frame, terrain, warmth = () => null, lake = () => null
       if (!rf || r + rf.n > REEF_FISH.max) continue;
       homes.push({ c, rf, i0: r });
       for (let k = 0; k < rf.n; k++, r++) { R.colA.setXYZ(r, ...col.setHSL(...rf.body).toArray()); R.colB.setXYZ(r, ...col.setHSL(...rf.accent).toArray()); }
+    }
+    // Cleaning stations: their cleaners.
+    stations = [];
+    for (const c of corals) {
+      const cl = cleanerOf(c);
+      if (!cl || stations.length >= MAX_STATIONS) continue;
+      stations.push({ c, cl, i0: r });
+      for (let k = 0; k < cl.n; k++, r++) { R.colA.setXYZ(r, ...col.setHSL(...cl.body).toArray()); R.colB.setXYZ(r, ...col.setHSL(...cl.accent).toArray()); }
     }
     anemones = anemoneHomes(ll.lat, ll.lon, at, warmth);
     anemones.forEach((a, j) => {
@@ -392,6 +403,27 @@ export function buildFish(frame, terrain, warmth = () => null, lake = () => null
           q.setFromEuler(e);
           R.m.setMatrixAt(a.i0 + k, m4.compose(p3.set(f.x, f.y, f.z), q, sc.setScalar(ANEMONE.fishSize)));
           R.wag.setX(a.i0 + k, f.wag);
+        }
+      }
+      // Cleaning stations: their cleaners dance over the coral, and come out to pick you over if you keep still beside it.
+      const myR = me.r ?? 1.6;
+      for (const h of stations) {
+        const { c, cl, i0 } = h, d = Math.hypot(c.x - me.x, c.floor + c.size * 0.6 - me.y, c.z - me.z);
+        const was = cleaning.get(c.key);
+        if (me.swimming && d < CLEANER.seen + myR && !stationSeen.has(c.key)) { stationSeen.add(c.key); events.push({ coral: c, cl, what: "station" }); }
+        let come = 0;
+        if (was || (me.swimming && d < CLEANER.reach + myR)) {
+          const st = cleanStep(was, dt, me.swimming ? d : Infinity, myR, still, t);
+          if (st.what) events.push({ coral: c, cl, what: st.what });
+          if (st.come > 0 || st.picked > 0 || t < st.rest) cleaning.set(c.key, st); else cleaning.delete(c.key);
+          come = st.come;
+        }
+        for (let k = 0; k < cl.n; k++) {
+          const f = cleanerAt(c, cl, k, clock, come, { x: me.x, y: me.y, z: me.z, r: myR });
+          e.set(0, f.yaw, 0);
+          q.setFromEuler(e);
+          R.m.setMatrixAt(i0 + k, m4.compose(p3.set(f.x, f.y, f.z), q, sc.setScalar(cl.size)));
+          R.wag.setX(i0 + k, f.wag);
         }
       }
       R.m.instanceMatrix.needsUpdate = R.wag.needsUpdate = true;
@@ -496,8 +528,21 @@ export function buildFish(frame, terrain, warmth = () => null, lake = () => null
       visited.set(key, t);
       return { key, x: a.x, y: a.floor + a.size * 0.5, z: a.z, seed: a.seed };
     },
+    /** Cleaning stations within r of (x, y, z), with how they're getting on with you (t: this phone's clock), for checks:
+     * [{ key, name, x, y, z, n, come, picked, resting, fish: [{ x, y, z }] }]. */
+    stations(x, y, z, r, t = 0) {
+      const out = [];
+      for (const { c, cl, i0 } of stations) {
+        const cy = c.floor + c.size * 0.6;
+        if (Math.hypot(c.x - x, cy - y, c.z - z) >= r) continue;
+        const st = cleaning.get(c.key), fish = [];
+        for (let k = 0; k < cl.n; k++) { R.m.getMatrixAt(i0 + k, m4); p3.setFromMatrixPosition(m4); fish.push({ x: p3.x, y: p3.y, z: p3.z }); }
+        out.push({ key: c.key, name: c.name, x: c.x, y: cy, z: c.z, n: cl.n, come: st?.come ?? 0, picked: st?.picked ?? 0, resting: !!st && t < st.rest, fish });
+      }
+      return out;
+    },
     /** How hidden a coral head's fish are (0..1), for checks. */
     hiddenAt(key) { return hidden.get(key) ?? 0; },
-    get counts() { return { shoals: shoals.length, lakeShoals: shoals.filter((s) => s.lake).length, fish: F.m.count, kelp: kelp.length, coral: corals.length, reefFish: R.m.count - anemones.length * ANEMONE.fish, anemones: anemones.length, hiding: hidden.size, following: followKey }; },
+    get counts() { return { shoals: shoals.length, lakeShoals: shoals.filter((s) => s.lake).length, fish: F.m.count, kelp: kelp.length, coral: corals.length, reefFish: R.m.count - anemones.length * ANEMONE.fish - stations.reduce((n, h) => n + h.cl.n, 0), anemones: anemones.length, stations: stations.length, cleaning: [...cleaning.values()].filter((s) => s.come > 0).length, hiding: hidden.size, following: followKey }; },
   };
 }

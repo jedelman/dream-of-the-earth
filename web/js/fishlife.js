@@ -384,3 +384,84 @@ const SHOAL_FOLLOW_LINES = {
 };
 /** A following shoal's news: "start", or why it went home. */
 export const shoalFollowLine = (what, name) => SHOAL_FOLLOW_LINES[what](name);
+
+// ---- A cleaner station (11-25, overnight; the sea's "Next, maybe": "a cleaner station (little fish that pick at a
+// creature that waits by the coral)") ----
+// On a reef, a few big coral heads (brain and table coral, the ones without fish of their own) are cleaning stations:
+// two or three little cleaner wrasse dance over them, bobbing up and down. Keep still beside one and they come out to
+// you and pick you over, nose to tail; keep still until they've done and they go back to dancing, and that station rests
+// a while. Move off and they dart home. Where the stations are and the dance are shared (computed from the coral and the
+// clock); the cleaning is this phone's alone, like a hiding reef fish.
+
+/** share: of the eligible coral heads; reach: how near you must be (m, plus your own size); wait: how long you keep still
+ * before they come (s); come/go: how long they take to reach you and to go home (s); cleanS: how long they pick you
+ * over (s); rest: how long a station rests after cleaning you (s); seen: how near you notice the station (m). */
+export const CLEANER = { share: 0.15, n: [2, 3], size: 0.8, reach: 5, wait: 1.5, come: 1.2, go: 0.7, cleanS: 8, rest: 40, seen: 14 };
+// The bluestreak cleaner wrasse's look, near enough: a pale blue fish with a dark stripe (here, its belly and fins).
+export const CLEANER_LOOK = { name: "little cleaner wrasse", body: [0.55, 0.75, 0.78], accent: [0.62, 0.5, 0.12] };
+
+/** A coral head's cleaning station, or null: { n, size, name, body, accent, seed }. The same for everyone. */
+export function cleanerOf(c) {
+  if (c.form !== "brain" && c.form !== "table") return null;
+  if (reefFishOf(c)) return null; // a head with fish of its own isn't a station
+  const g = hash2(Math.floor(c.seed * 1e6), 61);
+  if (unit(g) >= CLEANER.share) return null;
+  const n = CLEANER.n[0] + Math.floor(unit(g, 3) * (CLEANER.n[1] - CLEANER.n[0] + 1));
+  return { n: Math.min(n, CLEANER.n[1]), size: CLEANER.size, name: CLEANER_LOOK.name, body: CLEANER_LOOK.body, accent: CLEANER_LOOK.accent, seed: unit(g, 5) };
+}
+
+/**
+ * One cleaner of station cl (on coral c) at time t: { x, y, z, yaw, wag }. At home it dances over its coral, bobbing up
+ * and down as it circles. come (0..1): how far it has come out to you; me: { x, y, z (your middle), r (your body's radius, m) }. With
+ * you, it circles you slowly at your skin, side-on, turning in to face you as it darts in to pick and back out.
+ */
+export function cleanerAt(c, cl, i, t, come = 0, me = null) {
+  const g = hash2(Math.floor(cl.seed * 1e6), i, 67), ph = unit(g) * Math.PI * 2 + (i * Math.PI * 2) / cl.n;
+  const top = c.floor + c.size * (c.form === "table" ? 0.5 : 0.65);
+  const a = 0.45 * t + ph, r0 = c.size * 0.35 + 0.3;
+  let x = c.x + Math.cos(a) * r0, z = c.z + Math.sin(a) * r0;
+  let y = top + 0.35 + 0.5 * Math.abs(Math.sin(1.7 * t + ph)); // the dance: a bob, over and over
+  let yaw = Math.atan2(Math.sin(a), -Math.cos(a)), rate = 9 + 3 * unit(g, 2);
+  const k = smooth(Math.max(0, Math.min(1, come)));
+  if (k > 0 && me) {
+    const r = Math.max(0.6, me.r ?? 1.4), spin = i % 2 ? 1 : -1;
+    const u = (t * 0.8 + unit(g, 4)) % 1, peck = u < 0.3 ? Math.sin((Math.PI * u) / 0.3) : 0; // dart in, pick, back out
+    const va = ph + 0.3 * spin * t, ring = r * (1.05 - 0.15 * peck) + 0.3;
+    const sx = me.x + Math.cos(va) * ring, sz = me.z + Math.sin(va) * ring, sy = me.y + r * (0.45 + 0.3 * Math.sin(0.6 * t + i * 2.1)); // the upper half, where you (and the camera) can see them
+    x += (sx - x) * k; y += (sy - y) * k; z += (sz - z) * k;
+    // Side-on as it circles you (which is how you see it), turning in to face you as it darts in to pick.
+    const face = Math.atan2(-(me.x - x), -(me.z - z) + 1e-9), round = Math.atan2(Math.sin(va) * spin, -Math.cos(va) * spin);
+    const want = round + wrapAngle(face - round) * smooth(Math.min(1, peck * 1.6));
+    yaw += wrapAngle(want - yaw) * k;
+    rate += 8 * k * (0.5 + peck);
+  }
+  return { x, y, z, yaw, wag: t * rate + i };
+}
+
+/**
+ * A station's cleaning after dt more seconds. s: { come (0..1), picked (s), rest (the clock until which it rests) };
+ * d: how far you are from it (m); r: your size (m); still: how long you've kept still (s); t: this phone's clock (s).
+ * Returns { come, picked, rest, what: "came" | "left" | "clean" | null }.
+ */
+export function cleanStep(s, dt, d, r, still, t) {
+  let { come = 0, picked = 0, rest = -Infinity } = s ?? {};
+  const resting = t < rest, near = d < CLEANER.reach + r, want = near && still >= CLEANER.wait && !resting;
+  let what = null;
+  const was = come;
+  come = want ? Math.min(1, come + dt / CLEANER.come) : Math.max(0, come - dt / CLEANER.go);
+  if (want && come >= 1) {
+    if (was < 1 && picked === 0) what = "came";
+    picked += dt;
+    if (picked >= CLEANER.cleanS) { what = "clean"; picked = 0; rest = t + CLEANER.rest; }
+  } else if (!want && picked > 0) { what = "left"; picked = 0; }
+  return { come, picked, rest, what };
+}
+
+const CLEANER_LINES = {
+  seen: (me, coral, n) => [`A cleaning station: ${n} little cleaner wrasse dance over the ${coral}. Keep still beside it and they'll come to you.`],
+  came: (me) => [`The little cleaner wrasse come out and pick ${me} over, nose to tail. It tickles. Keep still.`, `The little cleaner wrasse are all over ${me}, nibbling at every nook. Keep still a little longer.`, `Little cleaner wrasse dart in and out round ${me}, picking. Keep very still.`],
+  left: (me, coral) => [`The little cleaner wrasse dart back to their ${coral}. They'll come again if you keep still.`],
+  clean: (me, coral) => [`The little cleaner wrasse have picked ${me} clean, and go back to dancing over their ${coral}.`, `Done: ${me} has never been so clean. The little cleaner wrasse go back to their ${coral}.`, `The little cleaner wrasse finish with ${me}, and bob away home to their ${coral}.`],
+};
+/** A cleaning station's news: "seen", "came", "left" or "clean". me: your creature's name; n: how many cleaners, in words. */
+export const cleanerLine = (what, me, coral, n = "two", k = 0) => pickOf(CLEANER_LINES[what](me, coral, n), hash2(k | 0, 7, 109));
