@@ -524,8 +524,24 @@ Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
   no jumps, sings, hovers over water, flies with you, and each of the three ways home). Headless (desktop and Pixel 7) in
   Oxfordshire fields (51.75, -1.6): 49 birds, a whistle, a 60 m walk with it landing 4 to 11 m off, then a run it
   couldn't follow; no page errors.
-- **Next, maybe:** a bunny that follows too, or a frog that hops along by the water. (Frogs by the water and ducks came
-  11-19, under "Rivers and lakes".)
+- **A bunny that follows you a little way (built 11-27, overnight; `hopAlongStart`, `hopAlongStep` in
+  `critterlife.js`).** The bunny half of this section's "Next, maybe" ("a bunny that follows too"), the land twin of the
+  bird. Pet a bunny and it comes along ("Then it lollops after you: it'll come along a little way."): it bounds after
+  you (8 m/s on top of keeping up with you, up to 22 m/s, 3.4 m a bound, so a fast bunny takes long bounds, and one that
+  stops mid-bound comes down first) and sits 3 to 6 m off on its own side, nibbling, facing you. Every 5 to 10 s it
+  sniffs (you hear it), and about a third of those are a binky, the twisting jump of a happy rabbit ("The bunny does a
+  binky beside you.", at most every 25 s in the log). It can't swim or fly: it never hops onto water, and when you go
+  into a lake or the sea, or up into the air, it waits at the edge; leave it 45 m behind there and it hops home ("The
+  bunny can't follow you there. It waits a moment, then hops home."). It also turns for home after 60 s, 160 m from
+  its home, or when you outrun it, and it bounds home rather than flying the bird's arc. One follower at a time, bird
+  or bunny: the new one sends the old one home. While it follows it can't be startled and isn't offered as something to
+  touch. All of it is this phone's alone, like a startle: nothing stored or sent; no new data, records, lexicons or
+  scopes. Tests: 1 (sits beside you, sniffs and sometimes binkies, keeps up in real bounds with no jumps, never onto
+  water, waits and gives up at the shore, can't follow you into the air, and the three other ways home). Headless
+  (desktop and Pixel 7) in Oxfordshire fields (51.75, -1.6): 36 bunnies, a pet, an 8 s walk with it 4.4 to 6.3 m off,
+  a binky, then a dash it couldn't follow; no page errors. `__dream.critterFollower()` says where it is on screen.
+- **Next, maybe:** a frog that hops along by the water. (Frogs by the water and ducks came 11-19, under "Rivers and
+  lakes".)
 
 ### Under the sea: shoals and kelp (built 11-19, overnight)
 On the list since the first nights ("maybe kelp and fish underwater"): a sea-born creature dives into an empty sea, with

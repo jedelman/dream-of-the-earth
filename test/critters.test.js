@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { critterHomes, idleAt, startledAt, KINDS, CHANCE, STARTLE_S, FOLLOW, followStart, followStep } from "../web/js/critterlife.js";
+import { critterHomes, idleAt, startledAt, KINDS, CHANCE, STARTLE_S, FOLLOW, followStart, followStep, HOP_ALONG, hopAlongStart, hopAlongStep } from "../web/js/critterlife.js";
 
 // A flat world of one biome around (lat, lon), 1 m per metre east/north.
 const flat = (biomeId, h = 50, wet = false) => (c) => ({ p: { x: (c.lon - 10) * 111320 * Math.cos((45 * Math.PI) / 180), z: -(c.lat - 45) * 111320 }, h, biomeId, wet, byWater: false, waterY: wet ? h + 1.2 : null });
@@ -126,4 +126,58 @@ test("a little bird you whistle to follows you a little way, then flies home", (
   const h = followStart(c, { x: c.x, z: c.z, lift: 0 }, 0);
   r = followStep(c, h, { x: c.x + FOLLOW.lag + 30, z: c.z, air: 0, speed: 60 }, ground, dt, 1);
   assert.equal(r.done, "lost");
+});
+
+test("a bunny you pet follows you a little way, bounding, but not into the water or the air", () => {
+  const [c] = critterHomes("bunny", 45, 10, homeOf("bunny"));
+  const ground = () => true, dt = 1 / 30;
+  // You stand still: it bounds over and sits beside you, sniffing now and then, sometimes with a binky.
+  let me = { x: c.x + 12, z: c.z, air: 0, speed: 0 }, f = hopAlongStart(c, { x: c.x, z: c.z }, 0), t = 0, r, sniffs = 0, binkies = 0;
+  for (; t < 50; t += dt) { r = hopAlongStep(c, f, me, ground, dt, t); sniffs += r.song; binkies += r.binky; }
+  let d = Math.hypot(r.pose.x - me.x, r.pose.z - me.z);
+  assert.ok(d >= HOP_ALONG.near[0] - 0.7 && d <= HOP_ALONG.near[1] + 1.5, `sits beside you (${d.toFixed(1)} m)`);
+  assert.equal(r.done, null);
+  assert.ok(sniffs >= 4, `sniffs now and then (${sniffs})`);
+  assert.ok(binkies >= 1 && binkies < sniffs, `a binky sometimes (${binkies} of ${sniffs})`);
+  // You walk off at 5 m/s: it bounds after you, never jumping, never under the ground, its bounds coming down.
+  f = hopAlongStart(c, { x: c.x, z: c.z }, 0);
+  me = { x: c.x + 5, z: c.z, air: 0, speed: 5 };
+  let prev = null, far = 0, up = 0;
+  for (t = 0; t < 25; t += dt) {
+    me = { ...me, x: me.x + 5 * dt };
+    r = hopAlongStep(c, f, me, ground, dt, t);
+    assert.ok(r.pose.lift >= 0 && r.pose.lift <= 1.0 * c.size, "bounds, on the ground");
+    if (prev) assert.ok(Math.hypot(r.pose.x - prev.x, r.pose.z - prev.z) < 1.5, "no jumps");
+    if (t > 8) far = Math.max(far, Math.hypot(r.pose.x - me.x, r.pose.z - me.z));
+    up = Math.max(up, r.pose.lift);
+    prev = r.pose;
+    assert.equal(r.done, null, `still with you at ${t.toFixed(1)} s`);
+    assert.equal(r.pose.flying, false);
+  }
+  assert.ok(far < 15, `keeps up (${far.toFixed(1)} m off at most)`);
+  assert.ok(up > 0.4 * c.size, "it really bounds");
+  // Into the water: it stops at the edge (never on the water), waits, then gives up when you swim on.
+  const shore = me.x + 3, dry = (x) => x < shore;
+  let wet = false;
+  for (let k = 0; k < 600 && !r.done; k++, t += dt) {
+    me = { ...me, x: me.x + 3 * dt, speed: 3 };
+    r = hopAlongStep(c, f, me, dry, dt, t);
+    if (!dry(r.pose.x)) wet = true;
+  }
+  assert.equal(wet, false, "never hops onto the water");
+  assert.equal(r.done, "shore");
+  // Flying off: it can't come either.
+  const a = hopAlongStart(c, { x: c.x, z: c.z }, 0);
+  r = hopAlongStep(c, a, { x: c.x + 3, z: c.z, air: HOP_ALONG.lag + 5, speed: 10 }, ground, dt, 1);
+  assert.equal(r.done, "shore");
+  // Past its leash it turns back; it tires after a while; a fast creature leaves it behind.
+  const w = hopAlongStart(c, { x: c.x, z: c.z }, 0);
+  me = { x: c.x + 5, z: c.z, air: 0, speed: 6 };
+  for (t = 0, r = { done: null }; t < HOP_ALONG.s && !r.done; t += dt) { me = { ...me, x: me.x + 6 * dt }; r = hopAlongStep(c, w, me, ground, dt, t); }
+  assert.equal(r.done, "home");
+  assert.ok(Math.hypot(w.x - c.x, w.z - c.z) < HOP_ALONG.leash + 5);
+  const g = hopAlongStart(c, { x: c.x, z: c.z }, 0);
+  assert.equal(hopAlongStep(c, g, { x: c.x + 5, z: c.z, air: 0, speed: 0 }, ground, dt, HOP_ALONG.s + 1).done, "tired");
+  const h = hopAlongStart(c, { x: c.x, z: c.z }, 0);
+  assert.equal(hopAlongStep(c, h, { x: c.x + HOP_ALONG.lag + 30, z: c.z, air: 0, speed: 60 }, ground, dt, 1).done, "lost");
 });
