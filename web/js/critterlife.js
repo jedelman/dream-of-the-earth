@@ -236,3 +236,68 @@ export function followStep(c, f, me, canSit, dt, t) {
   if (t >= f.songAt) { song = true; f.songAt = t + FOLLOW.song[0] + (FOLLOW.song[1] - FOLLOW.song[0]) * unit(hash2(seed, ++f.leg, 137)); }
   return { pose, done, song };
 }
+
+// ---- A bunny that follows you a little way (11-27, overnight) ----
+// The small creatures' "Next, maybe": "a bunny that follows too". Pet a bunny and it comes along: it bounds after you
+// and sits a few metres off, nibbling, sniffing the air, now and then a binky. It can't fly or swim: when you go into
+// the water or up into the air, it waits at the edge, and if you don't come back it hops home. Like the bird, this
+// phone's alone: nothing stored or sent.
+
+/** s, leash, lag, near: as FOLLOW; run: its bounding speed (m/s), on top of keeping up with you, up to top; bound:
+ * metres per bound; sniff: seconds between sniffs; binky: the chance a sniff is a binky instead. */
+export const HOP_ALONG = { s: 60, leash: 160, lag: 45, near: [3, 6], run: 8, top: 22, bound: 3.4, sniff: [5, 10], binky: 0.35 };
+
+/** It starts following from where it is (from: { x, z }), t on this phone's clock. */
+export function hopAlongStart(c, from, t) {
+  return { t0: t, x: from.x, z: from.z, run: 0, songAt: t + HOP_ALONG.sniff[0], leg: 0, legAt: null, bearing: 0, binkyAt: -10, waiting: false };
+}
+
+/**
+ * One step of a bunny following. f: from hopAlongStart (changed in place); me: { x, z, air, speed }; canSit(x, z): dry
+ * ground it may hop on; dt, t: seconds, this phone's clock. Returns { pose, done: null | "tired" | "home" | "lost" |
+ * "shore", song (a sniff, now and then; with binky true when it's a happy jump) }. "shore": you went where it can't
+ * (the water, the air) and stayed there.
+ */
+export function hopAlongStep(c, f, me, canSit, dt, t) {
+  const H = HOP_ALONG, seed = Math.floor(c.seed * 1e6);
+  const leg = Math.floor((t - f.t0) / 8);
+  const g = hash2(seed, leg, 151);
+  const toMe = { x: f.x - me.x, z: f.z - me.z };
+  if (f.legAt !== leg) { f.legAt = leg; f.bearing = Math.atan2(toMe.z, toMe.x) + (unit(g) - 0.5) * 1.4; }
+  const r = H.near[0] + (H.near[1] - H.near[0]) * unit(g, 9);
+  const goal = { x: me.x + Math.cos(f.bearing) * r, z: me.z + Math.sin(f.bearing) * r };
+  const youGone = me.air > 4 || !canSit(me.x, me.z); // up in the air, or in the water: it can't come
+  const d = Math.hypot(goal.x - f.x, goal.z - f.z);
+
+  let moved = 0;
+  const going = d > (f.run > 0 ? 0.6 : 1.5); // once it's bounding it comes all the way in
+  if (going) {
+    const v = Math.min(H.top, H.run + 1.1 * me.speed) * Math.min(1, 0.4 + d / 6);
+    const step = Math.min(d, v * dt), nx = f.x + ((goal.x - f.x) / d) * step, nz = f.z + ((goal.z - f.z) / d) * step;
+    if (canSit(nx, nz)) { f.x = nx; f.z = nz; moved = step; f.waiting = false; } else f.waiting = true; // at the water's edge, it stops
+  } else f.waiting = false;
+  // Its bounds go by distance, so a fast bunny takes long bounds; one stopping mid-bound comes down first.
+  if (moved > 0) f.run += moved / H.bound;
+  else if (f.run % 1 > 0) f.run = Math.min(Math.floor(f.run) + 1, f.run + dt * 4);
+  const hp = f.run % 1, bounding = hp > 0;
+
+  // Sitting by you: a sniff now and then, and sometimes a binky (a twisting jump; 0.7 s).
+  let song = false, binky = false;
+  if (t >= f.songAt) {
+    const u = hash2(seed, ++f.leg, 157);
+    f.songAt = t + H.sniff[0] + (H.sniff[1] - H.sniff[0]) * unit(u);
+    if (!bounding && !youGone) { song = true; if (unit(u, 5) < H.binky) { binky = true; f.binkyAt = t; } }
+  }
+  const bk = (t - f.binkyAt) / 0.7, inBinky = bk >= 0 && bk < 1 && !bounding;
+  const face = Math.atan2(toMe.x, toMe.z);
+  const yaw = moved > 0 ? Math.atan2(-(goal.x - f.x + 1e-9), -(goal.z - f.z)) : face + (inBinky ? Math.sin(Math.PI * bk) * 1.3 : 0);
+  const pose = bounding
+    ? { x: f.x, z: f.z, lift: Math.sin(Math.PI * hp) * 0.7 * c.size, yaw, squash: 1 + 0.25 * Math.sin(Math.PI * hp) - (hp > 0.85 ? 0.2 : 0), flap: 0, pitch: -0.25 * Math.sin(Math.PI * hp), moving: true, flying: false }
+    : inBinky
+      ? { x: f.x, z: f.z, lift: Math.sin(Math.PI * bk) * 0.9 * c.size, yaw, squash: 1.2, flap: 0, pitch: -0.4 * Math.sin(2 * Math.PI * bk), moving: true, flying: false }
+      : { x: f.x, z: f.z, lift: 0, yaw, squash: 1 + 0.03 * Math.sin(t * 9 + c.seed * 97), flap: 0, pitch: 0.18 * Math.max(0, Math.sin(t * 2.2 + c.seed * 97)), moving: false, flying: false };
+
+  const behind = Math.hypot(f.x - me.x, f.z - me.z, Math.max(0, me.air));
+  const done = behind > H.lag ? (youGone ? "shore" : "lost") : Math.hypot(f.x - c.x, f.z - c.z) > H.leash ? "home" : t - f.t0 > H.s ? "tired" : null;
+  return { pose, done, song, binky };
+}
