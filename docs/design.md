@@ -540,8 +540,26 @@ Jason: "Maybe we could add small creatures? Bunnies and frogs and little birds".
   water, waits and gives up at the shore, can't follow you into the air, and the three other ways home). Headless
   (desktop and Pixel 7) in Oxfordshire fields (51.75, -1.6): 36 bunnies, a pet, an 8 s walk with it 4.4 to 6.3 m off,
   a binky, then a dash it couldn't follow; no page errors. `__dream.critterFollower()` says where it is on screen.
-- **Next, maybe:** a frog that hops along by the water. (Frogs by the water and ducks came 11-19, under "Rivers and
-  lakes".)
+- **A frog that hops along by the water (built 11-28, overnight; `leapAlongStart`, `leapAlongStep`, `frogMayGo` in
+  `critterlife.js`; `nearWet` in `inlandwater.js`).** The last of this section's "Next, maybe" ("a frog that hops along
+  by the water"). Boop a frog on a river bank or a lake shore (dry ground within 36 m of a river or a lake) and it comes
+  along ("Then it leaps after you: it'll keep you company along the water a little way."). A frog away from the water
+  only croaks, as before. It moves a frog's way, one leap at a time: a crouch, a jump of 2.5 m (up to 9 m the faster you
+  go), and a sit between leaps, then settles 2.5 to 5 m off on its own side, facing you, croaking every 7 to 14 s.
+  **Unlike the bunny it swims:** wade or swim into the river or the lake and it plops in after you ("Plop: the frog leaps
+  into the water after you.", at most every 30 s in the log, with a bubble) and kicks along beside you, low in the water
+  with its eyes and back above the surface, a stroke at a time. **It keeps to fresh water and its banks:** it never leaps
+  into the sea, onto dry ground away from the water, or up after you into the air; it waits at the edge, and left 40 m
+  behind there it goes home ("The frog keeps to the water and its banks. It watches you go, then leaps home."). It also
+  turns back after 70 s, 140 m from home, or when you outrun it, and leaps home (7 m/s). One follower at a time, bird,
+  bunny or frog. While it follows it can't be startled and isn't offered as something to touch. All of it is this
+  phone's alone, like a startle: nothing stored or sent; no new data, records, lexicons or scopes. Tests: 1 (sits beside
+  you and croaks, leaps one leap at a time with sits between, keeps up with no jumps, one plop into the river, swims
+  low in it, never leaves the banks and gives up when you go inland, won't follow into the air or the sea, and the three
+  other ways home). Headless (desktop and Pixel 7) on the Rhine at Cologne (50.94, 6.97, then 320 m to the bank): 12
+  frogs, 5 or 6 on the bank; a boop, the frog 4.2 m off, a wade in with it swimming 2 to 4 m off at the river's surface
+  (less 0.22 of its size), then a walk inland with it waiting at the bank's edge and going home; no page errors.
+- **Next, maybe:** frog spawn and tadpoles in the shallows in spring; a duck that paddles after you when you swim.
 
 ### Under the sea: shoals and kelp (built 11-19, overnight)
 On the list since the first nights ("maybe kelp and fish underwater"): a sea-born creature dives into an empty sea, with

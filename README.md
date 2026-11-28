@@ -36,7 +36,8 @@ surroundings turns colder, one step per 900 m. Ten charismatic trees, each its o
 where they belong, the same on every phone: kapok and banyan over the rainforest, baobab and umbrella thorn on
 the savanna, saguaro in the desert, spreading oaks, cypress flames, giant sequoias and spruce spires. Butterflies of four triangles fly by day, and
 fireflies blink at night. Bunnies, frogs and little birds go about their day; whistle to a little bird, or pet a
-bunny, and it comes along a little way (a bunny waits at the water's edge: it can't swim).
+bunny, and it comes along a little way (a bunny waits at the water's edge: it can't swim). Boop a frog on a river
+bank or a lake shore and it leaps along with you, and swims after you, but it won't leave the water and its banks.
 
 **Under the sea:** shoals of little fish swim slow loops at their own depths (reef fish in the tropics, silver and
 bronze ones in cooler water, ice fish near the poles), and kelp forests sway on cool, shallow seabeds, leaning out of
