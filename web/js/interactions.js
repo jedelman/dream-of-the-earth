@@ -66,8 +66,16 @@ const HOP_LINES = {
   lost: (n) => `You've left the ${n} behind. It hops home.`,
   shore: (n) => `The ${n} can't follow you there. It waits a moment, then hops home.`,
 };
-/** A follower's news: "start", or why it went home ("tired", "home", "lost", and for a bunny "shore"). */
-export const followLine = (what, name, kind = "bird") => (kind === "bunny" ? HOP_LINES : FOLLOW_LINES)[what](name);
+// A frog you boop on a bank (11-28) leaps along by the water, and swims after you, but keeps to fresh water and its banks.
+const LEAP_LINES = {
+  start: () => "Then it leaps after you: it'll keep you company along the water a little way.",
+  tired: (n) => `The ${n} has come far enough. It croaks once and leaps back home.`,
+  home: (n) => `The ${n} won't go any further from home. It leaps back.`,
+  lost: (n) => `You've left the ${n} behind. It leaps home.`,
+  stay: (n) => `The ${n} keeps to the water and its banks. It watches you go, then leaps home.`,
+};
+/** A follower's news: "start", or why it went home ("tired", "home", "lost"; for a bunny "shore"; for a frog "stay"). */
+export const followLine = (what, name, kind = "bird") => (kind === "bunny" ? HOP_LINES : kind === "frog" ? LEAP_LINES : FOLLOW_LINES)[what](name);
 /** Running from you. The first time, a hint: tap one, and you'll walk up gently. */
 export const fledLine = (kind, name, first) => FLED[kind](name) + (first ? " Tap one to walk up gently." : "");
 export function butterflyLine(hue, seed, n = 0) {

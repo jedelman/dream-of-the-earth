@@ -240,6 +240,17 @@ export function buildInland(frame, terrain) {
     if (l && terrain.heightAt(x, z) < l.level + 2) return true;
     return !!riverAt(x, z, 2);
   }
+  /** Whether a river or a lake is within r metres of (x, z): the bank a frog keeps to (11-28). */
+  function nearWet(x, z, r = 36) {
+    if (wet(x, z)) return true;
+    const keys = new Set([[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].map(([dx, dz]) => Math.floor((x + dx) / B) * 100000 + Math.floor((z + dz) / B)));
+    for (const k of keys) if ((buckets.get(k) ?? []).some((s) => distToLine(x, z, s.pts) < s.r.width / 2 + r)) return true;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      for (const d of [r / 2, r]) if (wet(x + Math.cos(a) * d, z + Math.sin(a) * d)) return true;
+    }
+    return false;
+  }
   /** The river you're in, to ride: { r (its name, rank, width, line downstream), k, t (segment k, t metres in) } or null. */
   function rideFrom(x, z, margin = 3) {
     const s = segAt(x, z, margin);
@@ -258,5 +269,5 @@ export function buildInland(frame, terrain) {
     }
     return best;
   }
-  return { group, wadingAt, wet, lakeAt, rideFrom, riverOnFrom, stats: { rivers: riverCount, flowing, still, lakes: lakes.length, triangles: idx.length / 3 } };
+  return { group, wadingAt, wet, nearWet, lakeAt, rideFrom, riverOnFrom, stats: { rivers: riverCount, flowing, still, lakes: lakes.length, triangles: idx.length / 3 } };
 }

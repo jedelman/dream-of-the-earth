@@ -301,3 +301,88 @@ export function hopAlongStep(c, f, me, canSit, dt, t) {
   const done = behind > H.lag ? (youGone ? "shore" : "lost") : Math.hypot(f.x - c.x, f.z - c.z) > H.leash ? "home" : t - f.t0 > H.s ? "tired" : null;
   return { pose, done, song, binky };
 }
+
+// ---- A frog that hops along by the water (11-28, overnight) ----
+// The small creatures' "Next, maybe": "a frog that hops along by the water". Boop a frog on a river bank or a lake
+// shore and it comes along: it leaps after you in a frog's way, a crouch and a long jump and a sit, and croaks now and
+// then. Unlike the bunny it swims: go into the river or the lake and it plops in after you and kicks along beside you.
+// But it keeps to fresh water and its banks: it won't go into the sea, far inland or up into the air, and if you go
+// there it waits at the edge and then hops home. Like the bird and the bunny, this phone's alone: nothing stored or sent.
+
+/** s, leash, lag, near: as FOLLOW; leap: how far one leap goes (m), longer the faster you go; croak: seconds between
+ * croaks; bank: how near a river or lake the ground must be for it to go there (m). */
+export const LEAP_ALONG = { s: 70, leash: 140, lag: 40, near: [2.5, 5], leap: [2.5, 9], croak: [7, 14], bank: 36 };
+/** Where a frog may go: where(x, z) gives "bank" (dry ground by fresh water), "water" (a river or a lake), "dry" (dry
+ * ground away from the water) or "no" (the sea). */
+export const frogMayGo = (w) => w === "bank" || w === "water";
+
+/** It starts following from where it is (from: { x, z }), in the water or not, t on this phone's clock. */
+export function leapAlongStart(c, from, t, inWater = false) {
+  return { t0: t, x: from.x, z: from.z, swim: inWater ? 1 : 0, leap: null, restUntil: t + 0.3, songAt: t + 3, leg: 0, legAt: null, bearing: 0, waiting: false, youAt: -1, youOk: true };
+}
+
+/**
+ * One step of a frog following. f: from leapAlongStart (changed in place); me: { x, z, air, speed }; where(x, z): as
+ * frogMayGo's; dt, t: seconds, this phone's clock. Returns { pose (idleAt's shape, plus swim: 0 on the ground to 1
+ * floating in the water, for its height), done: null | "tired" | "home" | "lost" | "stay", song (a croak, now and
+ * then), plop (it has just leapt into the water) }. "stay": you went where it won't (the sea, away from the water, up
+ * into the air) and stayed there.
+ */
+export function leapAlongStep(c, f, me, where, dt, t) {
+  const L = LEAP_ALONG, seed = Math.floor(c.seed * 1e6);
+  const leg = Math.floor((t - f.t0) / 8);
+  const g = hash2(seed, leg, 171);
+  const toMe = { x: f.x - me.x, z: f.z - me.z };
+  if (f.legAt !== leg) { f.legAt = leg; f.bearing = Math.atan2(toMe.z, toMe.x) + (unit(g) - 0.5) * 1.4; }
+  const r = L.near[0] + (L.near[1] - L.near[0]) * unit(g, 9);
+  const goal = { x: me.x + Math.cos(f.bearing) * r, z: me.z + Math.sin(f.bearing) * r };
+  if (t - f.youAt > 0.3) { f.youAt = t; f.youOk = me.air <= 4 && frogMayGo(where(me.x, me.z)); } // looked at a few times a second
+  const d = Math.hypot(goal.x - f.x, goal.z - f.z);
+
+  // A leap begins: toward its spot, as far as it'll go in one, onto ground (or water) it may go to; if it can't, a
+  // shorter one; if not even that, it waits at the edge.
+  if (!f.leap && t >= f.restUntil && d > 1.2) {
+    const len = Math.min(d, Math.max(L.leap[0], Math.min(L.leap[1], L.leap[0] + 0.35 * me.speed)));
+    let to = null, w = null;
+    for (const k of [1, 0.5]) {
+      const x = f.x + ((goal.x - f.x) / d) * len * k, z = f.z + ((goal.z - f.z) / d) * len * k, ww = where(x, z);
+      if (frogMayGo(ww)) { to = { x, z, len: len * k }; w = ww; break; }
+    }
+    if (to) { f.leap = { t0: t, fx: f.x, fz: f.z, tx: to.x, tz: to.z, len: to.len, dur: 0.2 + to.len * 0.03, fromSwim: f.swim, toSwim: w === "water" ? 1 : 0 }; f.waiting = false; }
+    else { f.waiting = true; f.restUntil = t + 0.4; }
+  } else if (!f.leap && d <= 1.2) f.waiting = false;
+
+  const CROUCH = 0.12;
+  let x = f.x, z = f.z, lift = 0, squash = 1, pitch = 0, swim = f.swim, moving = false, plop = false, yaw = Math.atan2(toMe.x, toMe.z);
+  if (f.leap) {
+    const P = f.leap, u = t - P.t0, both = Math.min(P.fromSwim, P.toSwim);
+    yaw = Math.atan2(-(P.tx - P.fx + 1e-9), -(P.tz - P.fz));
+    moving = true;
+    if (u < CROUCH * (1 - both)) { const k = u / CROUCH; squash = 1 - 0.3 * k; pitch = 0.2 * k; } // gathers itself (a swimmer just kicks)
+    else {
+      const m = Math.min(1, (u - CROUCH * (1 - both)) / P.dur);
+      x = P.fx + (P.tx - P.fx) * m; z = P.fz + (P.tz - P.fz) * m;
+      swim = P.fromSwim + (P.toSwim - P.fromSwim) * m;
+      lift = Math.sin(Math.PI * m) * (0.5 + 0.12 * P.len) * c.size * (1 - both); // a swimmer's stroke stays in the water
+      squash = both ? 0.9 + 0.1 * Math.cos(Math.PI * 2 * m) : 1.15 - 0.15 * m;
+      pitch = both ? 0 : -0.35 * Math.cos(Math.PI * m);
+      if (m >= 1) {
+        f.x = P.tx; f.z = P.tz; f.swim = P.toSwim; f.leap = null;
+        f.restUntil = t + (d > 10 ? 0.05 : 0.3 + 0.4 * unit(hash2(seed, Math.floor(t * 10), 173))); // a frog sits between leaps
+        if (P.toSwim && !P.fromSwim) plop = true;
+      }
+    }
+  } else if (f.swim) { squash = 1 + 0.04 * Math.sin(t * 3 + c.seed * 97); }
+  else squash = 1 + 0.06 * Math.sin(t * 3 + c.seed * 97);
+  // In the water it floats low, eyes and back above the surface.
+  const pose = { x, z, lift: lift - 0.22 * c.size * swim, yaw, squash, flap: 0, pitch, moving, flying: false, swim };
+
+  let song = false;
+  if (t >= f.songAt) {
+    f.songAt = t + L.croak[0] + (L.croak[1] - L.croak[0]) * unit(hash2(seed, ++f.leg, 177));
+    song = !f.leap && f.youOk;
+  }
+  const behind = Math.hypot(f.x - me.x, f.z - me.z, Math.max(0, me.air));
+  const done = behind > L.lag ? (f.youOk ? "lost" : "stay") : Math.hypot(f.x - c.x, f.z - c.z) > L.leash ? "home" : t - f.t0 > L.s ? "tired" : null;
+  return { pose, done, song, plop };
+}

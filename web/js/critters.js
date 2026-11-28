@@ -2,7 +2,7 @@
 // kind. Where they are comes from critterlife.js (homes by biome, a day on the shared clock); what they do about you
 // is decided here, on this phone only: rush at one and it runs, touch one gently and it answers.
 import * as THREE from "three";
-import { KINDS, critterHomes, idleAt, startledAt, RETURN_S, followStart, followStep, hopAlongStart, hopAlongStep, HOP_ALONG } from "./critterlife.js";
+import { KINDS, critterHomes, idleAt, startledAt, RETURN_S, followStart, followStep, hopAlongStart, hopAlongStep, HOP_ALONG, leapAlongStart, leapAlongStep, frogMayGo, LEAP_ALONG } from "./critterlife.js";
 import { biomeFor } from "./biome.js";
 import { koppenAt } from "./koppen.js";
 import { curved } from "./curvature.js";
@@ -104,13 +104,18 @@ function mesh(kind) {
   return { m, colA, colB, flap };
 }
 
+/** How fast each goes home when it stops following you (m/s): a bird flies, a bunny bounds, a frog leaps. */
+const homeSpeed = (kind) => (kind === "bunny" ? 10 : kind === "frog" ? 7 : 14);
+
 /** plants: for perches (a bird may fly up into a tree); terrain: heights and relief. */
 export function buildCritters(frame, terrain, plants, waterAt = () => null) {
   const group = new THREE.Group();
   const meshes = Object.fromEntries(Object.keys(KINDS).map((k) => [k, mesh(k)]));
   for (const k of Object.keys(meshes)) group.add(meshes[k].m);
   const local = new Map(); // key -> { startle: { t0, from, away } | null, back: { t0, from } | null, calmUntil, touchAt }
-  let centre = null, all = [], frameT = 0, lastT = null, followKey = null; // followKey: the little bird or bunny following you, if any
+  let centre = null, all = [], frameT = 0, lastT = null, followKey = null; // followKey: the little bird, bunny or frog following you, if any
+  // Where a frog may go (11-28): "water" (a river or a lake), "bank" (dry ground by one), "dry" or "no" (the sea).
+  const frogWhere = (x, z) => terrain.heightAt(x, z) <= 0.5 && !terrain.wet?.(x, z) ? "no" : terrain.wet?.(x, z) ? "water" : terrain.nearWet?.(x, z, LEAP_ALONG.bank) ? "bank" : "dry";
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, "YXZ"), sc = new THREE.Vector3(), p3 = new THREE.Vector3(), col = new THREE.Color();
 
   // waterAt(x, z): a river's or lake's surface there, or null. Near water: any of four points 30 m round is wet.
@@ -165,6 +170,10 @@ export function buildCritters(frame, terrain, plants, waterAt = () => null) {
       if (u >= 1) s.back = null;
       else {
         const k = u * u * (3 - 2 * u), f = s.back.from, home = s.back.d ? 1 : 0; // home: a long way back, flown (a bunny bounds)
+        if (home && c.kind === "frog") { // leaps home, a leap every 5 m or so
+          const D = Math.hypot(idle.x - f.x, idle.z - f.z), hp = (k * Math.max(1, Math.round(D / 5))) % 1;
+          return { ...idle, x: f.x + (idle.x - f.x) * k, z: f.z + (idle.z - f.z) * k, lift: Math.sin(Math.PI * hp) * 1.1 * c.size, yaw: Math.atan2(-(idle.x - f.x), -(idle.z - f.z)), squash: 1.15 - 0.15 * hp, pitch: -0.35 * Math.cos(Math.PI * hp), moving: true, flying: false };
+        }
         if (home && c.kind === "bunny") {
           const D = Math.hypot(idle.x - f.x, idle.z - f.z), hp = (k * Math.max(1, Math.round(D / HOP_ALONG.bound))) % 1;
           return { ...idle, x: f.x + (idle.x - f.x) * k, z: f.z + (idle.z - f.z) * k, lift: Math.sin(Math.PI * hp) * 0.7 * c.size, yaw: Math.atan2(-(idle.x - f.x), -(idle.z - f.z)), squash: 1 + 0.25 * Math.sin(Math.PI * hp), pitch: -0.25 * Math.sin(Math.PI * hp), moving: true, flying: false };
@@ -182,7 +191,7 @@ export function buildCritters(frame, terrain, plants, waterAt = () => null) {
     /**
      * Each frame. clock: the shared clock (s); sunAltitude in degrees; me: { x, y, z, speed, ground, target (a
      * critter key a trip is heading to, or null) }; canSit(x, z): ground a bird may land on (not water). Returns what
-     * happened: [{ c, what: "startled" | "song" | "tired" | "home" | "lost" | "shore" }] (song: a follower's song or sniff,
+     * happened: [{ c, what: "startled" | "song" | "plop" | "tired" | "home" | "lost" | "shore" | "stay" }] (song: a follower's song, sniff or croak; plop: a following frog leapt into the water;
      * with binky for a bunny's happy jump; the rest: a follower goes home).
      */
     update(t, clock, sunAltitude, me, canSit = () => true) {
@@ -204,22 +213,28 @@ export function buildCritters(frame, terrain, plants, waterAt = () => null) {
         let s = local.get(c.key), followPose = null;
         if (s && s.follow) { // following you: its own way, on this phone's clock, until it turns for home
           const you = { x: me.x, z: me.z, air: me.y - me.ground, speed: me.speed };
-          const step = c.kind === "bunny" ? hopAlongStep(c, s.follow, you, canSit, dt, t) : followStep(c, s.follow, you, canSit, dt, t);
+          const step = c.kind === "bunny" ? hopAlongStep(c, s.follow, you, canSit, dt, t) : c.kind === "frog" ? leapAlongStep(c, s.follow, you, frogWhere, dt, t) : followStep(c, s.follow, you, canSit, dt, t);
           const why = step.done;
           if (why) {
             const p = step.pose, idle = idleAt(c, clock, c.perch);
             s.follow = null;
             if (followKey === c.key) followKey = null;
-            s.back = { t0: clock, from: { x: p.x, z: p.z, lift: p.lift }, d: Math.max(RETURN_S, Math.hypot(idle.x - p.x, idle.z - p.z) / (c.kind === "bunny" ? 10 : 14)) };
+            s.back = { t0: clock, from: { x: p.x, z: p.z, lift: Math.max(0, p.lift) }, d: Math.max(RETURN_S, Math.hypot(idle.x - p.x, idle.z - p.z) / homeSpeed(c.kind)) };
             events.push({ c, what: why });
           } else {
             followPose = step.pose;
             if (step.song) events.push({ c, what: "song", binky: !!step.binky });
+            if (step.plop) events.push({ c, what: "plop" });
           }
         }
         // Rushed at, it runs (unless it's what you're walking up to, or it trusts you now, or it's following you).
         const now = followPose ?? placeOf(c, clock);
-        const ground = c.kind === "duck" ? waterAt(now.x, now.z) ?? c.h : Math.max(0, terrain.heightAt(now.x, now.z));
+        let ground = c.kind === "duck" ? waterAt(now.x, now.z) ?? c.h : Math.max(0, terrain.heightAt(now.x, now.z));
+        if (followPose && followPose.swim > 0) { // a frog in the water floats at its surface (the last surface it saw, while it leaps in or out)
+          const w = waterAt(now.x, now.z);
+          if (w != null) s.waterY = w;
+          ground += ((s.waterY ?? ground) - ground) * followPose.swim;
+        }
         const y = ground + now.lift;
         const dx = now.x - me.x, dz = now.z - me.z, flat = Math.hypot(dx, dz);
         const close = c.kind === "bird" ? Math.hypot(flat, y - me.y) < KINDS.bird.startle : flat < KINDS[c.kind].startle && me.y - me.ground < 30;
@@ -277,26 +292,29 @@ export function buildCritters(frame, terrain, plants, waterAt = () => null) {
       // A little bird you whistle to, or a bunny you pet, comes along a little way (one at a time: another sends the
       // first one home).
       let following = false;
-      if (c.kind === "bird" || c.kind === "bunny") {
+      // A frog comes along only from a bank (11-28: "a frog that hops along by the water").
+      const where = c.kind === "frog" ? frogWhere(c.now.x, c.now.z) : null;
+      if (c.kind === "bird" || c.kind === "bunny" || (c.kind === "frog" && frogMayGo(where))) {
         const old = followKey && followKey !== key ? local.get(followKey) : null, oc = old && all.find((q) => q.key === followKey);
         if (old && old.follow) { // the one following you before flies home, quietly
           const f = old.follow, idle = oc ? idleAt(oc, frameT, oc.perch) : f;
           old.follow = null;
-          old.back = { t0: frameT, from: { x: f.x, z: f.z, lift: f.lift || 0 }, d: Math.max(RETURN_S, Math.hypot(idle.x - f.x, idle.z - f.z) / (oc && oc.kind === "bunny" ? 10 : 14)) };
+          old.back = { t0: frameT, from: { x: f.x, z: f.z, lift: f.lift || 0 }, d: Math.max(RETURN_S, Math.hypot(idle.x - f.x, idle.z - f.z) / homeSpeed(oc?.kind)) };
         }
         s.startle = null; s.back = null;
         s.follow = c.kind === "bunny" ? hopAlongStart(c, { x: c.now.x, z: c.now.z }, t)
+          : c.kind === "frog" ? leapAlongStart(c, { x: c.now.x, z: c.now.z }, t, where === "water")
           : followStart(c, { x: c.now.x, z: c.now.z, lift: Math.max(0, c.now.y - Math.max(0, terrain.heightAt(c.now.x, c.now.z))) }, t);
         followKey = key;
         following = true;
       }
       return { key, kind: c.kind, name: c.name, x: c.now.x, y: c.now.y, z: c.now.z, size: c.size, following };
     },
-    /** The little bird or bunny following you now: { key, kind, name, x, y, z, flying, waiting } or null. */
+    /** The little bird, bunny or frog following you now: { key, kind, name, x, y, z, flying, waiting, swimming } or null. */
     get follower() {
       const c = followKey && all.find((q) => q.key === followKey);
       const f = c && local.get(c.key)?.follow;
-      return c && c.now && c.now.following ? { key: c.key, kind: c.kind, name: c.name, x: c.now.x, y: c.now.y, z: c.now.z, flying: c.now.flying, waiting: !!(f && f.waiting) } : null;
+      return c && c.now && c.now.following ? { key: c.key, kind: c.kind, name: c.name, x: c.now.x, y: c.now.y, z: c.now.z, flying: c.now.flying, waiting: !!(f && f.waiting), swimming: !!(f && f.swim > 0.5) } : null;
     },
     get counts() { return Object.fromEntries(Object.keys(meshes).map((k) => [k, meshes[k].m.count])); },
     get clock() { return frameT; },

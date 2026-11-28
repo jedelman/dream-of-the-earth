@@ -795,7 +795,7 @@ async function buildWorld(lat, lon) {
   const terrain = await buildTerrain(frame, lat, lon);
   await water;
   const inland = buildInland(frame, terrain);
-  terrain.wet = inland.wet; // plants, critters and insects keep out of the water
+  terrain.wet = inland.wet; terrain.nearWet = inland.nearWet; // plants, critters and insects keep out of the water
   terrain.lakeAt = inland.lakeAt;
   const highways = buildHighways(frame, terrain.heightAt);
   const stones = buildStones(highways.pillars, terrain.heightAt);
@@ -2011,15 +2011,21 @@ function touchWater(c) {
   });
 }
 /** What the small creatures did this frame (ran from you), and now and then a croak or a song from nearby. */
-let fledAt = -10, fledEver = false, chorusAt = 0, binkyAt = -30;
+let fledAt = -10, fledEver = false, chorusAt = 0, binkyAt = -30, plopAt = -60;
 function critterNews(events, t, sunAltitude) {
   for (const ev of events) {
     if (ev.what === "song") { // a little bird following you sings now and then; a bunny sniffs, and sometimes does a binky
       if (ev.c.kind === "bunny") { sound.sniff(); if (ev.binky && t - binkyAt > 25) { logLine(`The ${ev.c.name} does a binky beside you.`, "creature"); binkyAt = t; } }
+      else if (ev.c.kind === "frog") sound.croak(1.2 / ev.c.size, true);
       else sound.song(Math.floor(t), true);
       continue;
     }
-    if (ev.what !== "startled") { if (ev.c.kind !== "bunny") sound.flutter(); logLine(followLine(ev.what, ev.c.name, ev.c.kind), "creature"); continue; } // it goes home
+    if (ev.what === "plop") { // a frog following you leaps into the water after you
+      sound.bubble(2);
+      if (t - plopAt > 30) { logLine(`Plop: the ${ev.c.name} leaps into the water after you.`, "creature"); plopAt = t; }
+      continue;
+    }
+    if (ev.what !== "startled") { if (ev.c.kind === "bird") sound.flutter(); logLine(followLine(ev.what, ev.c.name, ev.c.kind), "creature"); continue; } // it goes home
     if (ev.c.kind === "bird" || ev.c.kind === "duck") sound.flutter();
     if (ev.c.kind === "duck") sound.quack(2 / ev.c.size);
     if (t - fledAt > 6) { logLine(fledLine(ev.c.kind, ev.c.name, !fledEver), "creature"); fledAt = t; fledEver = true; }
